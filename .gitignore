@@ -1,0 +1,21 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- Environments ---
+.venv/
+venv/
+
+# --- OS ---
+.DS_Store
+
+# --- Reference clones (studied alongside yigraf; each carries its own .git history) ---
+# Not vendored or submoduled — kept out of yigraf's own repo. See origins/ on disk.
+origins/
