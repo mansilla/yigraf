@@ -154,6 +154,7 @@ class Plan:
     slug: str
     title: str
     tasks: list[Task] = field(default_factory=list)
+    phase: str = "active"  # active | completed (from the plans/<phase>/ subdir)
 
 
 def read_plan(path: Path) -> Plan:
@@ -252,7 +253,10 @@ def iter_plans(root: Path) -> list[Plan]:
     for sub in ("active", "completed"):
         d = plans_dir / sub
         if d.is_dir():
-            out.extend(read_plan(p) for p in sorted(d.glob("*.md")))
+            for p in sorted(d.glob("*.md")):
+                plan = read_plan(p)
+                plan.phase = sub
+                out.append(plan)
     return out
 
 
@@ -266,7 +270,8 @@ def project_into(graph: nx.DiGraph, root: Path) -> None:
         )
 
     for plan in iter_plans(root):
-        graph.add_node(plan.id, family=PLAN_FAMILY, kind="plan", label=plan.title, confidence=CONF)
+        graph.add_node(plan.id, family=PLAN_FAMILY, kind="plan", label=plan.title,
+                       confidence=CONF, phase=plan.phase)
         for task in plan.tasks:
             graph.add_node(
                 task.id, family=PLAN_FAMILY, kind="task", label=task.description,

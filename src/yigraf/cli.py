@@ -5,7 +5,10 @@ M0 ships ``init`` only. Later milestones add the verbs the design names — ``in
 """
 from __future__ import annotations
 
+import json
+import os
 import re
+import sys
 from pathlib import Path
 
 import typer
@@ -15,7 +18,7 @@ from yigraf.config import load_config
 from yigraf.drift import compute_drift
 from yigraf.extract import build_graph, symbol_content_hash
 from yigraf.graph import write_graph
-from yigraf.hooks import install_post_commit_hook
+from yigraf.hooks import install_claude_hooks, install_post_commit_hook
 from yigraf.scaffold import WORKSPACE_DIRNAME, init_workspace
 
 _TASK_ID = re.compile(r"^task:(.+)/(\d+)$")
@@ -250,6 +253,95 @@ def install_hooks(
         typer.echo(f"A non-yigraf post-commit hook already exists at {result.path} — left untouched.")
         raise typer.Exit(code=1)
     typer.echo(f"Installed post-commit hook at {result.path}")
+
+
+@app.command(name="install-claude-hooks")
+def install_claude_hooks_cmd(
+    path: Path = typer.Argument(Path("."), help="Repo root to wire up for Claude Code."),
+) -> None:
+    """Register the PostToolUse + SessionStart hooks + skill so Claude Code surfaces intent & drift."""
+    _require_workspace(path)
+    result = install_claude_hooks(path)
+    typer.echo(f"Wrote hooks → {result.settings_path}")
+    typer.echo(f"Wrote skill → {result.skill_path}")
+    typer.echo(f"Updated     → {result.agents_path}")
+
+
+# --- Claude Code hook entry points (invoked by the hooks above; read event JSON on stdin) ----------
+
+hook_app = typer.Typer(help="Claude Code hook entry points (read the hook event JSON on stdin).",
+                       no_args_is_help=True, add_completion=False)
+app.add_typer(hook_app, name="hook")
+
+
+def _run_hook(handler) -> None:
+    """Run a hook handler fail-open: parse stdin JSON, print the payload if any, always exit 0."""
+    try:
+        raw = sys.stdin.read()
+        data = json.loads(raw) if raw.strip() else {}
+        payload = handler(data)
+        if payload is not None:
+            typer.echo(json.dumps(payload))
+    except Exception:
+        pass  # never block or fail the tool/session (R8 fail-open)
+    raise typer.Exit(code=0)
+
+
+def _hook_graph(root: Path):
+    """Build the graph for a hook, or None if there's no workspace (→ stay silent)."""
+    if not (root / WORKSPACE_DIRNAME).is_dir():
+        return None
+    config = load_config(root / WORKSPACE_DIRNAME / "config.yaml")
+    graph, _ = build_graph(root, config)
+    return graph, config
+
+
+def _post_tool_use(data: dict) -> dict | None:
+    if data.get("tool_name") not in ("Edit", "Write", "MultiEdit"):
+        return None
+    tool_input = data.get("tool_input") or {}
+    file_path = tool_input.get("file_path") or tool_input.get("path")
+    if not file_path:
+        return None
+    root = Path(data.get("cwd") or os.getcwd())
+    built = _hook_graph(root)
+    if built is None:
+        return None
+    try:
+        rel = Path(file_path).resolve().relative_to(root.resolve())
+    except ValueError:
+        return None  # edited file is outside the repo
+    if rel.suffix != ".py":
+        return None
+    graph, config = built
+    result = retrieval.context_for_locus(graph, rel.as_posix(), config)
+    if result is None:
+        return None  # silent: nothing governs this locus and no drift
+    return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": result.text}}
+
+
+def _session_start(data: dict) -> dict | None:
+    root = Path(data.get("cwd") or os.getcwd())
+    built = _hook_graph(root)
+    if built is None:
+        return None
+    graph, config = built
+    result = retrieval.session_context(graph, config)
+    if result is None:
+        return None
+    return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": result.text}}
+
+
+@hook_app.command("post-tool-use")
+def hook_post_tool_use() -> None:
+    """PostToolUse(Edit|Write): inject governing intent + drift for the touched file (silent-unless)."""
+    _run_hook(_post_tool_use)
+
+
+@hook_app.command("session-start")
+def hook_session_start() -> None:
+    """SessionStart(clear|compact|…): re-inject the active plan + governing intents."""
+    _run_hook(_session_start)
 
 
 def main() -> None:
