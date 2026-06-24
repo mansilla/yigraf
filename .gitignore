@@ -19,3 +19,9 @@ venv/
 # --- Reference clones (studied alongside yigraf; each carries its own .git history) ---
 # Not vendored or submoduled — kept out of yigraf's own repo. See origins/ on disk.
 origins/
+
+# --- Claude Code per-machine hook wiring ---
+# `yigraf install-claude-hooks` bakes an absolute interpreter path into settings.json, so it's
+# machine-specific — kept local (see docs/caveats.md M5). The shareable SKILL.md + AGENTS.md block
+# ARE committed.
+.claude/settings.json
