@@ -303,6 +303,91 @@ def _task_links(graph: nx.DiGraph, task_id: str) -> str:
 # --------------------------------------------------------------------------------------------------
 
 
+def _file_structure_nodes(graph: nx.DiGraph, pid: str) -> list[str]:
+    """The file/module/symbol nodes that belong to a casefolded relpath (the action-driven locus)."""
+    ids = [nid for nid in (f"file:{pid}", f"module:{pid}") if nid in graph]
+    prefix = f"sym:{pid}#"
+    ids += sorted(n for n in graph.nodes if n.startswith(prefix))
+    return ids
+
+
+def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict,
+                      budget_tokens: int | None = None) -> ContextResult | None:
+    """Action-driven retrieval (retrieval-design §0): seed from a touched file, no NL query.
+
+    Returns ``None`` — **silent** — unless the locus is actually governed (an ``implements``/
+    ``tracks``/``concerns`` edge points at one of its symbols) or has drift, so the hook never nags on
+    routine edits. Ranks on proximity + relevance (``match ≈ 0``) and renders in the tight hook budget.
+    """
+    from pathlib import PurePosixPath
+
+    pid = PurePosixPath(file_relpath).as_posix().casefold()
+    seeds = _file_structure_nodes(graph, pid)
+    if not seeds:
+        return None
+
+    budget = budget_tokens or config.get("retrieval", {}).get("hook_token_budget", 800)
+    hops = _traverse(graph, seeds, config)
+    seedset = set(seeds)
+
+    governing = any(
+        a.get("relation") in ("implements", "tracks", "concerns")
+        for s in seeds for _, _, a in graph.in_edges(s, data=True)
+    )
+
+    drift_lines: list[str] = []
+    drifted_edges: set[tuple[str, str]] = set()
+    has_drift = False
+    for item in compute_drift(graph):
+        if item.kind == "renamed":
+            continue
+        drifted_edges.add((item.task_id, item.locator))
+        if item.task_id in hops or item.locator in seedset or item.locator in hops:
+            has_drift = True
+            verb = "changed since anchored" if item.kind == "soft" else "no longer found"
+            drift_lines.append(f"  ⚠ {item.task_id} → {item.locator} {verb} — re-verify or relink.")
+
+    if not governing and not has_drift:
+        return None  # silent: no governing intent/task and no drift → nothing worth interrupting for
+
+    ranked = _rank(graph, hops, {}, config)  # action-driven: no NL match
+    reconcile = _verified_reconcile(graph, drifted_edges)
+    return _render(graph, ranked, f"editing {file_relpath}", sorted(drift_lines), reconcile, budget)
+
+
+def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None = None) -> ContextResult | None:
+    """SessionStart re-injection (R8): the active plan + governing intents + any drift.
+
+    Seeds from every intent and **active** plan node, traverses to the implementing code, and renders
+    so a flow interrupted by ``/clear`` resumes instead of restarting. ``None`` (silent) if there are
+    no intents or active plans yet.
+    """
+    budget = budget_tokens or config.get("retrieval", {}).get("query_token_budget", 4000)
+    seeds = sorted(
+        n for n, a in graph.nodes(data=True)
+        if a.get("family") == "intent" or (a.get("family") == "plan" and a.get("phase") != "completed")
+    )
+    if not seeds:
+        return None
+
+    hops = _traverse(graph, seeds, config)
+    ranked = _rank(graph, hops, {}, config)
+
+    drift_lines: list[str] = []
+    drifted_edges: set[tuple[str, str]] = set()
+    in_scope = set(hops)
+    for item in compute_drift(graph):
+        if item.kind == "renamed":
+            continue
+        drifted_edges.add((item.task_id, item.locator))
+        if item.task_id in in_scope or item.locator in in_scope:
+            verb = "changed since anchored" if item.kind == "soft" else "no longer found"
+            drift_lines.append(f"  ⚠ {item.task_id} → {item.locator} {verb} — re-verify or relink.")
+
+    reconcile = _verified_reconcile(graph, drifted_edges)
+    return _render(graph, ranked, "active plan & governing intents", sorted(drift_lines), reconcile, budget)
+
+
 def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = None,
             budget_tokens: int | None = None) -> ContextResult:
     """Run the full query pipeline over an already-built ``graph`` and render within budget."""

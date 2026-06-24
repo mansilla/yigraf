@@ -204,6 +204,7 @@ authored artifacts (TRUTH)          repo source (TRUTH)
 | `docs/m2-notes.md` | M2 intent/plan artifact schema + link/anchor/commit timing (R11) |
 | `docs/m3-notes.md` | M3 drift model + rename re-anchor + the R10.1 name-exclusion refinement |
 | `docs/m4-notes.md` | M4 retrieval — v0 lexical pipeline, the `signature` field, reconcile (R9c) |
+| `docs/m5-notes.md` | M5 — verified Claude Code hook contract + the hook/skill wiring |
 | `docs/caveats.md` | running log of sharp edges / known issues found while implementing v0 |
 | `docs/graph-design.md` | data model, edges, counters, storage |
 | `docs/memory-model.md` | memory node + capture (memory milestone) |

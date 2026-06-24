@@ -75,3 +75,25 @@
   the telemetry sidecar exists.
 - 🟢 **`verified` only inspects task→intent→symbol.** A hypothetical direct `intent → symbol`
   `implements` edge isn't considered for the R9c check; all v0 links are task-based, so moot for now.
+
+## M5 — Claude Code hooks + skill
+
+- 🔴 **`install-claude-hooks` bakes an absolute interpreter path into the *committed*
+  `.claude/settings.json`.** `"/abs/path/.venv/bin/python" -m yigraf …` works on the author's machine
+  but **breaks for teammates / CI** with a different venv path, and the command silently no-ops
+  (fail-open) so the breakage is invisible. Fine for the single-dev dogfood. For shared repos this
+  should instead go in the gitignored `.claude/settings.local.json`, or use a PATH-portable command
+  (`yigraf hook …` or `uv run yigraf hook …`). **Fix before recommending to teams (M6/post-v0).**
+- 🟡 **SessionStart fires on `startup|resume` too, not just `clear|compact`.** Every new session gets
+  the active-plan injection, not only post-reset. Defensible as orientation, but it's more than R8's
+  literal "survives /clear" scope and could feel noisy on a big plan. Narrow the matcher to
+  `clear|compact` if so.
+- 🟡 **PostToolUse rebuilds the graph on every Edit/Write.** The SHA cache means only the touched file
+  re-parses, but the whole graph is still re-assembled + drift recomputed each edit — latency grows
+  with repo size. Could instead load the committed `graph.json` and re-extract only the touched file.
+  Measure in M6.
+- 🟡 **`additionalContext`-on-PostToolUse injection is verified from docs, not yet from a live run.**
+  The fetched contract says it reaches the model's next turn; confirm empirically in the M6 dogfood
+  session (the manual done-test).
+- 🟡 **Edited-file key is `tool_input.file_path`, but docs showed `.path`.** The hook reads both; if a
+  future tool uses yet another key the locus won't resolve and the hook stays (correctly) silent.
