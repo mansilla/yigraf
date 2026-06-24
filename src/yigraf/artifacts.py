@@ -298,7 +298,9 @@ def _project_task_edges(graph: nx.DiGraph, task: Task) -> None:
                 attrs["anchor_algo"] = impl.anchor_algo or ANCHOR_ALGO
             graph.add_edge(task.id, impl.sym, **attrs)
         else:
-            _stash(graph, task.id, "dangling_implements", impl.sym)
+            # Keep the anchor so M3 can re-anchor a rename by content match (docs/m3-notes.md §3).
+            _stash(graph, task.id, "dangling_implements",
+                   {"sym": impl.sym, "anchor": impl.anchor, "anchor_algo": impl.anchor_algo})
 
 
 def _stash(graph: nx.DiGraph, node_id: str, attr: str, value: str) -> None:

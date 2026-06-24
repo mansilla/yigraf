@@ -12,6 +12,7 @@ import typer
 
 from yigraf import __version__, artifacts
 from yigraf.config import load_config
+from yigraf.drift import compute_drift
 from yigraf.extract import build_graph, symbol_content_hash
 from yigraf.graph import write_graph
 from yigraf.hooks import install_post_commit_hook
@@ -190,6 +191,32 @@ def link(
         raise typer.Exit(code=1)
 
     _rebuild(repo)
+
+
+@app.command()
+def drift(
+    path: Path = typer.Argument(Path("."), help="Repo root (default: current dir)."),
+) -> None:
+    """Report implements-edge drift: soft (body changed), hard (symbol gone), and renames."""
+    workspace = _require_workspace(path)
+    config = load_config(workspace / "config.yaml")
+    graph, _ = build_graph(path, config)  # build re-anchors renames in-memory first
+    items = compute_drift(graph)
+
+    if not items:
+        typer.echo("No drift.")
+        return
+
+    for item in items:
+        if item.kind == "renamed":
+            typer.echo(f"renamed (re-anchored): {item.task_id}  {item.locator} ⇒ {item.new_locator}")
+        elif item.kind == "soft":
+            typer.echo(f"soft drift: {item.task_id} → {item.locator} ({item.detail})")
+        else:
+            typer.echo(f"hard drift: {item.task_id} → {item.locator} ({item.detail})")
+
+    if any(item.kind in ("soft", "hard") for item in items):
+        raise typer.Exit(code=1)
 
 
 @app.command(name="install-hooks")
