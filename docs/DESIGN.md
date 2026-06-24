@@ -173,6 +173,18 @@ authored artifacts (TRUTH)          repo source (TRUTH)
   "AST-normalized" but didn't define it). Deps pinned: `tree-sitter` + `tree-sitter-python` (Python-only
   v0), core not extra.
 
+### M2 linking (2026-06-24 — realizing R5's goal at implementation)
+
+- **R11 — The anchor is stamped at `yigraf link` time (working-tree content), authoritative; the
+  `post-commit` hook only rebuilds `graph.json` to HEAD.** This realizes R5's *goal* — the linking
+  session shows no false drift, a later un-relinked change does — without R5's literal post-commit
+  frontmatter rewrite, which would leave a dirty tree and an anchor-less commit. **Re-stamping at
+  commit is deliberately NOT automatic:** a symbol edited after linking, without a re-link, must
+  surface as drift (re-verify / relink), consistent with R9c (drift re-opens a `verified` spec);
+  re-linking is the explicit re-verify gesture that re-stamps. Unresolvable link targets are stashed
+  on the task node (`dangling_*`) rather than added as phantom edges — M3 surfaces them as hard
+  drift. Refines R5's *mechanism* in service of its *goal*. Full rule: **`docs/m2-notes.md`** §4.
+
 ## 6. Document index
 
 | doc | holds |
@@ -184,11 +196,12 @@ authored artifacts (TRUTH)          repo source (TRUTH)
 | `docs/spec-lifecycle.md` | spec authoring richness + lifecycle + enforceable-done (R9) |
 | `docs/authoring-skill.md` | the guided spec-authoring flow (R9 delivery; ships M5) |
 | `docs/m1-notes.md` | M1 structure-index decisions; the normalization rule (R10) |
+| `docs/m2-notes.md` | M2 intent/plan artifact schema + link/anchor/commit timing (R11) |
 | `docs/graph-design.md` | data model, edges, counters, storage |
 | `docs/memory-model.md` | memory node + capture (memory milestone) |
 | `docs/retrieval-design.md` | seeding→traversal→rank→render, embeddings |
 | `docs/capture-flow.md` | write path, boundaries, dedup |
 | `docs/research/*` | OpenSpec, Graphify, harness-engineering, ReCAP analyses |
 
-> Follow-up (low priority): propagate R1–R10 into the detail docs' bodies (esp. R9a into
+> Follow-up (low priority): propagate R1–R11 into the detail docs' bodies (esp. R9a into
 > `graph-design.md` §1's intent row). Until then, this Decision Log governs.
