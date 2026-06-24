@@ -94,6 +94,9 @@ def extract_file(relpath: str, source: bytes, parser: Parser) -> FileProjection:
     for s in symbols:
         h = content_hash(s.stmt, source, s.boundaries, exclude=_own_name_ids(s.defn))
         nodes[s.id] = _struct_node(s.kind, s.qualname, rel, h, _range(s.stmt))
+        signature = _signature(s.defn, source)
+        if signature is not None:
+            nodes[s.id]["signature"] = signature  # for "locator + signature, not source" render (M4)
         edges.append([s.container, s.id, _edge("contains")])
 
     for src, dst in _call_edges(symbols, pid, symbol_ids):
@@ -249,6 +252,19 @@ def _own_name_ids(defn: Node) -> frozenset[int]:
     """The node id of a def's own name identifier — excluded from its hash so renames re-anchor."""
     name = defn.child_by_field_name("name")
     return frozenset({name.id}) if name is not None else frozenset()
+
+
+def _signature(defn: Node, source: bytes) -> str | None:
+    """The one-line declaration (``def f(a) -> b:`` / ``class C(Base):``) for compact rendering.
+
+    The text from the def keyword to the body, whitespace-collapsed — decorators excluded (``defn``
+    is the unwrapped definition). Returns ``None`` if the node has no body field.
+    """
+    body = defn.child_by_field_name("body")
+    if body is None:
+        return None
+    raw = source[defn.start_byte : body.start_byte].decode("utf-8", "surrogatepass")
+    return " ".join(raw.split())
 
 
 def _range(node: Node) -> list[int]:

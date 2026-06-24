@@ -203,6 +203,8 @@ authored artifacts (TRUTH)          repo source (TRUTH)
 | `docs/m1-notes.md` | M1 structure-index decisions; the normalization rule (R10) |
 | `docs/m2-notes.md` | M2 intent/plan artifact schema + link/anchor/commit timing (R11) |
 | `docs/m3-notes.md` | M3 drift model + rename re-anchor + the R10.1 name-exclusion refinement |
+| `docs/m4-notes.md` | M4 retrieval — v0 lexical pipeline, the `signature` field, reconcile (R9c) |
+| `docs/caveats.md` | running log of sharp edges / known issues found while implementing v0 |
 | `docs/graph-design.md` | data model, edges, counters, storage |
 | `docs/memory-model.md` | memory node + capture (memory milestone) |
 | `docs/retrieval-design.md` | seeding→traversal→rank→render, embeddings |
