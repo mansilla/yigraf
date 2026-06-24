@@ -122,6 +122,57 @@ authored artifacts (TRUTH)          repo source (TRUTH)
     three-boundary taxonomy (D8) is post-v0 and primarily skill-driven, hooks as Claude-Code
     enhancement. [review #1, #10]
 
+### Spec lifecycle (2026-06-23 — folds OpenSpec's planning strength in, graph-natively)
+
+- **R9 — Adopt OpenSpec's spec *substance* and *guided flow*, not its *ceremony*.** OpenSpec's
+  four-artifact change folder (`proposal`/`specs`/`design`/`tasks`) and `propose→apply→archive` +
+  delta-spec (ADDED/MODIFIED/REMOVED) workflow exist to compensate for having **no graph**. yigraf
+  has one, so it takes the value and drops the packaging. Three sub-decisions; long-form +
+  schema/examples in **`docs/spec-lifecycle.md`**.
+  - **R9a — Enriched intent node, still one-file-per-node.** The `intent` node gains `scenarios`
+    (Given/When/Then behavioral examples) and an optional `design` (approach) field, alongside the
+    existing `statement` (SHALL/MUST) + `status`. **Extends/overrides `graph-design.md` §1 intent
+    row.** We **do not** adopt the four-artifact change folder: its concerns already decompose across
+    families — proposal-*why* → **memory**, tasks → **plan** nodes, the spec → the **intent** node,
+    joined by edges. Re-bundling them duplicates the graph and breaks one-file-per-node (D2 store
+    principle).
+  - **R9b — Specs are durable nodes; git + `supersedes` are the change model.** Specs are edited in
+    place; **git history is the change log** and **`supersedes`/`refines` edges are spec evolution**.
+    **No `propose→apply→archive` workflow and no delta-spec folders.** This *pins* `yigraf-vision.md`
+    §5's "Adapt delta-patch evolution" → realized via `supersedes` + git, **not** OpenSpec change
+    folders. (The existing `status` field — `proposed/active/satisfied/archived`, `graph-design.md`
+    §1 — stays as a *soft* guide, not an enforced gate.)
+  - **R9c — "Finished" is enforceable, not self-reported.** `status: satisfied` is agent/human-
+    *asserted*; a **derived predicate `verified` = `satisfied` ∧ ≥1 live `implements` edge ∧ no drift
+    on those edges** is *computed*. `satisfied`-without-`verified` (no link, or drifted) is **surfaced**
+    (PostToolUse / `yigraf context`), **never hard-gated** — fail-open, consistent with R8 and
+    OpenSpec's "no rigid phase gates." Drift on a `verified` spec **re-opens** it (surfaces the
+    reconcile message). Builds on the `implements` edge only, consistent with **R7**.
+- **Delivery vs. structure (R9 corollary):** OpenSpec's guided *flow* (`why → scenarios → design →
+  tasks`) is the part users value, and it is **separable from the artifacts** — it ships as the
+  **authoring skill** (M5 / skill body), producing R9a artifacts + graph edges, not as filesystem
+  ceremony. The proposal-*why* lands as **memory** nodes that `serve` the intent and re-inject at
+  `/clear` (R8) — **memory-milestone**, not a `proposal.md`. So R9a's fields + R9c's `verified`
+  predicate are small additions to v0 (M2–M4); the *why*→memory capture and the skill's full guided
+  flow are memory-milestone / delivery, not v0 spine.
+
+### M1 normalization (2026-06-24 — pinned before code; the one near-irreversible v0 decision)
+
+- **R10 — The drift anchor `content_hash` is an AST-normalized, *versioned* token-stream hash.**
+  `SHA-256` over the symbol's significant token stream: **comments dropped**; **all whitespace/
+  formatting ignored** (reformatting is not drift); **nested extracted-symbol subtrees excluded** via a
+  `<def:NAME>` marker (so a method-body edit flips *only* that method's hash, not the enclosing class's
+  — satisfies the M1 "exactly that symbol" done-test). **Docstrings are stripped** (like comments) and
+  **string quote-style is normalized** (single↔double delimiter; prefix/quote-count preserved), so a
+  doc edit or a `black`-style quote reflow is **not** drift — protecting the signal against
+  mass-reformat alert fatigue. Escape-level value canonicalization (e.g. `'it\'s'`→`"it's"`) is
+  deferred to a possible `astnorm-v2`. Each anchor stores **`anchor_algo: "astnorm-v1"`**; the drift
+  check compares only when the tag matches, so a future rule change re-anchors gracefully instead of
+  silently false-drifting — this is what de-risks "change the rule ⇒ all anchors invalidate." Full
+  rule + parser API + extraction scope: **`docs/m1-notes.md`**. Refines R4/R5 (which named
+  "AST-normalized" but didn't define it). Deps pinned: `tree-sitter` + `tree-sitter-python` (Python-only
+  v0), core not extra.
+
 ## 6. Document index
 
 | doc | holds |
@@ -130,11 +181,14 @@ authored artifacts (TRUTH)          repo source (TRUTH)
 | `docs/BUILD-PLAN.md` | sequenced v0 milestones + done-tests |
 | `docs/yigraf-vision.md` | thesis, five dimensions, long-form synthesis |
 | `docs/yigraf-v0.md` | v0 scope detail |
+| `docs/spec-lifecycle.md` | spec authoring richness + lifecycle + enforceable-done (R9) |
+| `docs/authoring-skill.md` | the guided spec-authoring flow (R9 delivery; ships M5) |
+| `docs/m1-notes.md` | M1 structure-index decisions; the normalization rule (R10) |
 | `docs/graph-design.md` | data model, edges, counters, storage |
 | `docs/memory-model.md` | memory node + capture (memory milestone) |
 | `docs/retrieval-design.md` | seeding→traversal→rank→render, embeddings |
 | `docs/capture-flow.md` | write path, boundaries, dedup |
 | `docs/research/*` | OpenSpec, Graphify, harness-engineering, ReCAP analyses |
 
-> Follow-up (low priority): propagate R1–R8 into the detail docs' bodies. Until then, this Decision
-> Log governs.
+> Follow-up (low priority): propagate R1–R10 into the detail docs' bodies (esp. R9a into
+> `graph-design.md` §1's intent row). Until then, this Decision Log governs.

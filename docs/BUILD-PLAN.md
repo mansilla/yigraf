@@ -10,6 +10,9 @@
 - Drift = **AST-normalized hash**, measured at the **git commit** boundary; rename auto-re-anchors (R4, R5).
 - `graph.json` committed (recomputable state only); telemetry in gitignored sidecar (R1).
 - v0 hooks = **PostToolUse** (inject drift + link-nudge) + **SessionStart** (re-inject) (R8).
+- Spec lifecycle: intent carries **`scenarios` + optional `design`** (R9a); specs are **durable nodes**
+  (git + `supersedes` are the change model — **no** propose/apply/archive, **no** delta folders, R9b);
+  **finished = `verified`** = `satisfied` ∧ live `implements` edge ∧ no drift, surfaced not gated (R9c).
 
 ## Dogfood target
 Build yigraf **on itself** — a Python repo with intents/plans. Earliest possible self-hosting is the
@@ -34,13 +37,16 @@ forcing function for quality and the first real demo.
   unchanged (normalization works); a body change flips exactly that symbol's hash.
 
 ## M2 — Intent/plan artifacts + linking
-- Verbs: `yigraf intent`, `yigraf plan` (+tasks, `tracks`/`requires` edges), `yigraf link` (declare
-  `implements`/`tracks`). Artifact readers project these into the graph (edges from frontmatter).
+- Verbs: `yigraf intent` (`statement` + **`scenarios` (Given/When/Then) + optional `design`** — R9a),
+  `yigraf plan` (+tasks, `tracks`/`requires` edges), `yigraf link` (declare `implements`/`tracks`).
+  Artifact readers project these into the graph (edges from frontmatter; `scenarios`/`design` into the
+  intent node).
 - **post-commit git hook** (detached, AST-only) that rebuilds structure and **stamps the anchor** on
   (re)linked edges against committed content (R5).
-- **Done-test:** create an intent + a plan with a task, `yigraf link` the task to a symbol, commit →
-  the `implements` edge in `graph.json` carries an `anchor` equal to the committed symbol's normalized
-  hash; the linking commit shows **no** drift.
+- **Done-test:** create an intent (with a scenario + design) + a plan with a task, `yigraf link` the
+  task to a symbol, commit → the intent node in `graph.json` carries its `scenarios`/`design`, the
+  `implements` edge carries an `anchor` equal to the committed symbol's normalized hash, and the
+  linking commit shows **no** drift.
 
 ## M3 — Drift detection + rename handling
 - On build/query: compute soft drift (hash≠anchor, symbol exists) and hard drift (locator unresolvable).
@@ -53,14 +59,19 @@ forcing function for quality and the first real demo.
   (d=2, N=60, p99 hub floor 50) across structure+intent+plan; fusion rank
   `α·match + β·proximity + γ·relevance` with `relevance` = `refs_in`/`superseded_in` only (no memory
   yet); token-budgeted render (**locators + signatures, not source**); drift lines reserved in budget.
+- **Verified-done check (R9c):** compute `verified(intent) = status==satisfied ∧ ≥1 live `implements`
+  edge ∧ no drift on it` — derived from the M3 drift signal, no new state. A `satisfied`-but-unverified
+  intent (unlinked or drifted) emits a reconcile line, reserved in budget alongside drift.
 - **Done-test:** `yigraf context "session expiry"` returns the requirement + the implementing
   symbol(s) as signatures + any drift, under the budget; output token count materially below
-  grep-+-read of the same files (record the number — operationalizes v0 success-criterion #2).
+  grep-+-read of the same files (record the number — operationalizes v0 success-criterion #2); a spec
+  marked `satisfied` whose linked symbol has drifted surfaces a **"satisfied but not verified"** line.
 
 ## M5 — Claude Code hooks + skill (R8)
 - **PostToolUse** on `Edit|Write`: fail-open, silent-unless the touched symbol has an `implements`
-  edge or drift → inject (`additionalContext`) the governing intent + reconcile message; plus the
-  conservative "link this?" nudge for an unlinked symbol under an active task.
+  edge or drift → inject (`additionalContext`) the governing intent + reconcile message (incl. a
+  `satisfied`-but-now-drifted spec re-opening, R9c); plus the conservative "link this?" nudge for an
+  unlinked symbol under an active task.
 - **SessionStart** (`clear|compact`): re-inject active plan + governing intents.
 - `SKILL.md` (skill body: the link-on-task-done ritual, `yigraf context` first) + the always-on
   `AGENTS.md` block.

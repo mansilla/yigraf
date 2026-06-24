@@ -27,7 +27,7 @@ Every node: `id`, `family`, `label`, `confidence` (`EXTRACTED` | `INFERRED` | `A
 | family | node types | key fields | source |
 | --- | --- | --- | --- |
 | **structure** | `file`, `symbol` (class/fn/method — `kind`), `module` | `source_file`, `source_range`, **`content_hash`** (of the range — drift anchor), `language` | tree-sitter (Graphify) — `EXTRACTED` |
-| **intent** | `requirement`, `goal`, `capability` | `statement` (behavioral, SHALL/MUST), `status` (proposed/active/satisfied/archived) | intent markdown (OpenSpec-style) |
+| **intent** | `requirement`, `goal`, `capability` | `statement` (behavioral, SHALL/MUST), `scenarios` (Given/When/Then), `design` (optional, the *how*), `status` (proposed/active/satisfied/archived) | intent markdown (OpenSpec-style) — body is authored spec content (R9a / `spec-lifecycle.md`) |
 | **plan** | `plan`, `task` | `state` (todo/in_progress/done — *derived from filesystem*), `order`, `decision_log` | plan markdown, filesystem-as-state (OpenSpec) |
 | **memory** | `decision`, `constraint`, `rationale`, `rejected-alternative`, `learned-fact`, `preference` | `statement`, `why` (ReCAP's `T`), `alternatives`, `maturity` (working/settled), `status` (active/superseded/archived), `provenance{source, anchor_commit, ts}` | agent-asserted at commit boundary (memory-model §2) |
 
@@ -113,7 +113,23 @@ tree-sitter; artifacts point into code by locator (`sym:<path>#<name>`).
 sub-nodes (checkbox state in the body, edges in frontmatter keyed by task id).
 
 **File formats** (frontmatter carries ids, edges, and drift anchors — all machine-written by
-`yigraf`; human-readability is not a goal here, so anchors etc. live in frontmatter):
+`yigraf`; human-readability is not a goal for the *frontmatter*, so anchors etc. live there. Intent
+and plan **bodies** are the exception: they hold authored spec content meant to be read — R9a):
+
+`intents/session-expiry.md` *(body authored; frontmatter machine-written — R9a / `spec-lifecycle.md`)*
+```markdown
+---
+id: int:session-expiry
+type: requirement
+status: active
+---
+## Requirement
+The system SHALL expire a session after 30m of inactivity.
+## Scenarios
+- Given a session idle 30m, When a request arrives, Then respond 401 and clear the session.
+## Design (how)
+Optimistic-locked refresh; TTL in the session store. (Rationale lives in memory, not here.)
+```
 
 `memory/001-optimistic-locking.md`
 ```markdown
