@@ -28,8 +28,17 @@ def empty_graph() -> nx.DiGraph:
 
 
 def to_node_link(g: nx.DiGraph) -> dict:
-    """Serialize ``g`` to a node-link dict."""
-    return nx.node_link_data(g, edges=_EDGES_KEY)
+    """Serialize ``g`` to a node-link dict with nodes and edges in a stable, sorted order.
+
+    ``node_link_data`` emits nodes/edges in graph *insertion* order, which would make ``graph.json``
+    depend on traversal order. Sorting nodes by ``id`` and edges by ``(source, target, relation)``
+    makes a no-change rebuild byte-identical (M1 done-test, docs/m1-notes.md §6); ``json.dumps`` then
+    sorts the keys *within* each object.
+    """
+    data = nx.node_link_data(g, edges=_EDGES_KEY)
+    data["nodes"].sort(key=lambda n: n["id"])
+    data[_EDGES_KEY].sort(key=lambda e: (e["source"], e["target"], e.get("relation", "")))
+    return data
 
 
 def from_node_link(data: dict) -> nx.DiGraph:
