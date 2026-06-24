@@ -10,7 +10,7 @@ from pathlib import Path
 
 import typer
 
-from yigraf import __version__, artifacts
+from yigraf import __version__, artifacts, retrieval
 from yigraf.config import load_config
 from yigraf.drift import compute_drift
 from yigraf.extract import build_graph, symbol_content_hash
@@ -191,6 +191,22 @@ def link(
         raise typer.Exit(code=1)
 
     _rebuild(repo)
+
+
+@app.command()
+def context(
+    query: str = typer.Argument(..., help="What to look up, e.g. \"session expiry\"."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+    family: str = typer.Option(None, "--family", help="Restrict to one family: structure|intent|plan."),
+    budget: int = typer.Option(None, "--budget", help="Token budget for the render."),
+) -> None:
+    """Retrieve a scoped, token-budgeted slice of the graph for a query (locators + signatures)."""
+    workspace = _require_workspace(repo)
+    config = load_config(workspace / "config.yaml")
+    graph, _ = build_graph(repo, config)
+    result = retrieval.context(graph, query, config, family=family, budget_tokens=budget)
+    typer.echo(result.text, nl=False)
+    typer.echo(f"[~{result.token_estimate} tokens · {result.nodes_rendered}/{result.nodes_total} nodes shown]")
 
 
 @app.command()

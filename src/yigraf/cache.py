@@ -21,7 +21,8 @@ if TYPE_CHECKING:
     from yigraf.extract import FileProjection
 
 #: Bumped when the on-disk cache layout changes incompatibly (separate from the astnorm algo).
-CACHE_FORMAT = 1
+#: 2: structure nodes gained a ``signature`` field (M4).
+CACHE_FORMAT = 2
 
 
 def file_sha(data: bytes) -> str:
