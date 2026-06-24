@@ -23,7 +23,7 @@ import networkx as nx
 import tree_sitter_python as tsp
 from tree_sitter import Language, Node, Parser
 
-from yigraf import artifacts
+from yigraf import artifacts, drift
 from yigraf.astnorm import ANCHOR_ALGO, content_hash
 from yigraf.cache import StructureCache, file_sha
 from yigraf.graph import empty_graph
@@ -92,7 +92,7 @@ def extract_file(relpath: str, source: bytes, parser: Parser) -> FileProjection:
 
     symbol_ids = {s.id for s in symbols}
     for s in symbols:
-        h = content_hash(s.stmt, source, s.boundaries)
+        h = content_hash(s.stmt, source, s.boundaries, exclude=_own_name_ids(s.defn))
         nodes[s.id] = _struct_node(s.kind, s.qualname, rel, h, _range(s.stmt))
         edges.append([s.container, s.id, _edge("contains")])
 
@@ -245,6 +245,12 @@ def _name(defn: Node) -> str | None:
     return name.text.decode() if name is not None else None
 
 
+def _own_name_ids(defn: Node) -> frozenset[int]:
+    """The node id of a def's own name identifier — excluded from its hash so renames re-anchor."""
+    name = defn.child_by_field_name("name")
+    return frozenset({name.id}) if name is not None else frozenset()
+
+
 def _range(node: Node) -> list[int]:
     start, end = node.start_point, node.end_point
     return [start.row, start.column, end.row, end.column]
@@ -314,6 +320,7 @@ def build_graph(root: Path, config: dict) -> tuple[nx.DiGraph, BuildStats]:
 
     _add_import_edges(graph, file_imports, file_sources)
     artifacts.project_into(graph, root)
+    drift.resolve_renames(graph)  # re-anchor moved/renamed implements targets in-memory (M3)
 
     cache.prune(set(relpaths))
     cache.save(cache_path)

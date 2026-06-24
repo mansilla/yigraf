@@ -37,22 +37,31 @@ _QUOTE_TOKENS = frozenset({"string_start", "string_end"})
 _BODY_CONTAINERS = frozenset({"block", "module"})
 
 
-def content_hash(node: Node, source: bytes, boundaries: Mapping[int, str]) -> str:
+def content_hash(node: Node, source: bytes, boundaries: Mapping[int, str],
+                 exclude: frozenset[int] = frozenset()) -> str:
     """Hash ``node``'s significant token stream (``astnorm-v1``); see module docstring.
 
     ``boundaries`` maps the tree-sitter node id of each *directly nested extracted symbol* (a
     top-level def for a module; a method for a class) to its local name. Those subtrees are replaced
     by a ``<def:NAME>`` marker and not descended into — so a class hash captures its member *names*
     but not method bodies, and editing a method body flips only that method's hash.
+
+    ``exclude`` is a set of node ids dropped outright — used for the symbol's **own declared name**,
+    so a pure rename leaves the body-hash unchanged and M3 can re-anchor by exact match
+    (docs/m3-notes.md §2). A *container's* member names (the ``<def:NAME>`` markers) are unaffected.
     """
     tokens: list[str] = []
-    _emit(node, source, boundaries, tokens)
+    _emit(node, source, boundaries, exclude, tokens)
     blob = _TOKEN.join(tokens).encode("utf-8", "surrogatepass")
     return hashlib.sha256(blob).hexdigest()
 
 
-def _emit(node: Node, source: bytes, boundaries: Mapping[int, str], out: list[str]) -> None:
+def _emit(node: Node, source: bytes, boundaries: Mapping[int, str], exclude: frozenset[int],
+          out: list[str]) -> None:
     """Append ``node``'s significant tokens to ``out`` in pre-order."""
+    if node.id in exclude:
+        return  # the symbol's own name — dropped so a rename doesn't change the body-hash
+
     name = boundaries.get(node.id)
     if name is not None:
         out.append(f"<def:{name}>")  # nested extracted symbol — its body is its own concern
@@ -73,7 +82,7 @@ def _emit(node: Node, source: bytes, boundaries: Mapping[int, str], out: list[st
     if kind in _BODY_CONTAINERS:
         children = _without_leading_docstring(children)
     for child in children:
-        _emit(child, source, boundaries, out)
+        _emit(child, source, boundaries, exclude, out)
 
 
 def _without_leading_docstring(children: list[Node]) -> list[Node]:
