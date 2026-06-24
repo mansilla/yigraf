@@ -9,6 +9,11 @@ dependencies = [
     "typer>=0.12",
     "pyyaml>=6.0",
     "networkx>=3.4",
+    # M1 structure index. Core (not an extra): the structure graph is foundational.
+    # Pin core + grammar to the same minor for ABI alignment (see docs/m1-notes.md §1).
+    # Python-only for v0; multi-language grammars come post-v0 (BUILD-PLAN sequencing).
+    "tree-sitter>=0.23,<0.25",
+    "tree-sitter-python>=0.23,<0.25",
 ]
 
 [project.scripts]
