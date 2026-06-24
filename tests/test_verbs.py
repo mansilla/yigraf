@@ -97,7 +97,7 @@ def test_deleting_a_linked_symbol_dangles_without_a_phantom_node(tmp_path: Path)
     graph, _ = build_graph(root, default_config())
     assert SYM not in graph  # no phantom node conjured for the vanished symbol
     assert not graph.has_edge("task:auth/1", SYM)
-    assert graph.nodes["task:auth/1"]["dangling_implements"] == [SYM]
+    assert [e["sym"] for e in graph.nodes["task:auth/1"]["dangling_implements"]] == [SYM]
 
 
 def test_intent_verb_refuses_to_clobber(tmp_path: Path):

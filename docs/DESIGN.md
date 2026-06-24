@@ -172,6 +172,11 @@ authored artifacts (TRUTH)          repo source (TRUTH)
   rule + parser API + extraction scope: **`docs/m1-notes.md`**. Refines R4/R5 (which named
   "AST-normalized" but didn't define it). Deps pinned: `tree-sitter` + `tree-sitter-python` (Python-only
   v0), core not extra.
+  - **R10.1 (2026-06-24, M3):** the hash also **excludes the symbol's own declared name**, so a pure
+    rename leaves the body-hash unchanged and M3 re-anchors the moved locator by exact match (R4's
+    "auto-re-anchor") instead of false-drifting. A *container* still hashes its members' names (the
+    `<def:NAME>` markers), so a member rename remains a real structural change. Refined in place in
+    `astnorm-v1` (no anchors persisted yet). Detail: `docs/m3-notes.md` §2.
 
 ### M2 linking (2026-06-24 — realizing R5's goal at implementation)
 
@@ -197,6 +202,7 @@ authored artifacts (TRUTH)          repo source (TRUTH)
 | `docs/authoring-skill.md` | the guided spec-authoring flow (R9 delivery; ships M5) |
 | `docs/m1-notes.md` | M1 structure-index decisions; the normalization rule (R10) |
 | `docs/m2-notes.md` | M2 intent/plan artifact schema + link/anchor/commit timing (R11) |
+| `docs/m3-notes.md` | M3 drift model + rename re-anchor + the R10.1 name-exclusion refinement |
 | `docs/graph-design.md` | data model, edges, counters, storage |
 | `docs/memory-model.md` | memory node + capture (memory milestone) |
 | `docs/retrieval-design.md` | seeding→traversal→rank→render, embeddings |

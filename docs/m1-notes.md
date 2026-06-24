@@ -63,6 +63,12 @@ token stream**, computed as:
    - a **function/method** hash includes everything in its body *except* comments and a leading
      docstring (local helper functions are **not** extracted nodes, so their tokens are included —
      they're part of the body).
+4b. **Exclude the symbol's *own* declared name** (the `def NAME` / `class NAME` identifier; added
+   2026-06-24 for M3). A pure rename then leaves the body-hash **unchanged**, so a moved/renamed
+   locator re-anchors by exact content match instead of false-drifting (`docs/m3-notes.md` §2/§3).
+   This is the symbol's *own* name only — a **container** still emits its members' names in the
+   `<def:NAME>` markers above, so renaming a member is still a (real) structural change to the
+   enclosing class/module hash. Safe to refine in `astnorm-v1` (no anchors persisted yet).
 5. **Normalize string quote style** — when emitting a `string`'s `string_start`/`string_end`,
    canonicalize the quote *character* (single↔double) to double, **preserving the prefix** (`r`/`b`/
    `f`) and the **quote count** (do *not* collapse `'''`↔`'`, which can change semantics).
