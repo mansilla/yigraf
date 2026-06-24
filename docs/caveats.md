@@ -97,3 +97,17 @@
   session (the manual done-test).
 - 🟡 **Edited-file key is `tool_input.file_path`, but docs showed `.path`.** The hook reads both; if a
   future tool uses yet another key the locus won't resolve and the hook stays (correctly) silent.
+
+## M6 — dogfood
+
+- 🟡 **Plan-node fan-out in `context`.** Every task hangs off one `plan` node, so a query about a
+  single task pulls in *all* sibling tasks at 1 hop — `context` then lists the whole plan. Fine as
+  orientation, noisy for a narrow query. Candidate fix: treat `plan` as a soft hub (include but don't
+  traverse through) or down-weight non-matched siblings in ranking. *(M4 polish / post-v0)*
+- 🟡 **Token-win is real but modest on small files (2.5× on `drift.py`).** The measured win grows with
+  file size and with how many files an agent would otherwise grep+read, and undercounts the value of
+  also returning intent/plan/drift. A fuller benchmark across several realistic queries is worth doing
+  before quoting a headline number.
+- 🟢 **Live-session done-test still manual.** The hook entry points produce correct payloads on this
+  repo, but "Claude Code consumes `additionalContext` on PostToolUse in a live session" is confirmed
+  only from docs — verify interactively (open a session in this repo, edit `src/yigraf/drift.py`).

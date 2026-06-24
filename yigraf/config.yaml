@@ -1,0 +1,37 @@
+# yigraf config — committed. Governs structure extraction, drift, and retrieval.
+# Written by `yigraf init`; safe to edit. See docs/DESIGN.md for the authority on each knob.
+schema_version: 0
+
+# --- Structure extraction (M1) ---
+languages: [python]            # v0 is Python-only
+ignore:                        # path prefixes skipped when indexing the repo
+  - .git/
+  - __pycache__/
+  - .venv/
+  - node_modules/
+  - origins/
+
+# --- Maturity (R2) ---
+maturity_k: 3                  # commits on the default branch un-superseded before a memory "settles"
+
+# --- Retrieval (M4) — tunables from docs/retrieval-design.md §9 ---
+retrieval:
+  seeds: 5                     # seed matches kept from the lexical/IDF seeder
+  seed_cap: 6                  # hard cap on seeds
+  max_hops: 2                  # bounded traversal depth from seeds
+  node_budget: 60              # max nodes gathered before ranking
+  hub_percentile: 99           # degree percentile above which a node is treated as a hub
+  hub_floor: 50                # minimum degree to count as a hub
+  ranking:                     # fusion weights: match · proximity · relevance
+    alpha: 0.5
+    beta: 0.3
+    gamma: 0.2
+  hook_token_budget: 800       # token budget for hook-injected context
+  query_token_budget: 4000     # token budget for `yigraf context` output
+
+# --- Relevance prior (docs/graph-design.md §3) ---
+relevance:                     # w1·log(1+refs_in) + w2·recency + w3·maturity − w4·[superseded_in>0]
+  w1: 1.0
+  w2: 1.0
+  w3: 1.0
+  w4: 1.0
