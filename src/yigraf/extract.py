@@ -23,6 +23,7 @@ import networkx as nx
 import tree_sitter_python as tsp
 from tree_sitter import Language, Node, Parser
 
+from yigraf import artifacts
 from yigraf.astnorm import ANCHOR_ALGO, content_hash
 from yigraf.cache import StructureCache, file_sha
 from yigraf.graph import empty_graph
@@ -275,8 +276,8 @@ def build_graph(root: Path, config: dict) -> tuple[nx.DiGraph, BuildStats]:
     """Extract the structure graph for the repo at ``root`` (Python only), using the on-disk cache.
 
     Reuses unchanged files from ``yigraf/cache/structure.json`` and re-parses the rest, then resolves
-    intra-repo ``imports`` edges across the full file set. Only the structure family is projected in
-    v0; intent/plan/memory nodes arrive in later milestones.
+    intra-repo ``imports`` edges across the full file set, and finally projects the authored
+    intent/plan artifacts (and their cross-family edges) on top. The memory family arrives later.
     """
     root = Path(root)
     cache_path = root / "yigraf" / "cache" / "structure.json"
@@ -312,10 +313,31 @@ def build_graph(root: Path, config: dict) -> tuple[nx.DiGraph, BuildStats]:
             graph.add_edge(src, dst, **attrs)
 
     _add_import_edges(graph, file_imports, file_sources)
+    artifacts.project_into(graph, root)
 
     cache.prune(set(relpaths))
     cache.save(cache_path)
     return graph, stats
+
+
+def symbol_content_hash(root: Path, symbol_id: str, config: dict) -> str | None:
+    """The current ``astnorm`` ``content_hash`` of ``symbol_id``, or ``None`` if it doesn't resolve.
+
+    Parses only the file the locator names (``sym:<path>#<name>``) rather than the whole repo, so
+    ``yigraf link`` can stamp an anchor cheaply against working-tree content (docs/m2-notes.md §4).
+    """
+    if not symbol_id.startswith("sym:"):
+        return None
+    path_cf = symbol_id[len("sym:") :].split("#", 1)[0]
+    ignore_dirs = {p.rstrip("/").strip() for p in config.get("ignore", [])}
+    parser = Parser(_PY_LANGUAGE)
+    for relpath in _iter_python_files(Path(root), ignore_dirs):
+        if PurePosixPath(relpath).as_posix().casefold() != path_cf:
+            continue
+        projection = extract_file(relpath, (Path(root) / relpath).read_bytes(), parser)
+        node = projection.nodes.get(symbol_id)
+        return node.get("content_hash") if node else None
+    return None
 
 
 def _iter_python_files(root: Path, ignore_dirs: set[str]) -> list[str]:
