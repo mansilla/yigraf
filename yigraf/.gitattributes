@@ -1,0 +1,4 @@
+# graph.json is reconciled with yigraf's union merge driver (max survival / latest last_seen /
+# union of nodes+edges), registered in .git/config by the git hooks (M2+). Until that driver is
+# registered, git falls back to an ordinary 3-way merge.
+graph.json merge=yigraf-graph

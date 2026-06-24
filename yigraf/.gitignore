@@ -1,0 +1,7 @@
+# yigraf runtime state — rebuildable or machine-local, never committed (DESIGN.md R1).
+# index/  : embedding index, rebuilt from memory+intent text
+# cache/  : SHA256 content-extraction cache
+# .local/ : volatile telemetry (usage / last_seen) — soft ranking hints only
+index/
+cache/
+.local/
