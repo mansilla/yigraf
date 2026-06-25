@@ -434,18 +434,46 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
     return _render(graph, ranked, "active plan & governing intents", sorted(drift_lines), reconcile, budget)
 
 
+def _merge_seeds(lex_match: dict[str, float], sem_match: dict[str, float], config: dict) -> list[str]:
+    """Union of the lexical and semantic seed sets (retrieval-design §2: union-of-top-k, not a mixed
+    ranking — the two scorers are on different scales, so we cut each independently then merge)."""
+    seeds = list(_seeds(lex_match, config))
+    for s in _seeds(sem_match, config):
+        if s not in seeds:
+            seeds.append(s)
+    return seeds
+
+
+def _combine_match(lex_match: dict[str, float], sem_match: dict[str, float],
+                   hops: dict[str, int]) -> dict[str, float]:
+    """The ``match`` component for ranking: each seeder's scores normalized independently, then max'd.
+
+    Normalizing per source before combining keeps a raw IDF score (~tens) from dominating a cosine
+    (~0–1); ``_rank`` re-normalizes the result, so the absolute scale doesn't matter, only the merge.
+    """
+    lex_n = _normalize({n: lex_match[n] for n in hops if lex_match.get(n, 0.0) > 0})
+    sem_n = _normalize({n: max(0.0, sem_match[n]) for n in hops if sem_match.get(n, 0.0) > 0})
+    return {n: max(lex_n.get(n, 0.0), sem_n.get(n, 0.0)) for n in hops}
+
+
 def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = None,
-            budget_tokens: int | None = None) -> ContextResult:
-    """Run the full query pipeline over an already-built ``graph`` and render within budget."""
+            budget_tokens: int | None = None, semantic_match: dict[str, float] | None = None) -> ContextResult:
+    """Run the full query pipeline over an already-built ``graph`` and render within budget.
+
+    ``semantic_match`` (``{node_id: cosine}`` from :mod:`yigraf.embeddings`, scoped to memory+intent)
+    is the M8 semantic seeder, fused with the lexical/IDF seeder. ``None``/empty ⇒ pure lexical (= v0).
+    """
     budget = budget_tokens or config.get("retrieval", {}).get("query_token_budget", 4000)
+    sem_match = semantic_match or {}
 
     corpus = _build_corpus(graph)
-    match = _match_scores(corpus, terms(query))
-    seeds = _seeds(match, config)
+    lex_match = _match_scores(corpus, terms(query))
+    seeds = _merge_seeds(lex_match, sem_match, config)
     hops = _traverse(graph, seeds, config)
 
     if family:
         hops = {n: h for n, h in hops.items() if graph.nodes[n].get("family") == family}
+    match = _combine_match(lex_match, sem_match, hops)
     ranked = _rank(graph, hops, match, config)
 
     drift_items = compute_drift(graph)

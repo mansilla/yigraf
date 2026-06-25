@@ -33,6 +33,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     # Relevance prior weights (graph-design §3). Tuned empirically later.
     "relevance": {"w1": 1.0, "w2": 1.0, "w3": 1.0, "w4": 1.0},
+    # Embeddings (M8) — scoped semantic recall over memory+intent only (retrieval-design §10).
+    # Optional: install the `[embeddings]` extra. Absent backend ⇒ graceful lexical-only fallback.
+    "embeddings": {
+        "backend": "local",  # local | ollama | openai | none
+        "model": "BAAI/bge-small-en-v1.5",
+        "dup_cosine": 0.9,  # write-time near-duplicate threshold for `remember` (capture-flow §4)
+    },
 }
 
 # Commented YAML written by ``yigraf init``. A test asserts this parses to DEFAULT_CONFIG, so the
@@ -75,6 +82,14 @@ relevance:                     # w1·log(1+refs_in) + w2·recency + w3·maturity
   w2: 1.0
   w3: 1.0
   w4: 1.0
+
+# --- Embeddings (M8) — scoped semantic recall over memory+intent (docs/retrieval-design.md §10) ---
+# Optional: requires the `[embeddings]` extra (numpy + sentence-transformers). With no backend,
+# retrieval degrades gracefully to the lexical/IDF seeder (= v0) — semantic recall is never required.
+embeddings:
+  backend: local                # local | ollama | openai | none
+  model: BAAI/bge-small-en-v1.5  # local CPU model, version-pinned, downloaded on first use
+  dup_cosine: 0.9               # write-time near-duplicate threshold for `remember` (capture-flow §4)
 """
 
 
