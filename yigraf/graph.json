@@ -2446,6 +2446,24 @@
     {
       "confidence": "EXTRACTED",
       "relation": "contains",
+      "source": "plan:memory-milestone",
+      "target": "task:memory-milestone/1"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "plan:memory-milestone",
+      "target": "task:memory-milestone/2"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "plan:memory-milestone",
+      "target": "task:memory-milestone/3"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
       "source": "plan:yigraf-v0",
       "target": "task:yigraf-v0/1"
     },
@@ -4312,6 +4330,56 @@
     {
       "confidence": "EXTRACTED",
       "relation": "tracks",
+      "source": "task:memory-milestone/1",
+      "target": "int:memory-family"
+    },
+    {
+      "anchor": "3a0ffc70bdc2c78fe3d7fbd06ad3882773b521ab84488382ce078fa38959f52e",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "source": "task:memory-milestone/1",
+      "target": "sym:src/yigraf/cli.py#remember"
+    },
+    {
+      "anchor": "154d8d28e1cd5dfbafefdd4d0e4d53c3cc73e5f61807e60e3ae4fd4bdcb7c4f1",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "source": "task:memory-milestone/1",
+      "target": "sym:src/yigraf/memory.py#project_into"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "tracks",
+      "source": "task:memory-milestone/2",
+      "target": "int:semantic-recall"
+    },
+    {
+      "anchor": "0f6b3cddfcc37e03f0dd6183203c0f37ebc4f2368a7eb79c94b12b2f87c0634d",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "source": "task:memory-milestone/2",
+      "target": "sym:src/yigraf/embeddings.py#refresh_index"
+    },
+    {
+      "anchor": "737eeb81b76e72bbb53f42c8b5ed0f771db736544b7e03bac548f7d140ab3951",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "source": "task:memory-milestone/2",
+      "target": "sym:src/yigraf/embeddings.py#semantic_scores"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "tracks",
+      "source": "task:memory-milestone/3",
+      "target": "int:memory-maturity"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "tracks",
       "source": "task:yigraf-v0/1",
       "target": "int:structure-index"
     },
@@ -5185,6 +5253,36 @@
     },
     {
       "confidence": "EXTRACTED",
+      "design": "survival/usage/last_seen are authoritative in graph.json and preserved across rebuilds (edge-derived counters recomputed, runtime counters kept); a union-merge driver reconciles branches (max survival / latest last_seen).",
+      "family": "intent",
+      "id": "int:memory-maturity",
+      "kind": "requirement",
+      "label": "yigraf SHALL earn a memory's certainty behaviorally \u2014 promoting it from working to settled after it survives K boundaries un-superseded \u2014 and SHALL garbage-collect pure churn while retaining referenced rejected alternatives.",
+      "scenarios": [
+        "Given a memory un-superseded across K commit boundaries, When the graph is rebuilt, Then it is settled and ranks higher.",
+        "Given a superseded memory with no refs and no usage, When GC runs, Then it is deleted; if it was referenced, Then it is kept as a rejected-alternative."
+      ],
+      "source_file": "intents/memory-maturity.md",
+      "statement": "yigraf SHALL earn a memory's certainty behaviorally \u2014 promoting it from working to settled after it survives K boundaries un-superseded \u2014 and SHALL garbage-collect pure churn while retaining referenced rejected alternatives.",
+      "status": "proposed"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "design": "Scoped hybrid: lexical/IDF over all families + a bge-small embedding index over memory+intent only; union-of-top-k seeds; ranking match = per-source-normalized max of lexical and cosine. numpy brute-force, no vector DB.",
+      "family": "intent",
+      "id": "int:semantic-recall",
+      "kind": "requirement",
+      "label": "yigraf SHALL recall memory and intent nodes by meaning \u2014 not only shared identifiers \u2014 and SHALL degrade to lexical retrieval when no embedding backend is available.",
+      "scenarios": [
+        "Given a query phrased differently from a decision's wording, When yigraf context runs with an embedding backend, Then the decision is seeded and surfaced.",
+        "Given no embedding backend installed, When yigraf context runs, Then it returns lexical results identically to v0, with no error."
+      ],
+      "source_file": "intents/semantic-recall.md",
+      "statement": "yigraf SHALL recall memory and intent nodes by meaning \u2014 not only shared identifiers \u2014 and SHALL degrade to lexical retrieval when no embedding backend is available.",
+      "status": "active"
+    },
+    {
+      "confidence": "EXTRACTED",
       "design": "tree-sitter extraction; astnorm-v1 hash drops comments/docstrings, canon quotes, excludes the symbol's own name.",
       "family": "intent",
       "id": "int:structure-index",
@@ -5787,6 +5885,14 @@
         121,
         0
       ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "family": "plan",
+      "id": "plan:memory-milestone",
+      "kind": "plan",
+      "label": "Memory milestone (post-v0)",
+      "phase": "active"
     },
     {
       "confidence": "EXTRACTED",
@@ -11065,6 +11171,33 @@
         55,
         69
       ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "family": "plan",
+      "id": "task:memory-milestone/1",
+      "kind": "task",
+      "label": "M7 \u2014 memory node family + capture verbs (remember/note-constraint/supersede); concerns drift",
+      "order": 1,
+      "state": "done"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "family": "plan",
+      "id": "task:memory-milestone/2",
+      "kind": "task",
+      "label": "M8 \u2014 embedding index + semantic seeder + write-time dedup (scoped hybrid)",
+      "order": 2,
+      "state": "done"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "family": "plan",
+      "id": "task:memory-milestone/3",
+      "kind": "task",
+      "label": "M9 \u2014 counters/maturity/GC + runtime telemetry (survival/usage/last_seen, union-merge driver)",
+      "order": 3,
+      "state": "todo"
     },
     {
       "confidence": "EXTRACTED",

@@ -105,6 +105,12 @@ authored artifacts (TRUTH)          repo source (TRUTH)
 - **R6 — Write-time dedup (near-dup + contradiction) is a MEMORY-MILESTONE feature, gated on
   embeddings.** v0 dedup = "edge exists or not." Contradiction detection (needed for supersede) must be
   designed before the memory milestone. [review #2]
+  - *Realized (M8):* the **near-dup half** ships — `remember` refuses an embedding-near-duplicate
+    sharing a serves/concerns target (advisory; `--new` forces, `supersede` bypasses). **Contradiction
+    detection is *not* yet built**, and in practice didn't gate supersede: `yigraf supersede` is
+    **agent-asserted** (the agent declares the mind-change), so we never needed to *auto-infer*
+    opposition. The opposing-statement check stays open (capture-flow §7) for the day capture becomes
+    less explicit. `dup_cosine` threshold is coarse — tune in M9 (caveats M8).
 - **R7 — v0 enforcement is `implements`-only.** `concerns`-edge drift arrives with the memory family.
   Every "…and why?" / `mem:00x` worked example is **memory-milestone**, not v0. v0's hero query is
   "what governs this code / what's left on this plan" (structure+plan+`implements`+drift, lexical

@@ -166,14 +166,21 @@ re-run during the background GC pass (graph-design §3) so duplicates that slip 
 
 - **v0:** `yigraf link` (implements/tracks) + the PostToolUse boundary nudge + anchor writing + drift.
   No memory nodes yet, so no embedding-based dedup — dedup is trivial (edge exists or not).
-- **Memory milestone:** `remember`/`supersede`/`note-constraint`, embedding dedup/contradiction,
-  maturity promotion, GC of churn.
-- **Later:** pre-`/clear` distillation (option B), artifact mining for bootstrap (memory-model §2.4).
+- **Memory milestone — M7+M8 (done):** `remember`/`supersede`/`note-constraint` (M7); embedding
+  near-duplicate dedup at write time (M8, §4). **Still M9:** maturity promotion + GC of churn (they
+  need the runtime `survival`/`usage` counters); and *contradiction* detection (M8 ships the near-dup
+  half only — §7).
+- **Later:** pre-`/clear` distillation (option B); the boundary-A/B nudges (UserPromptSubmit /
+  plan-mode-exit, §0a); artifact mining for bootstrap (memory-model §2.4).
 
 ## 7. Open / tunable
 
 - Dedup cosine threshold (near-dup vs new) and contradiction detection (same-target + opposing
-  statement — heuristic vs a cheap LLM check via the host).
+  statement — heuristic vs a cheap LLM check via the host). *(M8 status: the near-dup guard ships at
+  `dup_cosine=0.9` — advisory, `--new` forces, `supersede` bypasses — but the threshold is coarse
+  (`bge-small` paraphrases sit ~0.8–0.9, so looser twins slip through) and **contradiction detection
+  is not yet built**. Tune + add the opposing-statement check in M9 / alongside the GC merge pass.
+  caveats M8.)*
 
 - **Nudge assertiveness** — *how often the PostToolUse hook speaks up.* The hook fires on every
   Write/Edit; the question is when it bothers to inject "link this?". High = nudge on every unlinked

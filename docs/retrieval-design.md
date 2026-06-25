@@ -115,8 +115,10 @@ superseded; detect `refresh()` hash ≠ anchor → **drift**. Tight injection:
 - **v0:** action-driven hook + query-driven with the **lexical/IDF seeder only** (no embeddings yet);
   traversal + drift surfacing; ranking with `match` + `proximity` + a basic `relevance` (`refs_in`,
   `superseded_in`). Proves the legible+enforceable loop on structure+plan.
-- **Memory milestone:** add the **semantic seeder** + embedding index (scoped hybrid), full counter
-  relevance + maturity, superseded/rejected-alternative handling.
+- **Memory milestone — M8 (done):** the **semantic seeder** + embedding index (scoped hybrid, §10) is
+  shipped — unioned with the lexical seeder, fused into `match`, graceful lexical fallback;
+  superseded/rejected-alternative handling lands with the memory family (M7). **Still M9:** the full
+  counter `relevance` (recency `w2` + maturity `w3`) once the runtime telemetry counters exist.
 
 ## 9. Default parameters (set by intuition + Graphify; all tunable in `config.yaml`)
 

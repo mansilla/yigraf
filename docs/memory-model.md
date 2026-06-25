@@ -91,7 +91,7 @@ never sees again is worthless ("can't see it ⇒ doesn't exist").
   queries Graphify already nails. Fusion = reciprocal-rank-style merge of (semantic score,
   graph-proximity score).
 
-## 5. Open decision before building the memory milestone
+## 5. Capture mechanism — decided + shipped (M7)
 
 **Which capture mechanism leads, and how heavy is the distillation backstop?**
 - (A) Agent-asserted only (#1+#2) — cheapest, deterministic, but misses what the agent doesn't think
@@ -101,8 +101,12 @@ never sees again is worthless ("can't see it ⇒ doesn't exist").
 - (C) Distillation-first — capture mostly by end-of-session mining; least friction during work, most
   drift from ground truth.
 
-Recommendation: **(A) for the first memory milestone, add (B) once links prove valuable.** Confirm
-before building.
+**Resolved (2026-06-24): (A) for the first memory milestone**, shipped in **M7** as
+`remember`/`note-constraint`/`supersede` (`docs/m7-notes.md`). (B) — the pre-`/clear` distillation
+backstop — and the boundary-A/B nudges remain deferred until agent-asserted capture proves
+insufficient (caveats M7).
 
-Embedding engine decided — local `bge-small-en-v1.5` default, plain-file index + brute-force cosine,
-pluggable backends, graceful fallback to lexical-only. Spec: `docs/retrieval-design.md` §10.
+Embedding engine — local `bge-small-en-v1.5` default, plain-file index + brute-force cosine, pluggable
+backends, graceful fallback to lexical-only — **shipped in M8** (`docs/m8-notes.md`); spec:
+`docs/retrieval-design.md` §10. §4's scoped-hybrid fusion (semantic seeder unioned with the lexical
+seeder, fused into ranking) is live there too.

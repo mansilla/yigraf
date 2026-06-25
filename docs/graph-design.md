@@ -206,8 +206,11 @@ edges:
 - **v0** (`docs/yigraf-v0.md`): structure family + plan/intent (lightweight) + `implements`/`tracks`
   edges + drift + the hook + `yigraf context`. Counters present but only `refs_in`/`superseded_in`
   needed. No embeddings yet (structural/IDF retrieval only).
-- **Memory milestone**: memory family + `serves`/`concerns`/`supersedes` + capture-at-boundary +
-  maturity + the embedding index (scoped hybrid) + full relevance/GC.
+- **Memory milestone — M7+M8 (done):** memory family + `serves`/`concerns`/`supersedes` +
+  capture-at-boundary (`remember`/`note-constraint`/`supersede`) + the embedding index (scoped hybrid)
+  + write-time dedup. Counters so far: `refs_in`/`superseded_in`/`supersedes_out` (all edge-derived,
+  recomputed on build). **Still M9:** the *runtime* counters (`survival`/`usage`/`last_seen`,
+  authoritative + preserved), `working→settled` maturity, the GC pass, and the union-merge driver.
 - **Later**: non-code modalities, auto-inferred edges, cross-project graph, team MCP.
 
 ## 8. Open questions

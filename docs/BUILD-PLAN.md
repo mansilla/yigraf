@@ -94,7 +94,54 @@ forcing function for quality and the first real demo.
 - **Verify before M5:** re-confirm the PostToolUse `additionalContext` shape + SessionStart matchers
   against current Claude Code docs (versions move).
 
-## Post-v0 (not in this plan)
-Memory family + capture verbs (`remember`/`supersede`/`note-constraint`) + embeddings (bge-small) +
-write-time dedup/contradiction (R6) + maturity/GC + the full three-boundary capture taxonomy +
-multi-host breadth + non-code modalities.
+---
+
+## Memory milestone (post-v0) — in progress
+
+The fourth node family + the *why*. Decomposed into three milestones on the M0–M6 cadence. Specs:
+`docs/memory-model.md`, `docs/capture-flow.md`, `docs/retrieval-design.md` §10, `docs/graph-design.md` §3.
+
+### M7 — Memory node family + capture verbs ✅ (commit 4c795aa, `docs/m7-notes.md`)
+- `memory/<seq>-<slug>.md` artifacts (`decision`/`constraint`/`rationale`/`rejected-alternative`/
+  `learned-fact`/`preference`); `yigraf remember` / `note-constraint` / `supersede`; projection of
+  `serves`/`concerns`/`supersedes` edges. **`concerns` is the 2nd drift-bearing relation** — reuses the
+  `implements` rename/soft/hard machinery via one `{implements, concerns}` code path. `superseded_in`/
+  `supersedes_out` counters materialized; `Decisions (why)` render group; agent-asserted capture only
+  (memory-model §5 option A). Embedding-free + deterministic.
+- **Done-test (met):** `remember` → node + anchored `concerns` edge (no drift); edit the code → soft
+  `concerns` drift; rename → auto-re-anchor; `supersede` → active out-ranks `·superseded`;
+  `note-constraint` → promotable. 14 tests.
+
+### M8 — Embedding index + semantic seeder + write-time dedup ✅ (commit e021b22, `docs/m8-notes.md`)
+- Pluggable model backend (default local `bge-small-en-v1.5`) + a numpy brute-force cosine index over
+  **memory+intent only** (gitignored `index/`, no vector DB). Semantic seeder **fused** with the
+  lexical/IDF seeder (union-of-top-k seeds; per-source-normalized `match`). Write-time near-duplicate
+  guard (`dup_cosine`, `--new` to force; `supersede` bypasses). Optional `[embeddings]` extra; **graceful
+  lexical fallback** when absent. The hot action-driven hook never embeds (seeds from the locus).
+- **Done-test (met):** a paraphrased, lexically-disjoint query ranks the right memory/intent node first;
+  near-dup `remember` refused; **suite green with *and* without the extra** (112 / 114).
+
+### M9 — Counters / maturity / GC + runtime telemetry (NEXT)
+- The first **non-recomputable** state. `survival`/`usage`/`last_seen` become **authoritative in
+  `graph.json`** and are **preserved** across rebuilds (edge-derived counters still recomputed; runtime
+  counters kept, not overwritten — graph-design §3). `working → settled` promotion once `survival ≥ K`.
+  The relevance prior gains **recency** (`w2`, exp-decay on `last_seen`) + **maturity** (`w3`). A **GC
+  pass**: delete pure churn (`superseded_in>0 ∧ refs_in=0 ∧ usage=0`), retain a referenced predecessor
+  as `rejected-alternative`/`archived`. Register the **`graph.json` union-merge driver** (max `survival`
+  / latest `last_seen` / union of nodes+edges) via the git hooks so teammates/CI reconcile cleanly.
+- **Done-test:** capture a decision; after `K` rebuild/commit boundaries un-superseded it promotes to
+  `settled` and its relevance rises; a re-injection bumps `usage`/`last_seen` and those **survive a
+  rebuild** (not recomputed away); a superseded, never-referenced churn node is GC'd while a referenced
+  one is kept as `rejected-alternative`; two branches' counter divergence merges via the driver.
+- **Open going in:** `K` and the `w*`/`α,β,γ` weights are intuition-set (graph-design §8) — tune
+  empirically once telemetry exists; `usage` merge reconciliation is best-effort (graph-design §8).
+
+## Still post-v0 (after the memory milestone)
+- **Capture breadth:** pre-`/clear` distillation backstop (memory-model §2 option B); the boundary-A/B
+  capture nudges — `UserPromptSubmit` / plan-mode-exit (capture-flow §0a); artifact mining for bootstrap.
+- **Retrieval:** `dup_cosine` tuning + **contradiction** detection (vs near-dup; capture-flow §7);
+  non-local embedding backends (`ollama`/`openai`/`voyage`); multilingual embeddings.
+- **Reach:** multi-language extraction (reuse Graphify grammar breadth); non-code modalities;
+  cross-project graph; team MCP.
+- **Hardening:** hook portability — `install-claude-hooks` bakes an absolute interpreter path (caveats
+  M5 🔴); the PostToolUse full-graph-rebuild-per-edit cost (caveats M5).

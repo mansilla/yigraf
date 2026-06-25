@@ -8,9 +8,13 @@ check* that fires when code and its governing intent diverge). It retrofits onto
 Design is in [`docs/DESIGN.md`](docs/DESIGN.md) (the authoritative decision log) and sequenced into
 milestones in [`docs/BUILD-PLAN.md`](docs/BUILD-PLAN.md). Python; Claude Code first.
 
-> **Status: M0 — scaffold.** `yigraf init` lays down the workspace. Structure indexing (M1),
-> intent/plan linking (M2), drift detection (M3), retrieval (M4), and the Claude Code hooks/skill
-> (M5) follow.
+> **Status: v0 spine complete (M0–M6) + memory milestone in progress (M7–M8 done, M9 next).**
+> Structure indexing, intent/plan linking, drift detection, token-cheap retrieval, and the Claude
+> Code hooks/skill all work — and yigraf is self-hosted (it indexes its own repo). The **memory**
+> family is live: `remember`/`note-constraint`/`supersede` capture decisions, the `concerns` drift
+> check fires when governed code changes, and scoped **semantic recall** (optional `[embeddings]`
+> extra) finds the *why* by meaning. Remaining: counters/maturity/GC + runtime telemetry (M9). See
+> [`docs/BUILD-PLAN.md`](docs/BUILD-PLAN.md).
 
 ## Quickstart (dev)
 
@@ -19,6 +23,9 @@ uv sync                 # create the venv + install deps (incl. dev tools)
 uv run yigraf --help
 uv run yigraf init      # create ./yigraf/ in the current repo
 uv run pytest
+
+uv pip install -e '.[embeddings]'   # optional: scoped semantic recall (bge-small). Falls back to
+                                    # lexical retrieval when absent — never a hard dependency.
 ```
 
 ## Layout
