@@ -29,7 +29,7 @@ edges:
     tracks: int:drift-detection
   task:yigraf-v0/4:
     implements:
-    - anchor: a53b3e3d1b86458cbdc27ecb9a24ae30237c308d5ec919bad0c39be4c308d14f
+    - anchor: bfd78227bf75a7c05485f844617cfe2cb98600b37e893e30f032e04f63367243
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/retrieval.py#context
     tracks: int:token-cheap-context

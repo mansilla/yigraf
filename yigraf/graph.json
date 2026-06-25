@@ -127,6 +127,12 @@
     },
     {
       "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "file:src/yigraf/embeddings.py",
+      "target": "module:src/yigraf/embeddings.py"
+    },
+    {
+      "confidence": "EXTRACTED",
       "relation": "imports",
       "source": "file:src/yigraf/extract.py",
       "target": "file:src/yigraf/__init__.py"
@@ -208,6 +214,18 @@
       "relation": "contains",
       "source": "file:src/yigraf/scaffold.py",
       "target": "module:src/yigraf/scaffold.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
+      "source": "file:tests/conftest.py",
+      "target": "file:src/yigraf/__init__.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "file:tests/conftest.py",
+      "target": "module:tests/conftest.py"
     },
     {
       "confidence": "EXTRACTED",
@@ -388,6 +406,36 @@
       "relation": "contains",
       "source": "file:tests/test_drift.py",
       "target": "module:tests/test_drift.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
+      "source": "file:tests/test_embeddings.py",
+      "target": "file:src/yigraf/__init__.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
+      "source": "file:tests/test_embeddings.py",
+      "target": "file:src/yigraf/cli.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
+      "source": "file:tests/test_embeddings.py",
+      "target": "file:src/yigraf/config.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
+      "source": "file:tests/test_embeddings.py",
+      "target": "file:src/yigraf/graph.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "file:tests/test_embeddings.py",
+      "target": "module:tests/test_embeddings.py"
     },
     {
       "confidence": "EXTRACTED",
@@ -573,6 +621,42 @@
     },
     {
       "confidence": "EXTRACTED",
+      "relation": "serves",
+      "source": "mem:004",
+      "target": "int:token-cheap-context"
+    },
+    {
+      "anchor": "0f6b3cddfcc37e03f0dd6183203c0f37ebc4f2368a7eb79c94b12b2f87c0634d",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:004",
+      "target": "sym:src/yigraf/embeddings.py#refresh_index"
+    },
+    {
+      "anchor": "737eeb81b76e72bbb53f42c8b5ed0f771db736544b7e03bac548f7d140ab3951",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:004",
+      "target": "sym:src/yigraf/embeddings.py#semantic_scores"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "serves",
+      "source": "mem:005",
+      "target": "int:token-cheap-context"
+    },
+    {
+      "anchor": "847c43c6c2c79bf1601a2f5fd4c91cfff59b9a8a95be115a0af28d044b96fc06",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:005",
+      "target": "sym:src/yigraf/embeddings.py#get_embedder"
+    },
+    {
+      "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:src/yigraf/artifacts.py",
       "target": "sym:src/yigraf/artifacts.py#Implements"
@@ -732,6 +816,12 @@
       "relation": "contains",
       "source": "module:src/yigraf/cli.py",
       "target": "sym:src/yigraf/cli.py#_capture_memory"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/cli.py",
+      "target": "sym:src/yigraf/cli.py#_dedup_guard"
     },
     {
       "confidence": "EXTRACTED",
@@ -930,6 +1020,96 @@
       "relation": "contains",
       "source": "module:src/yigraf/drift.py",
       "target": "sym:src/yigraf/drift.py#resolve_renames"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#EmbeddingIndex"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#_LocalEmbedder"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#_emb_config"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#_embed_query_text"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#_memory_targets"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#_save_index"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#_text_hash"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#get_embedder"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#index_dir"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#load_index"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#model_name"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#most_similar_memory"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#node_text"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#refresh_index"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#semantic_scores"
     },
     {
       "confidence": "EXTRACTED",
@@ -1283,6 +1463,12 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:src/yigraf/retrieval.py",
+      "target": "sym:src/yigraf/retrieval.py#_combine_match"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/retrieval.py",
       "target": "sym:src/yigraf/retrieval.py#_drift_line"
     },
     {
@@ -1314,6 +1500,12 @@
       "relation": "contains",
       "source": "module:src/yigraf/retrieval.py",
       "target": "sym:src/yigraf/retrieval.py#_memory_links"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/retrieval.py",
+      "target": "sym:src/yigraf/retrieval.py#_merge_seeds"
     },
     {
       "confidence": "EXTRACTED",
@@ -1434,6 +1626,18 @@
       "relation": "contains",
       "source": "module:src/yigraf/scaffold.py",
       "target": "sym:src/yigraf/scaffold.py#init_workspace"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/conftest.py",
+      "target": "sym:tests/conftest.py#_disable_embeddings"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/conftest.py",
+      "target": "sym:tests/conftest.py#pytest_configure"
     },
     {
       "confidence": "EXTRACTED",
@@ -1860,6 +2064,54 @@
       "relation": "contains",
       "source": "module:tests/test_drift.py",
       "target": "sym:tests/test_drift.py#test_renaming_auto_reanchors_with_no_drift"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_embeddings.py",
+      "target": "sym:tests/test_embeddings.py#_repo_with_symbol"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_embeddings.py",
+      "target": "sym:tests/test_embeddings.py#test_dedup_guard_blocks_a_near_duplicate_then_new_forces"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_embeddings.py",
+      "target": "sym:tests/test_embeddings.py#test_index_save_load_and_query_round_trip"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_embeddings.py",
+      "target": "sym:tests/test_embeddings.py#test_load_index_rejects_a_model_mismatch"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_embeddings.py",
+      "target": "sym:tests/test_embeddings.py#test_no_backend_means_pure_lexical"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_embeddings.py",
+      "target": "sym:tests/test_embeddings.py#test_node_text_scopes_to_memory_and_intent"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_embeddings.py",
+      "target": "sym:tests/test_embeddings.py#test_real_semantic_recall_ranks_a_paraphrase"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_embeddings.py",
+      "target": "sym:tests/test_embeddings.py#test_semantic_match_seeds_a_node_lexical_would_miss"
     },
     {
       "confidence": "EXTRACTED",
@@ -2393,6 +2645,12 @@
       "confidence": "EXTRACTED",
       "relation": "calls",
       "source": "sym:src/yigraf/cli.py#_capture_memory",
+      "target": "sym:src/yigraf/cli.py#_dedup_guard"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/cli.py#_capture_memory",
       "target": "sym:src/yigraf/cli.py#_rebuild"
     },
     {
@@ -2568,6 +2826,150 @@
       "relation": "calls",
       "source": "sym:src/yigraf/drift.py#resolve_renames",
       "target": "sym:src/yigraf/drift.py#_hash_index"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/embeddings.py#EmbeddingIndex",
+      "target": "sym:src/yigraf/embeddings.py#EmbeddingIndex.query"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/embeddings.py#EmbeddingIndex",
+      "target": "sym:src/yigraf/embeddings.py#EmbeddingIndex.vector"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/embeddings.py#_LocalEmbedder",
+      "target": "sym:src/yigraf/embeddings.py#_LocalEmbedder.__init__"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/embeddings.py#_LocalEmbedder",
+      "target": "sym:src/yigraf/embeddings.py#_LocalEmbedder.encode"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#_save_index",
+      "target": "sym:src/yigraf/embeddings.py#index_dir"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#get_embedder",
+      "target": "sym:src/yigraf/embeddings.py#_LocalEmbedder"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#get_embedder",
+      "target": "sym:src/yigraf/embeddings.py#_emb_config"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#get_embedder",
+      "target": "sym:src/yigraf/embeddings.py#model_name"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#load_index",
+      "target": "sym:src/yigraf/embeddings.py#EmbeddingIndex"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#load_index",
+      "target": "sym:src/yigraf/embeddings.py#index_dir"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#load_index",
+      "target": "sym:src/yigraf/embeddings.py#model_name"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#model_name",
+      "target": "sym:src/yigraf/embeddings.py#_emb_config"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#most_similar_memory",
+      "target": "sym:src/yigraf/embeddings.py#_memory_targets"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#most_similar_memory",
+      "target": "sym:src/yigraf/embeddings.py#get_embedder"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#most_similar_memory",
+      "target": "sym:src/yigraf/embeddings.py#load_index"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#refresh_index",
+      "target": "sym:src/yigraf/embeddings.py#_save_index"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#refresh_index",
+      "target": "sym:src/yigraf/embeddings.py#_text_hash"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#refresh_index",
+      "target": "sym:src/yigraf/embeddings.py#get_embedder"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#refresh_index",
+      "target": "sym:src/yigraf/embeddings.py#load_index"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#refresh_index",
+      "target": "sym:src/yigraf/embeddings.py#model_name"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#refresh_index",
+      "target": "sym:src/yigraf/embeddings.py#node_text"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#semantic_scores",
+      "target": "sym:src/yigraf/embeddings.py#_embed_query_text"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#semantic_scores",
+      "target": "sym:src/yigraf/embeddings.py#get_embedder"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#semantic_scores",
+      "target": "sym:src/yigraf/embeddings.py#load_index"
     },
     {
       "confidence": "EXTRACTED",
@@ -2914,6 +3316,12 @@
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
+      "source": "sym:src/yigraf/retrieval.py#_combine_match",
+      "target": "sym:src/yigraf/retrieval.py#_normalize"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
       "source": "sym:src/yigraf/retrieval.py#_hubs",
       "target": "sym:src/yigraf/retrieval.py#_percentile"
     },
@@ -2922,6 +3330,12 @@
       "relation": "calls",
       "source": "sym:src/yigraf/retrieval.py#_memory_line",
       "target": "sym:src/yigraf/retrieval.py#_memory_links"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/retrieval.py#_merge_seeds",
+      "target": "sym:src/yigraf/retrieval.py#_seeds"
     },
     {
       "confidence": "EXTRACTED",
@@ -2981,6 +3395,12 @@
       "confidence": "EXTRACTED",
       "relation": "calls",
       "source": "sym:src/yigraf/retrieval.py#context",
+      "target": "sym:src/yigraf/retrieval.py#_combine_match"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/retrieval.py#context",
       "target": "sym:src/yigraf/retrieval.py#_drift_line"
     },
     {
@@ -2993,6 +3413,12 @@
       "confidence": "EXTRACTED",
       "relation": "calls",
       "source": "sym:src/yigraf/retrieval.py#context",
+      "target": "sym:src/yigraf/retrieval.py#_merge_seeds"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/retrieval.py#context",
       "target": "sym:src/yigraf/retrieval.py#_rank"
     },
     {
@@ -3000,12 +3426,6 @@
       "relation": "calls",
       "source": "sym:src/yigraf/retrieval.py#context",
       "target": "sym:src/yigraf/retrieval.py#_render"
-    },
-    {
-      "confidence": "EXTRACTED",
-      "relation": "calls",
-      "source": "sym:src/yigraf/retrieval.py#context",
-      "target": "sym:src/yigraf/retrieval.py#_seeds"
     },
     {
       "confidence": "EXTRACTED",
@@ -3484,6 +3904,18 @@
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
+      "source": "sym:tests/test_embeddings.py#test_dedup_guard_blocks_a_near_duplicate_then_new_forces",
+      "target": "sym:tests/test_embeddings.py#_repo_with_symbol"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_embeddings.py#test_real_semantic_recall_ranks_a_paraphrase",
+      "target": "sym:tests/test_embeddings.py#_repo_with_symbol"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
       "source": "sym:tests/test_extract.py#test_contains_edges_form_the_file_module_symbol_hierarchy",
       "target": "sym:tests/test_extract.py#_edges"
     },
@@ -3950,7 +4382,7 @@
       "target": "int:token-cheap-context"
     },
     {
-      "anchor": "a53b3e3d1b86458cbdc27ecb9a24ae30237c308d5ec919bad0c39be4c308d14f",
+      "anchor": "bfd78227bf75a7c05485f844617cfe2cb98600b37e893e30f032e04f63367243",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "implements",
@@ -4089,7 +4521,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "0fd4f567cb774b3b260b2b177fff025e9a11425414ecfb4a2cb0edc1620e780b",
+      "content_hash": "f16ed95f1b3adfa5d11f9135b236c420113196ea6f1bec5b91c531010eec582f",
       "family": "structure",
       "id": "file:src/yigraf/cli.py",
       "imports": [
@@ -4115,13 +4547,13 @@
       "source_range": [
         0,
         0,
-        455,
+        493,
         0
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "2aa0509de4ed4f4f9e3734df415af65d5922a35b766dc595003f50de623467bf",
+      "content_hash": "84c737242222b537d2cbdacdd511a34c6f9eeecfe9824dbe93f54b4d0ec52942",
       "family": "structure",
       "id": "file:src/yigraf/config.py",
       "imports": [
@@ -4137,7 +4569,7 @@
       "source_range": [
         0,
         0,
-        108,
+        123,
         0
       ]
     },
@@ -4159,6 +4591,30 @@
         0,
         0,
         113,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "e954c84218e6c85345d7c072d64bfdd0d258995f78cd2a0c92d7fd4e10cb49c7",
+      "family": "structure",
+      "id": "file:src/yigraf/embeddings.py",
+      "imports": [
+        "dataclasses",
+        "hashlib",
+        "json",
+        "networkx",
+        "pathlib",
+        "typing"
+      ],
+      "kind": "file",
+      "label": "src/yigraf/embeddings.py",
+      "language": "python",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        0,
+        0,
+        297,
         0
       ]
     },
@@ -4262,7 +4718,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "f0df91db0032d768aecb8e551726ec7fdba519791b38ebd70f32b550745aac6f",
+      "content_hash": "e142c75820986f84dfe8e7b4d54a7e3e2a233e3f90fff61b35a2aa437b6d793f",
       "family": "structure",
       "id": "file:src/yigraf/retrieval.py",
       "imports": [
@@ -4279,7 +4735,7 @@
       "source_range": [
         0,
         0,
-        463,
+        491,
         0
       ]
     },
@@ -4302,6 +4758,26 @@
         0,
         0,
         100,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "5b7da43ed484c83fb2b7c3e6081234708f564dd22c598417ebf1c1cefe0f5d0d",
+      "family": "structure",
+      "id": "file:tests/conftest.py",
+      "imports": [
+        "pytest",
+        "yigraf"
+      ],
+      "kind": "file",
+      "label": "tests/conftest.py",
+      "language": "python",
+      "source_file": "tests/conftest.py",
+      "source_range": [
+        0,
+        0,
+        24,
         0
       ]
     },
@@ -4481,6 +4957,32 @@
         0,
         0,
         96,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "d63ecc72b5f7adda2427481a7e93c696d75aef45adc04f678a8203cefa150ece",
+      "family": "structure",
+      "id": "file:tests/test_embeddings.py",
+      "imports": [
+        "importlib.util",
+        "pathlib",
+        "pytest",
+        "typer.testing",
+        "yigraf",
+        "yigraf.cli",
+        "yigraf.config",
+        "yigraf.graph"
+      ],
+      "kind": "file",
+      "label": "tests/test_embeddings.py",
+      "language": "python",
+      "source_file": "tests/test_embeddings.py",
+      "source_range": [
+        0,
+        0,
+        129,
         0
       ]
     },
@@ -4759,6 +5261,38 @@
       "why": "only memory carries supersedes edges, so stamping superseded_in:0 on every structure node would bloat graph.json; retrieval reads the counter with a 0 default"
     },
     {
+      "alternatives": "a FAISS/vector-DB index \u2014 needless native dependency at this scale; revisit only past ~100k nodes",
+      "confidence": "EXTRACTED",
+      "family": "memory",
+      "id": "mem:004",
+      "kind": "decision",
+      "label": "embed only memory and intent with a local bge-small model and brute-force numpy cosine \u2014 no vector DB at this scale",
+      "maturity": "working",
+      "promotable": false,
+      "source_file": "memory/004-embed-only-memory-and-intent-with.md",
+      "statement": "embed only memory and intent with a local bge-small model and brute-force numpy cosine \u2014 no vector DB at this scale",
+      "status": "active",
+      "superseded_in": 0,
+      "supersedes_out": 0,
+      "why": "we embed tens-to-thousands of short statements, not the codebase, so N is tiny; a query is one matmul (exact, sub-ms). FAISS/hnswlib add a heavy native dep that buys nothing until N is very large"
+    },
+    {
+      "alternatives": "require sentence-transformers in core deps \u2014 forces a torch install on every user for a feature that's an enhancement",
+      "confidence": "EXTRACTED",
+      "family": "memory",
+      "id": "mem:005",
+      "kind": "decision",
+      "label": "the embedding backend is an optional extra with graceful lexical fallback, never a hard dependency",
+      "maturity": "working",
+      "promotable": false,
+      "source_file": "memory/005-the-embedding-backend-is-an-optional.md",
+      "statement": "the embedding backend is an optional extra with graceful lexical fallback, never a hard dependency",
+      "status": "active",
+      "superseded_in": 0,
+      "supersedes_out": 0,
+      "why": "no host exposes an embedding endpoint to a hook, so embeddings are yigraf's own responsibility; making them required would break the zero-config promise \u2014 absent backend degrades to the v0 lexical seeder"
+    },
+    {
       "confidence": "EXTRACTED",
       "content_hash": "3d1c5eb0ced30596cb37688bffb0258517bc65ff788eb96cf097610896ee1d88",
       "family": "structure",
@@ -4840,7 +5374,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "0fd4f567cb774b3b260b2b177fff025e9a11425414ecfb4a2cb0edc1620e780b",
+      "content_hash": "f16ed95f1b3adfa5d11f9135b236c420113196ea6f1bec5b91c531010eec582f",
       "family": "structure",
       "id": "module:src/yigraf/cli.py",
       "kind": "module",
@@ -4850,13 +5384,13 @@
       "source_range": [
         0,
         0,
-        455,
+        493,
         0
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "2aa0509de4ed4f4f9e3734df415af65d5922a35b766dc595003f50de623467bf",
+      "content_hash": "84c737242222b537d2cbdacdd511a34c6f9eeecfe9824dbe93f54b4d0ec52942",
       "family": "structure",
       "id": "module:src/yigraf/config.py",
       "kind": "module",
@@ -4866,7 +5400,7 @@
       "source_range": [
         0,
         0,
-        108,
+        123,
         0
       ]
     },
@@ -4883,6 +5417,22 @@
         0,
         0,
         113,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "e954c84218e6c85345d7c072d64bfdd0d258995f78cd2a0c92d7fd4e10cb49c7",
+      "family": "structure",
+      "id": "module:src/yigraf/embeddings.py",
+      "kind": "module",
+      "label": "src/yigraf/embeddings.py",
+      "language": "python",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        0,
+        0,
+        297,
         0
       ]
     },
@@ -4952,7 +5502,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "f0df91db0032d768aecb8e551726ec7fdba519791b38ebd70f32b550745aac6f",
+      "content_hash": "e142c75820986f84dfe8e7b4d54a7e3e2a233e3f90fff61b35a2aa437b6d793f",
       "family": "structure",
       "id": "module:src/yigraf/retrieval.py",
       "kind": "module",
@@ -4962,7 +5512,7 @@
       "source_range": [
         0,
         0,
-        463,
+        491,
         0
       ]
     },
@@ -4979,6 +5529,22 @@
         0,
         0,
         100,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "5b7da43ed484c83fb2b7c3e6081234708f564dd22c598417ebf1c1cefe0f5d0d",
+      "family": "structure",
+      "id": "module:tests/conftest.py",
+      "kind": "module",
+      "label": "tests/conftest.py",
+      "language": "python",
+      "source_file": "tests/conftest.py",
+      "source_range": [
+        0,
+        0,
+        24,
         0
       ]
     },
@@ -5107,6 +5673,22 @@
         0,
         0,
         96,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "d63ecc72b5f7adda2427481a7e93c696d75aef45adc04f678a8203cefa150ece",
+      "family": "structure",
+      "id": "module:tests/test_embeddings.py",
+      "kind": "module",
+      "label": "tests/test_embeddings.py",
+      "language": "python",
+      "source_file": "tests/test_embeddings.py",
+      "source_range": [
+        0,
+        0,
+        129,
         0
       ]
     },
@@ -5743,19 +6325,36 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "641085cbef886e3a11861444a93f9621f6772ae8bc93e9c97367759f6791ce32",
+      "content_hash": "26546d01fabdbeea701d5aa740d2664a937b12d38e642b716b5b3d3a888ceadf",
       "family": "structure",
       "id": "sym:src/yigraf/cli.py#_capture_memory",
       "kind": "function",
       "label": "_capture_memory",
       "language": "python",
-      "signature": "def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, why: str, serves: list[str], concern_syms: list[str], rejected: str | None, supersedes: list[str], promotable: bool) -> memory.Memory:",
+      "signature": "def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, why: str, serves: list[str], concern_syms: list[str], rejected: str | None, supersedes: list[str], promotable: bool, force_new: bool = False) -> memory.Memory:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        215,
+        246,
         0,
-        234,
+        268,
         15
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "5bde77c55abc6c1dc3ed33532cf6f48b14980fab92b428d8522a3032a1f5fedb",
+      "family": "structure",
+      "id": "sym:src/yigraf/cli.py#_dedup_guard",
+      "kind": "function",
+      "label": "_dedup_guard",
+      "language": "python",
+      "signature": "def _dedup_guard(repo: Path, config: dict, statement: str, why: str, concerns: list[memory.Concern], serves: list[str]) -> None:",
+      "source_file": "src/yigraf/cli.py",
+      "source_range": [
+        223,
+        0,
+        243,
+        32
       ]
     },
     {
@@ -5769,9 +6368,9 @@
       "signature": "def _find_plan_file(workspace: Path, plan_slug_cf: str) -> Path | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        110,
+        118,
         0,
-        115,
+        123,
         15
       ]
     },
@@ -5786,9 +6385,9 @@
       "signature": "def _hook_graph(root: Path):",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        395,
+        433,
         0,
-        401,
+        439,
         24
       ]
     },
@@ -5820,15 +6419,15 @@
       "signature": "def _post_tool_use(data: dict) -> dict | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        404,
+        442,
         0,
-        425,
+        463,
         101
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "b4f62aae9038c0e21bf694114779fc7aa34e1dd3655d0ef8bd737fd742e09114",
+      "content_hash": "2c8b4289b0addb982338dcc606c889dff2a95d0b514d7698753218c3ce32cf7a",
       "family": "structure",
       "id": "sym:src/yigraf/cli.py#_rebuild",
       "kind": "function",
@@ -5837,10 +6436,10 @@
       "signature": "def _rebuild(root: Path) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        103,
+        106,
         0,
-        107,
-        63
+        115,
+        49
       ]
     },
     {
@@ -5854,9 +6453,9 @@
       "signature": "def _report_capture(node: memory.Memory) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        237,
+        271,
         0,
-        245,
+        279,
         57
       ]
     },
@@ -5871,9 +6470,9 @@
       "signature": "def _require_workspace(root: Path) -> Path:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        95,
+        98,
         0,
-        100,
+        103,
         20
       ]
     },
@@ -5888,9 +6487,9 @@
       "signature": "def _resolve_concerns(repo: Path, workspace: Path, syms: list[str]) -> list[memory.Concern]:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        199,
+        207,
         0,
-        212,
+        220,
         19
       ]
     },
@@ -5905,9 +6504,9 @@
       "signature": "def _run_hook(handler) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        382,
+        420,
         0,
-        392,
+        430,
         28
       ]
     },
@@ -5922,9 +6521,9 @@
       "signature": "def _session_start(data: dict) -> dict | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        428,
+        466,
         0,
-        437,
+        475,
         102
       ]
     },
@@ -5947,7 +6546,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "12147710efbf94d4e1089242c6dc1edcfaba0764866e3337981a665b56aa15c3",
+      "content_hash": "ed757e10c6f01794cc25460fb8b7b6f4114bbb1ff4ea9ab527b1bf4404d5beac",
       "family": "structure",
       "id": "sym:src/yigraf/cli.py#build",
       "kind": "function",
@@ -5958,13 +6557,13 @@
       "source_range": [
         71,
         0,
-        92,
-        86
+        95,
+        50
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "1c502ff4ca3ce9b2f4c121c859ce025cc4bebbbf893724600df753d456fa4130",
+      "content_hash": "4d2a49e678c84968ef943dfe676f2d28184212816784ba2481ebb16ea8108a95",
       "family": "structure",
       "id": "sym:src/yigraf/cli.py#context",
       "kind": "function",
@@ -5973,9 +6572,9 @@
       "signature": "def context( query: str = typer.Argument(..., help=\"What to look up, e.g. \\\"session expiry\\\".\"), repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root (default: current dir).\"), family: str = typer.Option(None, \"--family\", help=\"Restrict to one family: structure|intent|plan.\"), budget: int = typer.Option(None, \"--budget\", help=\"Token budget for the render.\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        304,
+        340,
         0,
-        317,
+        355,
         112
       ]
     },
@@ -5990,9 +6589,9 @@
       "signature": "def drift( path: Path = typer.Argument(Path(\".\"), help=\"Repo root (default: current dir).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        320,
+        358,
         0,
-        343,
+        381,
         32
       ]
     },
@@ -6007,9 +6606,9 @@
       "signature": "def hook_post_tool_use() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        440,
+        478,
         0,
-        443,
+        481,
         29
       ]
     },
@@ -6024,9 +6623,9 @@
       "signature": "def hook_session_start() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        446,
+        484,
         0,
-        449,
+        487,
         29
       ]
     },
@@ -6058,9 +6657,9 @@
       "signature": "def install_claude_hooks_cmd( path: Path = typer.Argument(Path(\".\"), help=\"Repo root to wire up for Claude Code.\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        363,
+        401,
         0,
-        372,
+        410,
         55
       ]
     },
@@ -6075,9 +6674,9 @@
       "signature": "def install_hooks( path: Path = typer.Argument(Path(\".\"), help=\"Repo root (must be a git repository).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        346,
+        384,
         0,
-        360,
+        398,
         62
       ]
     },
@@ -6092,9 +6691,9 @@
       "signature": "def intent( slug: str = typer.Argument(..., help=\"Slug for the intent file (intents/<slug>.md).\"), statement: str = typer.Option(..., \"--statement\", \"-s\", help=\"One-line SHALL/MUST contract.\"), scenario: list[str] = typer.Option(None, \"--scenario\", help=\"A Given/When/Then example (repeatable).\"), design: str = typer.Option(None, \"--design\", help=\"Optional approach / the 'how'.\"), type: str = typer.Option(\"requirement\", \"--type\", help=\"requirement | goal | capability.\"), status: str = typer.Option(\"proposed\", \"--status\", help=\"proposed | active | satisfied | archived.\"), repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root (default: current dir).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        118,
+        126,
         0,
-        139,
+        147,
         64
       ]
     },
@@ -6109,9 +6708,9 @@
       "signature": "def link( task_id: str = typer.Argument(..., help=\"Task locator, e.g. task:<plan>/1.\"), target: str = typer.Argument(..., help=\"A symbol (sym:<path>#<name>) \u2192 implements, or an intent (int:<slug>) \u2192 tracks.\"), repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root (default: current dir).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        160,
+        168,
         0,
-        196,
+        204,
         18
       ]
     },
@@ -6126,26 +6725,26 @@
       "signature": "def main() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        452,
+        490,
         0,
-        454,
+        492,
         9
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "dc505b1d5050c8886caad1a3f5609085caa1198bd7bf92b29cc4372c730c80e6",
+      "content_hash": "ce8dbc2ade939df27c5806445a530662fcc5f3ab954caa8a8909df0657dab0d9",
       "family": "structure",
       "id": "sym:src/yigraf/cli.py#note_constraint",
       "kind": "function",
       "label": "note_constraint",
       "language": "python",
-      "signature": "def note_constraint( rule: str = typer.Argument(..., help=\"The constraint in one line.\"), concerns: list[str] = typer.Option(None, \"--concerns\", help=\"A symbol this constrains, sym:<path>#<name> (repeatable, anchored).\"), why: str = typer.Option(\"\", \"--why\", help=\"Why the constraint holds (optional).\"), serves: list[str] = typer.Option(None, \"--serves\", help=\"An intent/plan id this serves (repeatable).\"), repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root (default: current dir).\"), ) -> None:",
+      "signature": "def note_constraint( rule: str = typer.Argument(..., help=\"The constraint in one line.\"), concerns: list[str] = typer.Option(None, \"--concerns\", help=\"A symbol this constrains, sym:<path>#<name> (repeatable, anchored).\"), why: str = typer.Option(\"\", \"--why\", help=\"Why the constraint holds (optional).\"), serves: list[str] = typer.Option(None, \"--serves\", help=\"An intent/plan id this serves (repeatable).\"), new: bool = typer.Option(False, \"--new\", help=\"Capture even if it looks like a near-duplicate (skip the dedup guard).\"), repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root (default: current dir).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        266,
+        301,
         0,
-        279,
+        315,
         25
       ]
     },
@@ -6160,26 +6759,26 @@
       "signature": "def plan( slug: str = typer.Argument(..., help=\"Slug for the plan file (plans/active/<slug>.md).\"), title: str = typer.Option(..., \"--title\", \"-t\", help=\"Plan title.\"), task: list[str] = typer.Option(None, \"--task\", help=\"A task description (repeatable).\"), repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root (default: current dir).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        142,
+        150,
         0,
-        157,
+        165,
         94
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "e24275e13af92ddb44fda6cf600a2858381c499da7a4be5b888946129b698a04",
+      "content_hash": "3a0ffc70bdc2c78fe3d7fbd06ad3882773b521ab84488382ce078fa38959f52e",
       "family": "structure",
       "id": "sym:src/yigraf/cli.py#remember",
       "kind": "function",
       "label": "remember",
       "language": "python",
-      "signature": "def remember( statement: str = typer.Argument(..., help=\"The claim in one line (the H2 heading).\"), type: str = typer.Option(\"decision\", \"--type\", help=f\"One of: {', '.join(memory.MEMORY_TYPES)}.\"), why: str = typer.Option(\"\", \"--why\", help=\"The reasoning (ReCAP's T) \u2014 what /clear loses.\"), serves: list[str] = typer.Option(None, \"--serves\", help=\"An intent/plan id this serves (repeatable).\"), concerns: list[str] = typer.Option(None, \"--concerns\", help=\"A symbol this governs, sym:<path>#<name> (repeatable, anchored).\"), rejected: str = typer.Option(None, \"--rejected\", help=\"The rejected alternative + why (the most perishable content).\"), repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root (default: current dir).\"), ) -> None:",
+      "signature": "def remember( statement: str = typer.Argument(..., help=\"The claim in one line (the H2 heading).\"), type: str = typer.Option(\"decision\", \"--type\", help=f\"One of: {', '.join(memory.MEMORY_TYPES)}.\"), why: str = typer.Option(\"\", \"--why\", help=\"The reasoning (ReCAP's T) \u2014 what /clear loses.\"), serves: list[str] = typer.Option(None, \"--serves\", help=\"An intent/plan id this serves (repeatable).\"), concerns: list[str] = typer.Option(None, \"--concerns\", help=\"A symbol this governs, sym:<path>#<name> (repeatable, anchored).\"), rejected: str = typer.Option(None, \"--rejected\", help=\"The rejected alternative + why (the most perishable content).\"), new: bool = typer.Option(False, \"--new\", help=\"Capture even if it looks like a near-duplicate (skip the dedup guard).\"), repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root (default: current dir).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        248,
+        282,
         0,
-        263,
+        298,
         25
       ]
     },
@@ -6194,9 +6793,9 @@
       "signature": "def supersede( old_id: str = typer.Argument(..., help=\"The memory id being superseded, e.g. mem:001.\"), statement: str = typer.Argument(..., help=\"The new claim in one line.\"), type: str = typer.Option(\"decision\", \"--type\", help=f\"One of: {', '.join(memory.MEMORY_TYPES)}.\"), why: str = typer.Option(\"\", \"--why\", help=\"Why the mind changed.\"), serves: list[str] = typer.Option(None, \"--serves\", help=\"An intent/plan id this serves (repeatable).\"), concerns: list[str] = typer.Option(None, \"--concerns\", help=\"A symbol this governs (repeatable, anchored).\"), rejected: str = typer.Option(None, \"--rejected\", help=\"The rejected alternative + why.\"), repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root (default: current dir).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        282,
+        318,
         0,
-        301,
+        337,
         25
       ]
     },
@@ -6211,9 +6810,9 @@
       "signature": "def _deep_merge(base: dict[str, Any], over: dict[str, Any]) -> dict[str, Any]:",
       "source_file": "src/yigraf/config.py",
       "source_range": [
-        85,
+        100,
         0,
-        92,
+        107,
         14
       ]
     },
@@ -6228,9 +6827,9 @@
       "signature": "def default_config() -> dict[str, Any]:",
       "source_file": "src/yigraf/config.py",
       "source_range": [
-        80,
+        95,
         0,
-        82,
+        97,
         40
       ]
     },
@@ -6245,9 +6844,9 @@
       "signature": "def load_config(path: Path) -> dict[str, Any]:",
       "source_file": "src/yigraf/config.py",
       "source_range": [
-        95,
+        110,
         0,
-        107,
+        122,
         14
       ]
     },
@@ -6317,6 +6916,329 @@
         0,
         79,
         46
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "51f7dcea7a615204768bd8cfe307cde635f3d6c4ee371d2d9c58937431a15fc1",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#EmbeddingIndex",
+      "kind": "class",
+      "label": "EmbeddingIndex",
+      "language": "python",
+      "signature": "class EmbeddingIndex:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        135,
+        0,
+        155,
+        23
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "380ac964009bf7271e7078f8c256c0673191bafad321e3fc8e11a6c841fa5665",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#EmbeddingIndex.query",
+      "kind": "method",
+      "label": "EmbeddingIndex.query",
+      "language": "python",
+      "signature": "def query(self, qvec: \"np.ndarray\") -> dict[str, float]:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        144,
+        4,
+        149,
+        66
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "9becc806c2d7d708836ebf596344b599567eb189a4052e001c9ac8ea112acfc8",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#EmbeddingIndex.vector",
+      "kind": "method",
+      "label": "EmbeddingIndex.vector",
+      "language": "python",
+      "signature": "def vector(self, node_id: str) -> \"np.ndarray | None\":",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        151,
+        4,
+        155,
+        23
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "a3df069a49966826830fd0af75b33f9f080ca93ff668be4d81e0ff84e4786cf7",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#_LocalEmbedder",
+      "kind": "class",
+      "label": "_LocalEmbedder",
+      "language": "python",
+      "signature": "class _LocalEmbedder:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        78,
+        0,
+        87,
+        98
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "a2e15b38e6242f5f774e52e14ac5372df7c2a54bf213805c7abd3cc8f36404e8",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#_LocalEmbedder.__init__",
+      "kind": "method",
+      "label": "_LocalEmbedder.__init__",
+      "language": "python",
+      "signature": "def __init__(self, model: Any, name: str) -> None:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        81,
+        4,
+        83,
+        24
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "817cc1af7cba312b1a2642bedc7bd325b1daff619a2e66d3c41ba9be464ac851",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#_LocalEmbedder.encode",
+      "kind": "method",
+      "label": "_LocalEmbedder.encode",
+      "language": "python",
+      "signature": "def encode(self, texts: list[str]) -> \"np.ndarray\": # normalize_embeddings=True \u21d2 cosine similarity is a plain dot product downstream.",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        85,
+        4,
+        87,
+        98
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "c1d089912451149e62926f3cbd6f3029eb0a5feaa0076ac51b667e1f9102b1a7",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#_emb_config",
+      "kind": "function",
+      "label": "_emb_config",
+      "language": "python",
+      "signature": "def _emb_config(config: dict) -> dict:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        90,
+        0,
+        91,
+        75
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "ea2300957ee8ad017551f1739b9c7bb99f16176bfd2a35d6692045d99ad68d8c",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#_embed_query_text",
+      "kind": "function",
+      "label": "_embed_query_text",
+      "language": "python",
+      "signature": "def _embed_query_text(query: str, name: str) -> str:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        122,
+        0,
+        123,
+        79
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "8b9960a0177f45b48cb269ad84b033d25c77aeb9cd20ab41ffdf3600e40b3b98",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#_memory_targets",
+      "kind": "function",
+      "label": "_memory_targets",
+      "language": "python",
+      "signature": "def _memory_targets(graph: nx.DiGraph, mem_id: str) -> set[str]:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        294,
+        0,
+        296,
+        59
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "039159629a1ce4dc322add83e1cb6da2b691b83ec2632de1acfb681d347819c5",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#_save_index",
+      "kind": "function",
+      "label": "_save_index",
+      "language": "python",
+      "signature": "def _save_index(root: Path, model: str, ids: list[str], matrix: \"np.ndarray\", text_hash: dict[str, str]) -> None:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        181,
+        0,
+        188,
+        101
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "6c0dd59c273ed5924a35e9038c5c6a2374768a49ae9043dc88c0d3bed3cd1a54",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#_text_hash",
+      "kind": "function",
+      "label": "_text_hash",
+      "language": "python",
+      "signature": "def _text_hash(text: str) -> str:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        69,
+        0,
+        70,
+        59
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "847c43c6c2c79bf1601a2f5fd4c91cfff59b9a8a95be115a0af28d044b96fc06",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#get_embedder",
+      "kind": "function",
+      "label": "get_embedder",
+      "language": "python",
+      "signature": "def get_embedder(config: dict):",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        98,
+        0,
+        119,
+        19
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "46f00f7a7eb527be47b373bdbf15ea24f8db52a92f594570cb99177da283d148",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#index_dir",
+      "kind": "function",
+      "label": "index_dir",
+      "language": "python",
+      "signature": "def index_dir(root: Path) -> Path:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        131,
+        0,
+        132,
+        42
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "358ea4b9160bd2bb802ec4e7a60e745aa15d80bb08a7a47768fd7570f196d86e",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#load_index",
+      "kind": "function",
+      "label": "load_index",
+      "language": "python",
+      "signature": "def load_index(root: Path, config: dict) -> EmbeddingIndex | None:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        158,
+        0,
+        178,
+        19
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "104e8fb4d48c05aa9728263fb0e1e92d7dd597a192b6c1503b2281be6076ba0a",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#model_name",
+      "kind": "function",
+      "label": "model_name",
+      "language": "python",
+      "signature": "def model_name(config: dict) -> str:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        94,
+        0,
+        95,
+        69
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "a98a065bda18be043e91b591f09f850775a5a1122fa42975acdf2ef8b4c764bc",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#most_similar_memory",
+      "kind": "function",
+      "label": "most_similar_memory",
+      "language": "python",
+      "signature": "def most_similar_memory(root: Path, graph: nx.DiGraph, config: dict, text: str, scope: set[str]) -> tuple[str, float] | None:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        260,
+        0,
+        291,
+        15
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "8248b626ebc9af66a64186c59cc7214dddc34eb89bebbe1b65e0ee6be454b602",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#node_text",
+      "kind": "function",
+      "label": "node_text",
+      "language": "python",
+      "signature": "def node_text(attrs: dict) -> str | None:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        44,
+        0,
+        66,
+        27
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "0f6b3cddfcc37e03f0dd6183203c0f37ebc4f2368a7eb79c94b12b2f87c0634d",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#refresh_index",
+      "kind": "function",
+      "label": "refresh_index",
+      "language": "python",
+      "signature": "def refresh_index(root: Path, graph: nx.DiGraph, config: dict) -> bool:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        191,
+        0,
+        237,
+        15
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "737eeb81b76e72bbb53f42c8b5ed0f771db736544b7e03bac548f7d140ab3951",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#semantic_scores",
+      "kind": "function",
+      "label": "semantic_scores",
+      "language": "python",
+      "signature": "def semantic_scores(root: Path, graph: nx.DiGraph, config: dict, query: str) -> dict[str, float]:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        245,
+        0,
+        257,
+        75
       ]
     },
     {
@@ -7341,6 +8263,23 @@
     },
     {
       "confidence": "EXTRACTED",
+      "content_hash": "3c14d506d0546f12faae4fa20f1172b101bd219ad9c2de401999b0dabd81e97b",
+      "family": "structure",
+      "id": "sym:src/yigraf/retrieval.py#_combine_match",
+      "kind": "function",
+      "label": "_combine_match",
+      "language": "python",
+      "signature": "def _combine_match(lex_match: dict[str, float], sem_match: dict[str, float], hops: dict[str, int]) -> dict[str, float]:",
+      "source_file": "src/yigraf/retrieval.py",
+      "source_range": [
+        446,
+        0,
+        455,
+        71
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
       "content_hash": "b7cb50579c2046a87dfbfd7889b1811812b26d98139934de80db8a891910abfc",
       "family": "structure",
       "id": "sym:src/yigraf/retrieval.py#_drift_line",
@@ -7439,6 +8378,23 @@
         0,
         334,
         53
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "b7c003a49d587c92d86f172e002d850aafc11740d294ac0e61cfe3429e25396d",
+      "family": "structure",
+      "id": "sym:src/yigraf/retrieval.py#_merge_seeds",
+      "kind": "function",
+      "label": "_merge_seeds",
+      "language": "python",
+      "signature": "def _merge_seeds(lex_match: dict[str, float], sem_match: dict[str, float], config: dict) -> list[str]:",
+      "source_file": "src/yigraf/retrieval.py",
+      "source_range": [
+        436,
+        0,
+        443,
+        16
       ]
     },
     {
@@ -7647,18 +8603,18 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "a53b3e3d1b86458cbdc27ecb9a24ae30237c308d5ec919bad0c39be4c308d14f",
+      "content_hash": "bfd78227bf75a7c05485f844617cfe2cb98600b37e893e30f032e04f63367243",
       "family": "structure",
       "id": "sym:src/yigraf/retrieval.py#context",
       "kind": "function",
       "label": "context",
       "language": "python",
-      "signature": "def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = None, budget_tokens: int | None = None) -> ContextResult:",
+      "signature": "def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = None, budget_tokens: int | None = None, semantic_match: dict[str, float] | None = None) -> ContextResult:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        436,
+        458,
         0,
-        462,
+        490,
         86
       ]
     },
@@ -7796,6 +8752,40 @@
         0,
         99,
         17
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "07930984327df30d6949d5a3a074240bb77e7ecbd29f72196294b865cbd3ea62",
+      "family": "structure",
+      "id": "sym:tests/conftest.py#_disable_embeddings",
+      "kind": "function",
+      "label": "_disable_embeddings",
+      "language": "python",
+      "signature": "def _disable_embeddings(request, monkeypatch):",
+      "source_file": "tests/conftest.py",
+      "source_range": [
+        18,
+        0,
+        23,
+        72
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "a0056091b8999eed9873196c8df88c4428d09646783ec64890feec77a3ea4c75",
+      "family": "structure",
+      "id": "sym:tests/conftest.py#pytest_configure",
+      "kind": "function",
+      "label": "pytest_configure",
+      "language": "python",
+      "signature": "def pytest_configure(config):",
+      "source_file": "tests/conftest.py",
+      "source_range": [
+        12,
+        0,
+        15,
+        5
       ]
     },
     {
@@ -9003,6 +9993,142 @@
         0,
         52,
         62
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "2c3800379ea3d42059f64a47571e825a79607e0737f3ff759f8aa6fa4b9762da",
+      "family": "structure",
+      "id": "sym:tests/test_embeddings.py#_repo_with_symbol",
+      "kind": "function",
+      "label": "_repo_with_symbol",
+      "language": "python",
+      "signature": "def _repo_with_symbol(tmp_path: Path) -> Path:",
+      "source_file": "tests/test_embeddings.py",
+      "source_range": [
+        88,
+        0,
+        94,
+        19
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "e7d4d69d1d47594eed9e9e478408ea4a43ea978e270c67b0e3db30327096ee86",
+      "family": "structure",
+      "id": "sym:tests/test_embeddings.py#test_dedup_guard_blocks_a_near_duplicate_then_new_forces",
+      "kind": "function",
+      "label": "test_dedup_guard_blocks_a_near_duplicate_then_new_forces",
+      "language": "python",
+      "signature": "def test_dedup_guard_blocks_a_near_duplicate_then_new_forces(tmp_path: Path):",
+      "source_file": "tests/test_embeddings.py",
+      "source_range": [
+        114,
+        0,
+        128,
+        32
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "8556f3ef52d9a67e8c7c0167e09d13742765c2c74185f01fb3e5c10105fa0bff",
+      "family": "structure",
+      "id": "sym:tests/test_embeddings.py#test_index_save_load_and_query_round_trip",
+      "kind": "function",
+      "label": "test_index_save_load_and_query_round_trip",
+      "language": "python",
+      "signature": "def test_index_save_load_and_query_round_trip(tmp_path: Path):",
+      "source_file": "tests/test_embeddings.py",
+      "source_range": [
+        39,
+        0,
+        49,
+        81
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "3d97f1e8a7d8dfd5be4f149923f4c9ac62a65d1f16035e9c764184d98a8262f2",
+      "family": "structure",
+      "id": "sym:tests/test_embeddings.py#test_load_index_rejects_a_model_mismatch",
+      "kind": "function",
+      "label": "test_load_index_rejects_a_model_mismatch",
+      "language": "python",
+      "signature": "def test_load_index_rejects_a_model_mismatch(tmp_path: Path):",
+      "source_file": "tests/test_embeddings.py",
+      "source_range": [
+        52,
+        0,
+        58,
+        96
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "cac9a4b481ff175ceee29d30a63f623015514c6050e4715c90cd3dd7715b43e6",
+      "family": "structure",
+      "id": "sym:tests/test_embeddings.py#test_no_backend_means_pure_lexical",
+      "kind": "function",
+      "label": "test_no_backend_means_pure_lexical",
+      "language": "python",
+      "signature": "def test_no_backend_means_pure_lexical(tmp_path: Path): # With the embedder disabled (autouse fixture), the semantic path yields no scores \u2192 v0 behavior.",
+      "source_file": "tests/test_embeddings.py",
+      "source_range": [
+        75,
+        0,
+        80,
+        86
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "dd2deb3026b7ff2841efe4a5ab9bf8a19e02a88f0ae4cf4141894c4198f50d89",
+      "family": "structure",
+      "id": "sym:tests/test_embeddings.py#test_node_text_scopes_to_memory_and_intent",
+      "kind": "function",
+      "label": "test_node_text_scopes_to_memory_and_intent",
+      "language": "python",
+      "signature": "def test_node_text_scopes_to_memory_and_intent():",
+      "source_file": "tests/test_embeddings.py",
+      "source_range": [
+        29,
+        0,
+        36,
+        55
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "183d06058f6d5c8d677340d2cb0595611bf15075e430ad45dd122ca7597185fb",
+      "family": "structure",
+      "id": "sym:tests/test_embeddings.py#test_real_semantic_recall_ranks_a_paraphrase",
+      "kind": "function",
+      "label": "test_real_semantic_recall_ranks_a_paraphrase",
+      "language": "python",
+      "signature": "def test_real_semantic_recall_ranks_a_paraphrase(tmp_path: Path):",
+      "source_file": "tests/test_embeddings.py",
+      "source_range": [
+        97,
+        0,
+        111,
+        62
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "e27287e92a5239d560bd100b16bb6b359b8672228a0c4eb4767762461022b00c",
+      "family": "structure",
+      "id": "sym:tests/test_embeddings.py#test_semantic_match_seeds_a_node_lexical_would_miss",
+      "kind": "function",
+      "label": "test_semantic_match_seeds_a_node_lexical_would_miss",
+      "language": "python",
+      "signature": "def test_semantic_match_seeds_a_node_lexical_would_miss():",
+      "source_file": "tests/test_embeddings.py",
+      "source_range": [
+        61,
+        0,
+        72,
+        101
       ]
     },
     {

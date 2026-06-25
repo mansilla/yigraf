@@ -13,7 +13,7 @@ from pathlib import Path
 
 import typer
 
-from yigraf import __version__, artifacts, memory, retrieval
+from yigraf import __version__, artifacts, embeddings, memory, retrieval
 from yigraf.astnorm import ANCHOR_ALGO
 from yigraf.config import load_config
 from yigraf.drift import compute_drift
@@ -86,11 +86,14 @@ def build(
     config = load_config(workspace / "config.yaml")
     graph, stats = build_graph(root, config)
     write_graph(graph, workspace / "graph.json")
+    reindexed = embeddings.refresh_index(root, graph, config)  # scoped semantic index (M8; no-op if no backend)
 
     typer.echo(
         f"Indexed {stats.files} file(s): {stats.extracted} parsed, {stats.cached} cached."
     )
     typer.echo(f"  {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges.")
+    if reindexed:
+        typer.echo("  embedding index refreshed.")
 
 
 def _require_workspace(root: Path) -> Path:
@@ -102,10 +105,15 @@ def _require_workspace(root: Path) -> Path:
 
 
 def _rebuild(root: Path) -> None:
-    """Re-project the graph so graph.json reflects a just-written artifact."""
+    """Re-project the graph so graph.json reflects a just-written artifact, and refresh the index.
+
+    ``refresh_index`` re-embeds only memory/intent nodes whose text changed (a no-op — no model load —
+    when nothing did), so a captured decision/intent becomes semantically searchable immediately.
+    """
     config = load_config(root / WORKSPACE_DIRNAME / "config.yaml")
     graph, _ = build_graph(root, config)
     write_graph(graph, root / WORKSPACE_DIRNAME / "graph.json")
+    embeddings.refresh_index(root, graph, config)
 
 
 def _find_plan_file(workspace: Path, plan_slug_cf: str) -> Path | None:
@@ -213,15 +221,41 @@ def _resolve_concerns(repo: Path, workspace: Path, syms: list[str]) -> list[memo
     return concerns
 
 
+def _dedup_guard(repo: Path, config: dict, statement: str, why: str,
+                 concerns: list[memory.Concern], serves: list[str]) -> None:
+    """Advisory write-time near-duplicate check (capture-flow §4); no-op without an embedding backend.
+
+    Builds the current graph + asks the index for the most similar *active* memory node sharing a
+    serves/concerns target; over the ``dup_cosine`` threshold ⇒ refuse (point at it; suggest supersede
+    or ``--new``). Cheap when there's no backend (returns immediately) — dedup is then trivially skipped.
+    """
+    graph, _ = build_graph(repo, config)
+    text = statement + (f"\n{why}" if why else "")
+    scope = set(serves) | {c.sym for c in concerns}
+    hit = embeddings.most_similar_memory(repo, graph, config, text, scope)
+    threshold = config.get("embeddings", {}).get("dup_cosine", 0.9)
+    if hit and hit[1] >= threshold:
+        typer.echo(
+            f"This looks like a near-duplicate of {hit[0]} (cosine {hit[1]:.2f}). "
+            f"If you're changing your mind, `yigraf supersede {hit[0]} \"<new>\"`; "
+            f"otherwise re-run with --new to capture it anyway.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+
 def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, why: str,
                     serves: list[str], concern_syms: list[str], rejected: str | None,
-                    supersedes: list[str], promotable: bool) -> memory.Memory:
+                    supersedes: list[str], promotable: bool, force_new: bool = False) -> memory.Memory:
     """Write a new memory artifact, then rebuild graph.json. Shared by remember/supersede/note-constraint."""
     if type_ not in memory.MEMORY_TYPES:
         typer.echo(f"--type must be one of {', '.join(memory.MEMORY_TYPES)} (got {type_}).", err=True)
         raise typer.Exit(code=1)
 
     concerns = _resolve_concerns(repo, workspace, concern_syms)
+    # A supersede is a deliberate mind-change (it *should* resemble its predecessor) → skip the guard.
+    if not supersedes and not force_new:
+        _dedup_guard(repo, load_config(workspace / "config.yaml"), statement, why, concerns, serves)
     seq = memory.next_seq(repo)
     slug = memory.slugify(statement)
     node = memory.Memory(
@@ -254,13 +288,14 @@ def remember(
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
     concerns: list[str] = typer.Option(None, "--concerns", help="A symbol this governs, sym:<path>#<name> (repeatable, anchored)."),
     rejected: str = typer.Option(None, "--rejected", help="The rejected alternative + why (the most perishable content)."),
+    new: bool = typer.Option(False, "--new", help="Capture even if it looks like a near-duplicate (skip the dedup guard)."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
     """Capture a decision/rationale/learned-fact as a memory node (serves an intent, concerns code)."""
     workspace = _require_workspace(repo)
     node = _capture_memory(repo, workspace, statement=statement, type_=type, why=why,
                            serves=serves or [], concern_syms=concerns or [], rejected=rejected,
-                           supersedes=[], promotable=False)
+                           supersedes=[], promotable=False, force_new=new)
     _report_capture(node)
 
 
@@ -270,13 +305,14 @@ def note_constraint(
     concerns: list[str] = typer.Option(None, "--concerns", help="A symbol this constrains, sym:<path>#<name> (repeatable, anchored)."),
     why: str = typer.Option("", "--why", help="Why the constraint holds (optional)."),
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
+    new: bool = typer.Option(False, "--new", help="Capture even if it looks like a near-duplicate (skip the dedup guard)."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
     """Capture a constraint memory (flagged promotable to an enforced check; capture-flow §0a)."""
     workspace = _require_workspace(repo)
     node = _capture_memory(repo, workspace, statement=rule, type_="constraint", why=why,
                            serves=serves or [], concern_syms=concerns or [], rejected=None,
-                           supersedes=[], promotable=True)
+                           supersedes=[], promotable=True, force_new=new)
     _report_capture(node)
 
 
@@ -313,7 +349,9 @@ def context(
     workspace = _require_workspace(repo)
     config = load_config(workspace / "config.yaml")
     graph, _ = build_graph(repo, config)
-    result = retrieval.context(graph, query, config, family=family, budget_tokens=budget)
+    semantic = embeddings.semantic_scores(repo, graph, config, query)  # {} ⇒ lexical-only (M8 / v0)
+    result = retrieval.context(graph, query, config, family=family, budget_tokens=budget,
+                               semantic_match=semantic)
     typer.echo(result.text, nl=False)
     typer.echo(f"[~{result.token_estimate} tokens · {result.nodes_rendered}/{result.nodes_total} nodes shown]")
 

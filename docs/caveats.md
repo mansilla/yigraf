@@ -98,6 +98,30 @@
 - 🟡 **Edited-file key is `tool_input.file_path`, but docs showed `.path`.** The hook reads both; if a
   future tool uses yet another key the locus won't resolve and the hook stays (correctly) silent.
 
+## M8 — embedding index + semantic seeder + dedup
+
+- 🟡 **`dup_cosine = 0.9` is a coarse, untuned threshold.** `bge-small` paraphrase cosines sit roughly
+  0.8–0.9, so the write-time guard catches *tight* restatements (a near-verbatim re-`remember`) but lets
+  *looser* duplicates through (observed: a hand-paraphrased twin of `mem:001` scored < 0.9 and was
+  captured). The guard is advisory by design (`--new` forces, supersede bypasses); the threshold wants
+  empirical tuning, and a background GC merge pass (M9) should catch what slips through. *(M9 / tune)*
+- 🟡 **No contradiction detection — only near-duplicate.** capture-flow §4 wants "high similarity but
+  *opposite* statement on the same target ⇒ infer a `supersedes`." M8 implements the similarity half;
+  detecting *opposition* needs a negation heuristic or a cheap LLM check (capture-flow §7, still open),
+  so a contradicting decision is captured as an independent node, not auto-linked as a supersession.
+- 🟡 **Model load latency on `yigraf context` + capture verbs (~1–2s).** Only the NL-query path and
+  `remember`/`supersede` load `bge-small`; the hot action-driven `PostToolUse` hook seeds from the
+  locus and never embeds. First-ever use also downloads ~130 MB. Acceptable for interactive CLI use;
+  measure if it bites. The index itself (numpy matmul) is sub-ms.
+- 🟡 **Semantic scope is English + `bge-small`.** Multilingual (`bge-m3`/`e5`) and the non-local
+  backends (`ollama`/`openai`/`voyage`) are stubbed to degrade in `get_embedder` — config knobs exist
+  but only `local` is wired. *(post-v0)*
+- 🟢 **`index/` is gitignored + rebuildable.** Vectors are derived from committed artifact text, so the
+  index isn't committed (no churn, no binary diffs); a fresh clone rebuilds it on first `yigraf build`.
+- 🟢 **Embeddings are optional; the suite proves the fallback.** With the `[embeddings]` extra absent
+  (no numpy/torch), `get_embedder` is `None` and retrieval is byte-for-byte the v0 lexical path; the
+  112 non-`embeddings` tests pass without the extra. Semantic recall is an enhancement, never required.
+
 ## M7 — memory node family + capture verbs
 
 - 🟡 **No write-time dedup or contradiction detection yet.** `remember` happily creates a near-duplicate
