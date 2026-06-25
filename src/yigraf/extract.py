@@ -23,7 +23,7 @@ import networkx as nx
 import tree_sitter_python as tsp
 from tree_sitter import Language, Node, Parser
 
-from yigraf import artifacts, drift
+from yigraf import artifacts, drift, memory
 from yigraf.astnorm import ANCHOR_ALGO, content_hash
 from yigraf.cache import StructureCache, file_sha
 from yigraf.graph import empty_graph
@@ -299,7 +299,8 @@ def build_graph(root: Path, config: dict) -> tuple[nx.DiGraph, BuildStats]:
 
     Reuses unchanged files from ``yigraf/cache/structure.json`` and re-parses the rest, then resolves
     intra-repo ``imports`` edges across the full file set, and finally projects the authored
-    intent/plan artifacts (and their cross-family edges) on top. The memory family arrives later.
+    intent/plan and memory artifacts (and their cross-family edges) on top, re-anchoring renames and
+    recomputing the edge-derived counters.
     """
     root = Path(root)
     cache_path = root / "yigraf" / "cache" / "structure.json"
@@ -336,7 +337,9 @@ def build_graph(root: Path, config: dict) -> tuple[nx.DiGraph, BuildStats]:
 
     _add_import_edges(graph, file_imports, file_sources)
     artifacts.project_into(graph, root)
-    drift.resolve_renames(graph)  # re-anchor moved/renamed implements targets in-memory (M3)
+    memory.project_into(graph, root)  # memory nodes + serves/concerns/supersedes edges (M7)
+    drift.resolve_renames(graph)  # re-anchor moved/renamed implements + concerns targets (M3/M7)
+    memory.recompute_counters(graph)  # edge-derived superseded_in/out for the relevance prior
 
     cache.prune(set(relpaths))
     cache.save(cache_path)

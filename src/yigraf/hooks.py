@@ -81,41 +81,58 @@ def install_post_commit_hook(root: Path) -> HookResult:
 SKILL_MD = """\
 ---
 name: yigraf
-description: Use when implementing or changing code in this repo to keep intent and code in sync. Before starting work, run `yigraf context "<topic>"` to surface governing intents, plans, and drift. After finishing a task, run `yigraf link <task> <symbol>` to name the symbols that implement it.
+description: Use when implementing or changing code in this repo to keep intent, code, and the reasoning behind it in sync. Before starting work, run `yigraf context "<topic>"` to surface governing intents, plans, prior decisions, and drift. After finishing a task, run `yigraf link <task> <symbol>` to name the symbols that implement it, and `yigraf remember` the non-obvious choices you made.
 ---
 
 # yigraf — the intent↔code spine
 
-This repo is indexed by **yigraf**: one graph over code structure, intents (specs), and plans, with
-an enforceable `implements` link whose drift is surfaced when code and intent diverge. Two rituals
-keep it useful — the hooks are a safety net, not a substitute.
+This repo is indexed by **yigraf**: one graph over code structure, intents (specs), plans, and the
+**memory** of why the code is the way it is — with enforceable links (`implements`, `concerns`)
+whose drift is surfaced when code and the thing that governs it diverge. A few rituals keep it
+useful — the hooks are a safety net, not a substitute.
 
 ## 0. Orient before you touch code (always)
 Run `yigraf context "<what you're about to work on>"`. It returns the governing requirement(s), the
-implementing symbol signatures (not source), the open tasks, and any **drift** — a token-cheap map.
-If a spec already covers your change, refine it; don't duplicate.
+implementing symbol signatures (not source), the open tasks, the prior **decisions and their *why***,
+and any **drift** — a token-cheap map. If a spec already covers your change, refine it; don't
+duplicate. If a decision already settled the question, follow it (or `supersede` it on purpose).
 
 ## 1. Link when a task is done (the seam)
 When you finish a task, name the symbols that implement it:
 `yigraf link task:<plan>/<n> sym:<path>#<name>` — this anchors the link to the symbol's current
 content. Linking once per completed task (not per edit) is enough.
 
-## 2. Author specs as you plan
+## 2. Capture the *why* (decisions & constraints)
+When you make a non-obvious choice — picked an approach over a named alternative, set a constraint,
+worked around something — persist the reasoning that `/clear` would otherwise lose. One line of why
+plus the rejected option is enough; capture at the *conclusion*, not mid-thinking.
+- `yigraf remember "<the decision, one line>" --type decision --why "<reasoning>" --serves int:<slug> --concerns sym:<path>#<name> [--rejected "<the alternative + why not>"]`
+- A correction or rule → `yigraf note-constraint "<rule>" --concerns sym:<path>#<name>` (flagged as a
+  candidate to promote into an enforced check).
+- Changed your mind? Never edit a decision in place — `yigraf supersede mem:<id> "<new decision>" --why "<what changed>"`. The old one stays as a rejected alternative.
+
+A `--concerns` link is **anchored** like `implements`: edit that code later and yigraf surfaces a
+"re-verify this decision still holds" reconcile. That's the payoff — the next agent to touch the code
+sees the decision and its rationale without reading the history.
+
+## 3. Author specs as you plan
 - `yigraf intent <slug> -s "The system SHALL …" --scenario "Given …, When …, Then …" [--design "…"]`
 - `yigraf plan <slug> -t "<title>" --task "<description>"` then `yigraf link task:<plan>/1 int:<slug>`
   to track the intent.
 
-## 3. Drift means re-verify
-`yigraf drift` lists soft drift (a linked symbol's body changed) and hard drift (it's gone). A pure
-rename auto-re-anchors. To clear a real drift, re-verify the code still satisfies the spec, then
-`yigraf link` again to re-anchor.
+## 4. Drift means re-verify
+`yigraf drift` lists soft drift (a linked symbol's body changed) and hard drift (it's gone), for both
+`implements` (task→code) and `concerns` (decision→code) links. A pure rename auto-re-anchors. To clear
+a real drift, re-verify the code still satisfies the spec/decision, then `yigraf link` (or re-`remember`
+/ `supersede` the decision) to re-anchor.
 """
 
 _AGENTS_BLOCK = f"""{_AGENTS_START}
 ## yigraf
-This repo uses **yigraf** (intent↔code graph). Before changing code, run
-`yigraf context "<topic>"` to see governing intents + drift. After finishing a task, run
-`yigraf link task:<plan>/<n> sym:<path>#<name>`. `yigraf drift` shows what needs re-verifying.
+This repo uses **yigraf** (a graph over code, intent, plan, and the *why*). Before changing code, run
+`yigraf context "<topic>"` to see governing intents, prior decisions, and drift. After finishing a
+task, run `yigraf link task:<plan>/<n> sym:<path>#<name>`, and `yigraf remember` the non-obvious
+choices (with `--why` and `--concerns <sym>`). `yigraf drift` shows what needs re-verifying.
 {_AGENTS_END}"""
 
 
