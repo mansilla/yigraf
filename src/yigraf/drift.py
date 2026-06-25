@@ -1,10 +1,17 @@
 """Drift detection + rename handling over the built graph (M3, docs/m3-notes.md).
 
-Drift is derived, never persisted (glossary §4): an ``implements`` edge whose target symbol changed
+Drift is derived, never persisted (glossary §4): a drift-bearing edge whose target symbol changed
 body since it was anchored is **soft drift**; one whose locator no longer resolves (and isn't a
 rename) is **hard drift**. A pure rename/move is **not** drift — because the anchor excludes the
 symbol's own name (R10 refinement), a renamed symbol keeps its body-hash, so the edge auto-re-anchors
-to the new locator by exact match. v0 is ``implements``-only (R7).
+to the new locator by exact match.
+
+v0 was ``implements``-only (R7). The memory milestone (M7) adds the second drift-bearing relation,
+``concerns`` (memory → code): a captured decision/constraint is anchored to the code it governs, so
+editing that code surfaces a "re-verify this decision still holds" reconcile, exactly as ``implements``
+does for a task. Both relations flow through the *same* rename/soft/hard machinery below — they differ
+only in the source family (a ``task`` vs a ``memory`` node) and the frontmatter field the anchor lives
+in (``dangling_implements`` vs ``dangling_concerns``).
 """
 from __future__ import annotations
 
@@ -16,14 +23,19 @@ from yigraf.astnorm import ANCHOR_ALGO
 
 CONF = "EXTRACTED"
 
+#: The drift-bearing relations and the per-node attr each stashes an unresolved (dangling) target on.
+#: One code path serves both so ``concerns`` inherits rename re-anchoring + soft/hard detection for free.
+_DRIFT_RELATIONS = {"implements": "dangling_implements", "concerns": "dangling_concerns"}
+
 
 @dataclass
 class DriftItem:
     kind: str  # "soft" | "hard" | "renamed"
-    task_id: str
+    task_id: str  # the *source* node id of the drift-bearing edge (a task, or — for concerns — a memory)
     locator: str  # the anchored/declared symbol locator
     new_locator: str | None = None  # the resolved locator, for a rename
     detail: str = ""
+    relation: str = "implements"  # which drift-bearing relation drifted (implements | concerns)
 
 
 def _hash_index(graph: nx.DiGraph) -> dict[str, list[str]]:
@@ -38,53 +50,64 @@ def _hash_index(graph: nx.DiGraph) -> dict[str, list[str]]:
 
 
 def resolve_renames(graph: nx.DiGraph) -> None:
-    """Re-anchor rename/move dangling ``implements`` edges in place (mutates ``graph``).
+    """Re-anchor rename/move dangling drift-bearing edges in place (mutates ``graph``).
 
-    For each task's ``dangling_implements`` entry, look its anchor up among structure nodes: a unique
-    hit is a rename → add the edge to the new locator (tagged ``renamed_from``) and clear the entry.
-    Zero hits = real hard drift; multiple hits = ambiguous → both left dangling, not guessed (§3).
+    For each node's ``dangling_implements`` / ``dangling_concerns`` entry, look its anchor up among
+    structure nodes: a unique hit is a rename → add the edge to the new locator (tagged
+    ``renamed_from``) and clear the entry. Zero hits = real hard drift; multiple hits = ambiguous →
+    left dangling, not guessed (§3). The same logic serves both relations (``concerns`` for free).
     """
     index = _hash_index(graph)
     for node_id in list(graph.nodes):
-        dangling = graph.nodes[node_id].get("dangling_implements")
-        if not dangling:
-            continue
-        remaining = []
-        for entry in dangling:
-            anchor, algo = entry.get("anchor"), entry.get("anchor_algo")
-            matches = index.get(anchor, []) if anchor and algo == ANCHOR_ALGO else []
-            if len(matches) == 1:
-                graph.add_edge(
-                    node_id, matches[0], relation="implements", confidence=CONF,
-                    anchor=anchor, anchor_algo=algo, renamed_from=entry["sym"],
-                )
+        for relation, attr in _DRIFT_RELATIONS.items():
+            dangling = graph.nodes[node_id].get(attr)
+            if not dangling:
+                continue
+            remaining = []
+            for entry in dangling:
+                anchor, algo = entry.get("anchor"), entry.get("anchor_algo")
+                matches = index.get(anchor, []) if anchor and algo == ANCHOR_ALGO else []
+                if len(matches) == 1:
+                    graph.add_edge(
+                        node_id, matches[0], relation=relation, confidence=CONF,
+                        anchor=anchor, anchor_algo=algo, renamed_from=entry["sym"],
+                    )
+                else:
+                    remaining.append(entry)
+            if remaining:
+                graph.nodes[node_id][attr] = remaining
             else:
-                remaining.append(entry)
-        if remaining:
-            graph.nodes[node_id]["dangling_implements"] = remaining
-        else:
-            del graph.nodes[node_id]["dangling_implements"]
+                del graph.nodes[node_id][attr]
 
 
 def compute_drift(graph: nx.DiGraph) -> list[DriftItem]:
-    """Report soft/hard/renamed drift over ``graph`` (assumes :func:`resolve_renames` has run)."""
+    """Report soft/hard/renamed drift over ``graph`` (assumes :func:`resolve_renames` has run).
+
+    Covers both drift-bearing relations (``implements`` from a task, ``concerns`` from a memory);
+    each :class:`DriftItem` carries its ``relation`` so callers can word the reconcile line per kind.
+    """
     items: list[DriftItem] = []
 
     for src, dst, attrs in graph.edges(data=True):
-        if attrs.get("relation") != "implements":
+        relation = attrs.get("relation")
+        if relation not in _DRIFT_RELATIONS:
             continue
         if "renamed_from" in attrs:
-            items.append(DriftItem("renamed", src, attrs["renamed_from"], new_locator=dst))
+            items.append(DriftItem("renamed", src, attrs["renamed_from"], new_locator=dst,
+                                   relation=relation))
         anchor = attrs.get("anchor")
         if anchor is None or attrs.get("anchor_algo") != ANCHOR_ALGO:
             continue  # unanchored or a different algo — don't compare (R10)
         current = graph.nodes[dst].get("content_hash")
         if current is not None and current != anchor:
-            items.append(DriftItem("soft", src, dst, detail="body changed since anchored"))
+            items.append(DriftItem("soft", src, dst, detail="body changed since anchored",
+                                   relation=relation))
 
     for node_id, node_attrs in graph.nodes(data=True):
-        for entry in node_attrs.get("dangling_implements", []):
-            items.append(DriftItem("hard", node_id, entry["sym"], detail="symbol not found"))
+        for relation, attr in _DRIFT_RELATIONS.items():
+            for entry in node_attrs.get(attr, []):
+                items.append(DriftItem("hard", node_id, entry["sym"], detail="symbol not found",
+                                       relation=relation))
 
     items.sort(key=lambda it: (it.kind, it.task_id, it.locator))
     return items
