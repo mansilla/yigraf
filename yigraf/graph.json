@@ -63,6 +63,12 @@
       "confidence": "EXTRACTED",
       "relation": "imports",
       "source": "file:src/yigraf/cli.py",
+      "target": "file:src/yigraf/astnorm.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
+      "source": "file:src/yigraf/cli.py",
       "target": "file:src/yigraf/config.py"
     },
     {
@@ -160,6 +166,18 @@
       "relation": "contains",
       "source": "file:src/yigraf/hooks.py",
       "target": "module:src/yigraf/hooks.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
+      "source": "file:src/yigraf/memory.py",
+      "target": "file:src/yigraf/astnorm.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "file:src/yigraf/memory.py",
+      "target": "module:src/yigraf/memory.py"
     },
     {
       "confidence": "EXTRACTED",
@@ -434,6 +452,48 @@
     {
       "confidence": "EXTRACTED",
       "relation": "imports",
+      "source": "file:tests/test_memory.py",
+      "target": "file:src/yigraf/__init__.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
+      "source": "file:tests/test_memory.py",
+      "target": "file:src/yigraf/cli.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
+      "source": "file:tests/test_memory.py",
+      "target": "file:src/yigraf/config.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
+      "source": "file:tests/test_memory.py",
+      "target": "file:src/yigraf/drift.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
+      "source": "file:tests/test_memory.py",
+      "target": "file:src/yigraf/extract.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
+      "source": "file:tests/test_memory.py",
+      "target": "file:src/yigraf/graph.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "file:tests/test_memory.py",
+      "target": "module:tests/test_memory.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
       "source": "file:tests/test_verbs.py",
       "target": "file:src/yigraf/cli.py"
     },
@@ -460,6 +520,56 @@
       "relation": "contains",
       "source": "file:tests/test_verbs.py",
       "target": "module:tests/test_verbs.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "serves",
+      "source": "mem:001",
+      "target": "int:memory-family"
+    },
+    {
+      "anchor": "f8b633dccc7ce4d90d66190c6bb9399cd383b1795ad2d792e0e3f0d6b54eb9a3",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:001",
+      "target": "sym:src/yigraf/drift.py#compute_drift"
+    },
+    {
+      "anchor": "e716cbe43024eaa7324bd553b48116ef692ad82ae9c0205465f80cddb018a9d4",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:001",
+      "target": "sym:src/yigraf/drift.py#resolve_renames"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "serves",
+      "source": "mem:002",
+      "target": "int:memory-family"
+    },
+    {
+      "anchor": "154d8d28e1cd5dfbafefdd4d0e4d53c3cc73e5f61807e60e3ae4fd4bdcb7c4f1",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:002",
+      "target": "sym:src/yigraf/memory.py#project_into"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "serves",
+      "source": "mem:003",
+      "target": "int:memory-family"
+    },
+    {
+      "anchor": "12b62b7096cfcc56ca643c20b217b9902da9a167846d2115800c5bb3b2e05469",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:003",
+      "target": "sym:src/yigraf/memory.py#recompute_counters"
     },
     {
       "confidence": "EXTRACTED",
@@ -621,6 +731,12 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:src/yigraf/cli.py",
+      "target": "sym:src/yigraf/cli.py#_capture_memory"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/cli.py",
       "target": "sym:src/yigraf/cli.py#_find_plan_file"
     },
     {
@@ -651,7 +767,19 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:src/yigraf/cli.py",
+      "target": "sym:src/yigraf/cli.py#_report_capture"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/cli.py",
       "target": "sym:src/yigraf/cli.py#_require_workspace"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/cli.py",
+      "target": "sym:src/yigraf/cli.py#_resolve_concerns"
     },
     {
       "confidence": "EXTRACTED",
@@ -741,7 +869,25 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:src/yigraf/cli.py",
+      "target": "sym:src/yigraf/cli.py#note_constraint"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/cli.py",
       "target": "sym:src/yigraf/cli.py#plan"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/cli.py",
+      "target": "sym:src/yigraf/cli.py#remember"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/cli.py",
+      "target": "sym:src/yigraf/cli.py#supersede"
     },
     {
       "confidence": "EXTRACTED",
@@ -1004,6 +1150,120 @@
     {
       "confidence": "EXTRACTED",
       "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#Concern"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#Memory"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#_compose"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#_parse_body"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#_project_memory_edges"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#_read_concern"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#_seq_from_stem"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#_split_frontmatter"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#_stash"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#find_memory"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#iter_memories"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#memory_dir"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#memory_path"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#next_seq"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#project_into"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#read_memory"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#recompute_counters"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#render_memory"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/memory.py",
+      "target": "sym:src/yigraf/memory.py#slugify"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
       "source": "module:src/yigraf/retrieval.py",
       "target": "sym:src/yigraf/retrieval.py#ContextResult"
     },
@@ -1023,6 +1283,12 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:src/yigraf/retrieval.py",
+      "target": "sym:src/yigraf/retrieval.py#_drift_line"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/retrieval.py",
       "target": "sym:src/yigraf/retrieval.py#_file_structure_nodes"
     },
     {
@@ -1036,6 +1302,18 @@
       "relation": "contains",
       "source": "module:src/yigraf/retrieval.py",
       "target": "sym:src/yigraf/retrieval.py#_match_scores"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/retrieval.py",
+      "target": "sym:src/yigraf/retrieval.py#_memory_line"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/retrieval.py",
+      "target": "sym:src/yigraf/retrieval.py#_memory_links"
     },
     {
       "confidence": "EXTRACTED",
@@ -1736,6 +2014,114 @@
     {
       "confidence": "EXTRACTED",
       "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#_graph"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#_remember"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#_run"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#test_active_decision_outranks_its_superseded_predecessor"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#test_concerns_edge_auto_reanchors_on_rename"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#test_concerns_edge_is_anchored_to_the_symbol_hash"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#test_context_renders_the_decision_with_its_why"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#test_deleting_concerned_code_is_hard_concerns_drift"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#test_editing_concerned_code_surfaces_concerns_drift"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#test_memory_artifact_round_trips"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#test_next_seq_increments_across_captures"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#test_note_constraint_is_a_promotable_constraint"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#test_remember_projects_a_memory_node_with_its_edges"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#test_remember_rejects_an_unknown_concerns_symbol"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#test_remember_rejects_an_unknown_type"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#test_supersede_links_and_marks_the_predecessor_stale"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#test_supersede_rejects_an_unknown_old_id"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
       "source": "module:tests/test_verbs.py",
       "target": "sym:tests/test_verbs.py#_graph"
     },
@@ -2006,6 +2392,18 @@
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
+      "source": "sym:src/yigraf/cli.py#_capture_memory",
+      "target": "sym:src/yigraf/cli.py#_rebuild"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/cli.py#_capture_memory",
+      "target": "sym:src/yigraf/cli.py#_resolve_concerns"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
       "source": "sym:src/yigraf/cli.py#_post_tool_use",
       "target": "sym:src/yigraf/cli.py#_hook_graph"
     },
@@ -2084,6 +2482,24 @@
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
+      "source": "sym:src/yigraf/cli.py#note_constraint",
+      "target": "sym:src/yigraf/cli.py#_capture_memory"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/cli.py#note_constraint",
+      "target": "sym:src/yigraf/cli.py#_report_capture"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/cli.py#note_constraint",
+      "target": "sym:src/yigraf/cli.py#_require_workspace"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
       "source": "sym:src/yigraf/cli.py#plan",
       "target": "sym:src/yigraf/cli.py#_rebuild"
     },
@@ -2091,6 +2507,42 @@
       "confidence": "EXTRACTED",
       "relation": "calls",
       "source": "sym:src/yigraf/cli.py#plan",
+      "target": "sym:src/yigraf/cli.py#_require_workspace"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/cli.py#remember",
+      "target": "sym:src/yigraf/cli.py#_capture_memory"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/cli.py#remember",
+      "target": "sym:src/yigraf/cli.py#_report_capture"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/cli.py#remember",
+      "target": "sym:src/yigraf/cli.py#_require_workspace"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/cli.py#supersede",
+      "target": "sym:src/yigraf/cli.py#_capture_memory"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/cli.py#supersede",
+      "target": "sym:src/yigraf/cli.py#_report_capture"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/cli.py#supersede",
       "target": "sym:src/yigraf/cli.py#_require_workspace"
     },
     {
@@ -2342,6 +2794,108 @@
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
+      "source": "sym:src/yigraf/memory.py#_project_memory_edges",
+      "target": "sym:src/yigraf/memory.py#_stash"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/memory.py#_read_concern",
+      "target": "sym:src/yigraf/memory.py#Concern"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/memory.py#find_memory",
+      "target": "sym:src/yigraf/memory.py#_split_frontmatter"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/memory.py#find_memory",
+      "target": "sym:src/yigraf/memory.py#memory_dir"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/memory.py#iter_memories",
+      "target": "sym:src/yigraf/memory.py#memory_dir"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/memory.py#iter_memories",
+      "target": "sym:src/yigraf/memory.py#read_memory"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/memory.py#memory_path",
+      "target": "sym:src/yigraf/memory.py#memory_dir"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/memory.py#next_seq",
+      "target": "sym:src/yigraf/memory.py#_seq_from_stem"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/memory.py#next_seq",
+      "target": "sym:src/yigraf/memory.py#memory_dir"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/memory.py#project_into",
+      "target": "sym:src/yigraf/memory.py#_project_memory_edges"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/memory.py#project_into",
+      "target": "sym:src/yigraf/memory.py#iter_memories"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/memory.py#read_memory",
+      "target": "sym:src/yigraf/memory.py#Memory"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/memory.py#read_memory",
+      "target": "sym:src/yigraf/memory.py#_parse_body"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/memory.py#read_memory",
+      "target": "sym:src/yigraf/memory.py#_read_concern"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/memory.py#read_memory",
+      "target": "sym:src/yigraf/memory.py#_seq_from_stem"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/memory.py#read_memory",
+      "target": "sym:src/yigraf/memory.py#_split_frontmatter"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/memory.py#render_memory",
+      "target": "sym:src/yigraf/memory.py#_compose"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
       "source": "sym:src/yigraf/retrieval.py#_build_corpus",
       "target": "sym:src/yigraf/retrieval.py#_Corpus"
     },
@@ -2362,6 +2916,18 @@
       "relation": "calls",
       "source": "sym:src/yigraf/retrieval.py#_hubs",
       "target": "sym:src/yigraf/retrieval.py#_percentile"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/retrieval.py#_memory_line",
+      "target": "sym:src/yigraf/retrieval.py#_memory_links"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/retrieval.py#_node_line",
+      "target": "sym:src/yigraf/retrieval.py#_memory_line"
     },
     {
       "confidence": "EXTRACTED",
@@ -2415,6 +2981,12 @@
       "confidence": "EXTRACTED",
       "relation": "calls",
       "source": "sym:src/yigraf/retrieval.py#context",
+      "target": "sym:src/yigraf/retrieval.py#_drift_line"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/retrieval.py#context",
       "target": "sym:src/yigraf/retrieval.py#_match_scores"
     },
     {
@@ -2457,6 +3029,12 @@
       "confidence": "EXTRACTED",
       "relation": "calls",
       "source": "sym:src/yigraf/retrieval.py#context_for_locus",
+      "target": "sym:src/yigraf/retrieval.py#_drift_line"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/retrieval.py#context_for_locus",
       "target": "sym:src/yigraf/retrieval.py#_file_structure_nodes"
     },
     {
@@ -2482,6 +3060,12 @@
       "relation": "calls",
       "source": "sym:src/yigraf/retrieval.py#context_for_locus",
       "target": "sym:src/yigraf/retrieval.py#_verified_reconcile"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/retrieval.py#session_context",
+      "target": "sym:src/yigraf/retrieval.py#_drift_line"
     },
     {
       "confidence": "EXTRACTED",
@@ -2972,6 +3556,198 @@
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
+      "source": "sym:tests/test_memory.py#_remember",
+      "target": "sym:tests/test_memory.py#_run"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_active_decision_outranks_its_superseded_predecessor",
+      "target": "sym:tests/test_memory.py#_remember"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_active_decision_outranks_its_superseded_predecessor",
+      "target": "sym:tests/test_memory.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_active_decision_outranks_its_superseded_predecessor",
+      "target": "sym:tests/test_memory.py#_run"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_concerns_edge_auto_reanchors_on_rename",
+      "target": "sym:tests/test_memory.py#_remember"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_concerns_edge_auto_reanchors_on_rename",
+      "target": "sym:tests/test_memory.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_concerns_edge_is_anchored_to_the_symbol_hash",
+      "target": "sym:tests/test_memory.py#_graph"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_concerns_edge_is_anchored_to_the_symbol_hash",
+      "target": "sym:tests/test_memory.py#_remember"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_concerns_edge_is_anchored_to_the_symbol_hash",
+      "target": "sym:tests/test_memory.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_context_renders_the_decision_with_its_why",
+      "target": "sym:tests/test_memory.py#_remember"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_context_renders_the_decision_with_its_why",
+      "target": "sym:tests/test_memory.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_deleting_concerned_code_is_hard_concerns_drift",
+      "target": "sym:tests/test_memory.py#_remember"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_deleting_concerned_code_is_hard_concerns_drift",
+      "target": "sym:tests/test_memory.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_editing_concerned_code_surfaces_concerns_drift",
+      "target": "sym:tests/test_memory.py#_remember"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_editing_concerned_code_surfaces_concerns_drift",
+      "target": "sym:tests/test_memory.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_memory_artifact_round_trips",
+      "target": "sym:tests/test_memory.py#_remember"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_memory_artifact_round_trips",
+      "target": "sym:tests/test_memory.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_next_seq_increments_across_captures",
+      "target": "sym:tests/test_memory.py#_remember"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_next_seq_increments_across_captures",
+      "target": "sym:tests/test_memory.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_note_constraint_is_a_promotable_constraint",
+      "target": "sym:tests/test_memory.py#_graph"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_note_constraint_is_a_promotable_constraint",
+      "target": "sym:tests/test_memory.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_note_constraint_is_a_promotable_constraint",
+      "target": "sym:tests/test_memory.py#_run"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_remember_projects_a_memory_node_with_its_edges",
+      "target": "sym:tests/test_memory.py#_graph"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_remember_projects_a_memory_node_with_its_edges",
+      "target": "sym:tests/test_memory.py#_remember"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_remember_projects_a_memory_node_with_its_edges",
+      "target": "sym:tests/test_memory.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_remember_rejects_an_unknown_concerns_symbol",
+      "target": "sym:tests/test_memory.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_remember_rejects_an_unknown_type",
+      "target": "sym:tests/test_memory.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_supersede_links_and_marks_the_predecessor_stale",
+      "target": "sym:tests/test_memory.py#_graph"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_supersede_links_and_marks_the_predecessor_stale",
+      "target": "sym:tests/test_memory.py#_remember"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_supersede_links_and_marks_the_predecessor_stale",
+      "target": "sym:tests/test_memory.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_supersede_links_and_marks_the_predecessor_stale",
+      "target": "sym:tests/test_memory.py#_run"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_supersede_rejects_an_unknown_old_id",
+      "target": "sym:tests/test_memory.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
       "source": "sym:tests/test_verbs.py#test_deleting_a_linked_symbol_dangles_without_a_phantom_node",
       "target": "sym:tests/test_verbs.py#_repo"
     },
@@ -3116,7 +3892,7 @@
       "target": "sym:src/yigraf/astnorm.py#content_hash"
     },
     {
-      "anchor": "a9ff8ea649f658e0c13bc77b46a58f373fa1aa115fc5565e04bfda5c51e33c6f",
+      "anchor": "88a5333cb3cfef7104603db098202009cae063394745e9a19ed0ef6764366cdc",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "implements",
@@ -3152,7 +3928,7 @@
       "target": "int:drift-detection"
     },
     {
-      "anchor": "c7ae285a4357e06d486fc0b8212b2cfcbe8737528098b88febdc0dfe10ad2e3d",
+      "anchor": "f8b633dccc7ce4d90d66190c6bb9399cd383b1795ad2d792e0e3f0d6b54eb9a3",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "implements",
@@ -3160,7 +3936,7 @@
       "target": "sym:src/yigraf/drift.py#compute_drift"
     },
     {
-      "anchor": "59de8a53d92c87f92bc96430017ed3d5634a5e0d5b21fb7ea5d4d08398faeca0",
+      "anchor": "e716cbe43024eaa7324bd553b48116ef692ad82ae9c0205465f80cddb018a9d4",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "implements",
@@ -3174,7 +3950,7 @@
       "target": "int:token-cheap-context"
     },
     {
-      "anchor": "1d96bebeff547d7af30322c5cddeabc8ecc6de879dc0a5fb7c149dc399e31956",
+      "anchor": "a53b3e3d1b86458cbdc27ecb9a24ae30237c308d5ec919bad0c39be4c308d14f",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "implements",
@@ -3196,7 +3972,7 @@
       "target": "sym:src/yigraf/hooks.py#install_claude_hooks"
     },
     {
-      "anchor": "a69f41391790fa81c55ef6ead28f82937326d8341d8fdc196910e5d10ce29f9e",
+      "anchor": "8a8da94d764d87cf24a36f543b43902ad894d0f6dd1f6c18a6f056adbf1963e1",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "implements",
@@ -3313,7 +4089,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "9ea894b9a6e7a903f0debcc1d24fde972155962761df277411bfc0117ebc4323",
+      "content_hash": "0fd4f567cb774b3b260b2b177fff025e9a11425414ecfb4a2cb0edc1620e780b",
       "family": "structure",
       "id": "file:src/yigraf/cli.py",
       "imports": [
@@ -3324,6 +4100,7 @@
         "sys",
         "typer",
         "yigraf",
+        "yigraf.astnorm",
         "yigraf.config",
         "yigraf.drift",
         "yigraf.extract",
@@ -3338,7 +4115,7 @@
       "source_range": [
         0,
         0,
-        349,
+        455,
         0
       ]
     },
@@ -3366,7 +4143,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "68b9af577259797d77e52337d3bd42ed415ac3760207bc30a586920972be6dbe",
+      "content_hash": "cb9eab05891c9f61bfa8e86b1a0088527c304e6edfbb7cbbea8a3649e7bc7145",
       "family": "structure",
       "id": "file:src/yigraf/drift.py",
       "imports": [
@@ -3381,13 +4158,13 @@
       "source_range": [
         0,
         0,
-        90,
+        113,
         0
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "de5e625be0e27677137c54372e93440dfb683bb51535e90bc5d2052618ff483f",
+      "content_hash": "9e8bb882f926a6ee4bb12fa95a735a3ce70a878137cfa24cd3076436e41d47c6",
       "family": "structure",
       "id": "file:src/yigraf/extract.py",
       "imports": [
@@ -3410,7 +4187,7 @@
       "source_range": [
         0,
         0,
-        419,
+        422,
         0
       ]
     },
@@ -3437,7 +4214,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "5a5b9cf1e6b829b7631ab3df91284e9114ce62fd124ee0d2dc258c0c9ca457b3",
+      "content_hash": "bc30359e276c2c0accfdfdc2488ccbc30611ee86ce0722d11452a3b5d9940e44",
       "family": "structure",
       "id": "file:src/yigraf/hooks.py",
       "imports": [
@@ -3454,13 +4231,38 @@
       "source_range": [
         0,
         0,
-        192,
+        209,
         0
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "41d4bb2f3131a5896244430bca7b2da333fc8e8dc987b64a82eb066b912bf34f",
+      "content_hash": "e31024f8f65bd4aaae26be1348dda0c4f921fcfdea6d7cf666ee86c60a5a0c82",
+      "family": "structure",
+      "id": "file:src/yigraf/memory.py",
+      "imports": [
+        "dataclasses",
+        "networkx",
+        "pathlib",
+        "re",
+        "typing",
+        "yaml",
+        "yigraf.astnorm"
+      ],
+      "kind": "file",
+      "label": "src/yigraf/memory.py",
+      "language": "python",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        0,
+        0,
+        325,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "f0df91db0032d768aecb8e551726ec7fdba519791b38ebd70f32b550745aac6f",
       "family": "structure",
       "id": "file:src/yigraf/retrieval.py",
       "imports": [
@@ -3477,7 +4279,7 @@
       "source_range": [
         0,
         0,
-        418,
+        463,
         0
       ]
     },
@@ -3772,6 +4574,32 @@
     },
     {
       "confidence": "EXTRACTED",
+      "content_hash": "4c9e65e200822a1d581cb5fad8a64e879bd8949f0315e1bc9b7efba77009a8d1",
+      "family": "structure",
+      "id": "file:tests/test_memory.py",
+      "imports": [
+        "pathlib",
+        "typer.testing",
+        "yigraf",
+        "yigraf.cli",
+        "yigraf.config",
+        "yigraf.drift",
+        "yigraf.extract",
+        "yigraf.graph"
+      ],
+      "kind": "file",
+      "label": "tests/test_memory.py",
+      "language": "python",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        0,
+        0,
+        217,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
       "content_hash": "f9311ba04d4905ec71ceecebe2b63160567e50f1bdf62403f95abd78c73c7de2",
       "family": "structure",
       "id": "file:tests/test_verbs.py",
@@ -3840,6 +4668,21 @@
     },
     {
       "confidence": "EXTRACTED",
+      "design": "Memory is one .md per node (memory/<seq>-<slug>.md); concerns reuses the implements drift machinery; capture is agent-asserted (no distillation backstop in M7).",
+      "family": "intent",
+      "id": "int:memory-family",
+      "kind": "requirement",
+      "label": "yigraf SHALL let an agent capture the reasoning behind a change as a durable memory node and re-surface it when the code it concerns changes.",
+      "scenarios": [
+        "Given a decision captured with --concerns <sym>, When that symbol's body later changes, Then yigraf surfaces a re-verify reconcile on the next touch.",
+        "Given a superseded decision, When context is queried, Then the active decision out-ranks it but the superseded one stays available."
+      ],
+      "source_file": "intents/memory-family.md",
+      "statement": "yigraf SHALL let an agent capture the reasoning behind a change as a durable memory node and re-surface it when the code it concerns changes.",
+      "status": "active"
+    },
+    {
+      "confidence": "EXTRACTED",
       "design": "tree-sitter extraction; astnorm-v1 hash drops comments/docstrings, canon quotes, excludes the symbol's own name.",
       "family": "intent",
       "id": "int:structure-index",
@@ -3866,6 +4709,54 @@
       "source_file": "intents/token-cheap-context.md",
       "statement": "yigraf SHALL answer a query with a token-budgeted slice of the graph rendered as locators and signatures, not source.",
       "status": "proposed"
+    },
+    {
+      "alternatives": "a separate compute_concerns_drift/resolve_concerns path \u2014 duplicated logic that would drift from the implements path over time",
+      "confidence": "EXTRACTED",
+      "family": "memory",
+      "id": "mem:001",
+      "kind": "decision",
+      "label": "concerns reuses the implements drift machinery via one relation table, not a parallel code path",
+      "maturity": "working",
+      "promotable": false,
+      "source_file": "memory/001-concerns-reuses-the-implements-drift-machinery.md",
+      "statement": "concerns reuses the implements drift machinery via one relation table, not a parallel code path",
+      "status": "active",
+      "superseded_in": 0,
+      "supersedes_out": 0,
+      "why": "the two drift-bearing relations differ only in source family + dangling-attr name; folding them into _DRIFT_RELATIONS means rename re-anchoring, the SHA cache, and soft/hard detection are written once"
+    },
+    {
+      "alternatives": null,
+      "confidence": "EXTRACTED",
+      "family": "memory",
+      "id": "mem:002",
+      "kind": "decision",
+      "label": "the first memory milestone captures agent-asserted only; no pre-/clear distillation backstop",
+      "maturity": "working",
+      "promotable": false,
+      "source_file": "memory/002-the-first-memory-milestone-captures-agent.md",
+      "statement": "the first memory milestone captures agent-asserted only; no pre-/clear distillation backstop",
+      "status": "active",
+      "superseded_in": 0,
+      "supersedes_out": 0,
+      "why": "memory-model \u00a75 option A: cheapest, deterministic, EXTRACTED confidence, mirrors the v0 implements pattern we already trust; add distillation (option B) only once links prove valuable"
+    },
+    {
+      "alternatives": "recompute on all nodes for uniformity \u2014 needless graph.json bloat (345 nodes \u00d7 2 zero counters)",
+      "confidence": "EXTRACTED",
+      "family": "memory",
+      "id": "mem:003",
+      "kind": "decision",
+      "label": "supersession counters are stamped only on memory nodes, not every node",
+      "maturity": "working",
+      "promotable": false,
+      "source_file": "memory/003-supersession-counters-are-stamped-only-on.md",
+      "statement": "supersession counters are stamped only on memory nodes, not every node",
+      "status": "active",
+      "superseded_in": 0,
+      "supersedes_out": 0,
+      "why": "only memory carries supersedes edges, so stamping superseded_in:0 on every structure node would bloat graph.json; retrieval reads the counter with a 0 default"
     },
     {
       "confidence": "EXTRACTED",
@@ -3949,7 +4840,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "9ea894b9a6e7a903f0debcc1d24fde972155962761df277411bfc0117ebc4323",
+      "content_hash": "0fd4f567cb774b3b260b2b177fff025e9a11425414ecfb4a2cb0edc1620e780b",
       "family": "structure",
       "id": "module:src/yigraf/cli.py",
       "kind": "module",
@@ -3959,7 +4850,7 @@
       "source_range": [
         0,
         0,
-        349,
+        455,
         0
       ]
     },
@@ -3981,7 +4872,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "68b9af577259797d77e52337d3bd42ed415ac3760207bc30a586920972be6dbe",
+      "content_hash": "cb9eab05891c9f61bfa8e86b1a0088527c304e6edfbb7cbbea8a3649e7bc7145",
       "family": "structure",
       "id": "module:src/yigraf/drift.py",
       "kind": "module",
@@ -3991,13 +4882,13 @@
       "source_range": [
         0,
         0,
-        90,
+        113,
         0
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "de5e625be0e27677137c54372e93440dfb683bb51535e90bc5d2052618ff483f",
+      "content_hash": "9e8bb882f926a6ee4bb12fa95a735a3ce70a878137cfa24cd3076436e41d47c6",
       "family": "structure",
       "id": "module:src/yigraf/extract.py",
       "kind": "module",
@@ -4007,7 +4898,7 @@
       "source_range": [
         0,
         0,
-        419,
+        422,
         0
       ]
     },
@@ -4029,7 +4920,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "5a5b9cf1e6b829b7631ab3df91284e9114ce62fd124ee0d2dc258c0c9ca457b3",
+      "content_hash": "bc30359e276c2c0accfdfdc2488ccbc30611ee86ce0722d11452a3b5d9940e44",
       "family": "structure",
       "id": "module:src/yigraf/hooks.py",
       "kind": "module",
@@ -4039,13 +4930,29 @@
       "source_range": [
         0,
         0,
-        192,
+        209,
         0
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "41d4bb2f3131a5896244430bca7b2da333fc8e8dc987b64a82eb066b912bf34f",
+      "content_hash": "e31024f8f65bd4aaae26be1348dda0c4f921fcfdea6d7cf666ee86c60a5a0c82",
+      "family": "structure",
+      "id": "module:src/yigraf/memory.py",
+      "kind": "module",
+      "label": "src/yigraf/memory.py",
+      "language": "python",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        0,
+        0,
+        325,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "f0df91db0032d768aecb8e551726ec7fdba519791b38ebd70f32b550745aac6f",
       "family": "structure",
       "id": "module:src/yigraf/retrieval.py",
       "kind": "module",
@@ -4055,7 +4962,7 @@
       "source_range": [
         0,
         0,
-        418,
+        463,
         0
       ]
     },
@@ -4264,6 +5171,22 @@
         0,
         0,
         47,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "4c9e65e200822a1d581cb5fad8a64e879bd8949f0315e1bc9b7efba77009a8d1",
+      "family": "structure",
+      "id": "module:tests/test_memory.py",
+      "kind": "module",
+      "label": "tests/test_memory.py",
+      "language": "python",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        0,
+        0,
+        217,
         0
       ]
     },
@@ -4820,6 +5743,23 @@
     },
     {
       "confidence": "EXTRACTED",
+      "content_hash": "641085cbef886e3a11861444a93f9621f6772ae8bc93e9c97367759f6791ce32",
+      "family": "structure",
+      "id": "sym:src/yigraf/cli.py#_capture_memory",
+      "kind": "function",
+      "label": "_capture_memory",
+      "language": "python",
+      "signature": "def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, why: str, serves: list[str], concern_syms: list[str], rejected: str | None, supersedes: list[str], promotable: bool) -> memory.Memory:",
+      "source_file": "src/yigraf/cli.py",
+      "source_range": [
+        215,
+        0,
+        234,
+        15
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
       "content_hash": "cacfd00922a617a412980ac3b8fee6e222afa303c15bee536bb08a8f7cdb139a",
       "family": "structure",
       "id": "sym:src/yigraf/cli.py#_find_plan_file",
@@ -4829,9 +5769,9 @@
       "signature": "def _find_plan_file(workspace: Path, plan_slug_cf: str) -> Path | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        109,
+        110,
         0,
-        114,
+        115,
         15
       ]
     },
@@ -4846,9 +5786,9 @@
       "signature": "def _hook_graph(root: Path):",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        289,
+        395,
         0,
-        295,
+        401,
         24
       ]
     },
@@ -4863,9 +5803,9 @@
       "signature": "def _main( version: bool = typer.Option( False, \"--version\", callback=_version_callback, is_eager=True, help=\"Show the yigraf version and exit.\", ), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        38,
+        39,
         0,
-        48,
+        49,
         62
       ]
     },
@@ -4880,9 +5820,9 @@
       "signature": "def _post_tool_use(data: dict) -> dict | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        298,
+        404,
         0,
-        319,
+        425,
         101
       ]
     },
@@ -4897,10 +5837,27 @@
       "signature": "def _rebuild(root: Path) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        102,
+        103,
         0,
-        106,
+        107,
         63
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "4a42e57854c75038c855c2321d179943c789698d5404b0d2af642a94a220ff6c",
+      "family": "structure",
+      "id": "sym:src/yigraf/cli.py#_report_capture",
+      "kind": "function",
+      "label": "_report_capture",
+      "language": "python",
+      "signature": "def _report_capture(node: memory.Memory) -> None:",
+      "source_file": "src/yigraf/cli.py",
+      "source_range": [
+        237,
+        0,
+        245,
+        57
       ]
     },
     {
@@ -4914,10 +5871,27 @@
       "signature": "def _require_workspace(root: Path) -> Path:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        94,
+        95,
         0,
-        99,
+        100,
         20
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "8c32a1f8dc3bdd2b41a6846ff7b0d940a989fa06248b6c13d76fa4b6e29fa180",
+      "family": "structure",
+      "id": "sym:src/yigraf/cli.py#_resolve_concerns",
+      "kind": "function",
+      "label": "_resolve_concerns",
+      "language": "python",
+      "signature": "def _resolve_concerns(repo: Path, workspace: Path, syms: list[str]) -> list[memory.Concern]:",
+      "source_file": "src/yigraf/cli.py",
+      "source_range": [
+        199,
+        0,
+        212,
+        19
       ]
     },
     {
@@ -4931,9 +5905,9 @@
       "signature": "def _run_hook(handler) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        276,
+        382,
         0,
-        286,
+        392,
         28
       ]
     },
@@ -4948,9 +5922,9 @@
       "signature": "def _session_start(data: dict) -> dict | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        322,
+        428,
         0,
-        331,
+        437,
         102
       ]
     },
@@ -4965,9 +5939,9 @@
       "signature": "def _version_callback(value: bool) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        32,
+        33,
         0,
-        35,
+        36,
         26
       ]
     },
@@ -4982,9 +5956,9 @@
       "signature": "def build( path: Path = typer.Argument( Path(\".\"), help=\"Repo root to index (must contain a yigraf/ workspace from `yigraf init`).\", ), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        70,
+        71,
         0,
-        91,
+        92,
         86
       ]
     },
@@ -4999,9 +5973,9 @@
       "signature": "def context( query: str = typer.Argument(..., help=\"What to look up, e.g. \\\"session expiry\\\".\"), repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root (default: current dir).\"), family: str = typer.Option(None, \"--family\", help=\"Restrict to one family: structure|intent|plan.\"), budget: int = typer.Option(None, \"--budget\", help=\"Token budget for the render.\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        198,
+        304,
         0,
-        211,
+        317,
         112
       ]
     },
@@ -5016,9 +5990,9 @@
       "signature": "def drift( path: Path = typer.Argument(Path(\".\"), help=\"Repo root (default: current dir).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        214,
+        320,
         0,
-        237,
+        343,
         32
       ]
     },
@@ -5033,9 +6007,9 @@
       "signature": "def hook_post_tool_use() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        334,
+        440,
         0,
-        337,
+        443,
         29
       ]
     },
@@ -5050,9 +6024,9 @@
       "signature": "def hook_session_start() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        340,
+        446,
         0,
-        343,
+        449,
         29
       ]
     },
@@ -5067,9 +6041,9 @@
       "signature": "def init( path: Path = typer.Argument( Path(\".\"), help=\"Repo root to initialize (defaults to the current directory).\", ), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        51,
+        52,
         0,
-        67,
+        68,
         88
       ]
     },
@@ -5084,9 +6058,9 @@
       "signature": "def install_claude_hooks_cmd( path: Path = typer.Argument(Path(\".\"), help=\"Repo root to wire up for Claude Code.\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        257,
+        363,
         0,
-        266,
+        372,
         55
       ]
     },
@@ -5101,9 +6075,9 @@
       "signature": "def install_hooks( path: Path = typer.Argument(Path(\".\"), help=\"Repo root (must be a git repository).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        240,
+        346,
         0,
-        254,
+        360,
         62
       ]
     },
@@ -5118,9 +6092,9 @@
       "signature": "def intent( slug: str = typer.Argument(..., help=\"Slug for the intent file (intents/<slug>.md).\"), statement: str = typer.Option(..., \"--statement\", \"-s\", help=\"One-line SHALL/MUST contract.\"), scenario: list[str] = typer.Option(None, \"--scenario\", help=\"A Given/When/Then example (repeatable).\"), design: str = typer.Option(None, \"--design\", help=\"Optional approach / the 'how'.\"), type: str = typer.Option(\"requirement\", \"--type\", help=\"requirement | goal | capability.\"), status: str = typer.Option(\"proposed\", \"--status\", help=\"proposed | active | satisfied | archived.\"), repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root (default: current dir).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        117,
+        118,
         0,
-        138,
+        139,
         64
       ]
     },
@@ -5135,9 +6109,9 @@
       "signature": "def link( task_id: str = typer.Argument(..., help=\"Task locator, e.g. task:<plan>/1.\"), target: str = typer.Argument(..., help=\"A symbol (sym:<path>#<name>) \u2192 implements, or an intent (int:<slug>) \u2192 tracks.\"), repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root (default: current dir).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        159,
+        160,
         0,
-        195,
+        196,
         18
       ]
     },
@@ -5152,10 +6126,27 @@
       "signature": "def main() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        346,
+        452,
         0,
-        348,
+        454,
         9
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "dc505b1d5050c8886caad1a3f5609085caa1198bd7bf92b29cc4372c730c80e6",
+      "family": "structure",
+      "id": "sym:src/yigraf/cli.py#note_constraint",
+      "kind": "function",
+      "label": "note_constraint",
+      "language": "python",
+      "signature": "def note_constraint( rule: str = typer.Argument(..., help=\"The constraint in one line.\"), concerns: list[str] = typer.Option(None, \"--concerns\", help=\"A symbol this constrains, sym:<path>#<name> (repeatable, anchored).\"), why: str = typer.Option(\"\", \"--why\", help=\"Why the constraint holds (optional).\"), serves: list[str] = typer.Option(None, \"--serves\", help=\"An intent/plan id this serves (repeatable).\"), repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root (default: current dir).\"), ) -> None:",
+      "source_file": "src/yigraf/cli.py",
+      "source_range": [
+        266,
+        0,
+        279,
+        25
       ]
     },
     {
@@ -5169,10 +6160,44 @@
       "signature": "def plan( slug: str = typer.Argument(..., help=\"Slug for the plan file (plans/active/<slug>.md).\"), title: str = typer.Option(..., \"--title\", \"-t\", help=\"Plan title.\"), task: list[str] = typer.Option(None, \"--task\", help=\"A task description (repeatable).\"), repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root (default: current dir).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        141,
+        142,
         0,
-        156,
+        157,
         94
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "e24275e13af92ddb44fda6cf600a2858381c499da7a4be5b888946129b698a04",
+      "family": "structure",
+      "id": "sym:src/yigraf/cli.py#remember",
+      "kind": "function",
+      "label": "remember",
+      "language": "python",
+      "signature": "def remember( statement: str = typer.Argument(..., help=\"The claim in one line (the H2 heading).\"), type: str = typer.Option(\"decision\", \"--type\", help=f\"One of: {', '.join(memory.MEMORY_TYPES)}.\"), why: str = typer.Option(\"\", \"--why\", help=\"The reasoning (ReCAP's T) \u2014 what /clear loses.\"), serves: list[str] = typer.Option(None, \"--serves\", help=\"An intent/plan id this serves (repeatable).\"), concerns: list[str] = typer.Option(None, \"--concerns\", help=\"A symbol this governs, sym:<path>#<name> (repeatable, anchored).\"), rejected: str = typer.Option(None, \"--rejected\", help=\"The rejected alternative + why (the most perishable content).\"), repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root (default: current dir).\"), ) -> None:",
+      "source_file": "src/yigraf/cli.py",
+      "source_range": [
+        248,
+        0,
+        263,
+        25
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "3ff689e481d31791f545759f8b7246647615c6f7ce40244cbf0327774bd247e4",
+      "family": "structure",
+      "id": "sym:src/yigraf/cli.py#supersede",
+      "kind": "function",
+      "label": "supersede",
+      "language": "python",
+      "signature": "def supersede( old_id: str = typer.Argument(..., help=\"The memory id being superseded, e.g. mem:001.\"), statement: str = typer.Argument(..., help=\"The new claim in one line.\"), type: str = typer.Option(\"decision\", \"--type\", help=f\"One of: {', '.join(memory.MEMORY_TYPES)}.\"), why: str = typer.Option(\"\", \"--why\", help=\"Why the mind changed.\"), serves: list[str] = typer.Option(None, \"--serves\", help=\"An intent/plan id this serves (repeatable).\"), concerns: list[str] = typer.Option(None, \"--concerns\", help=\"A symbol this governs (repeatable, anchored).\"), rejected: str = typer.Option(None, \"--rejected\", help=\"The rejected alternative + why.\"), repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root (default: current dir).\"), ) -> None:",
+      "source_file": "src/yigraf/cli.py",
+      "source_range": [
+        282,
+        0,
+        301,
+        25
       ]
     },
     {
@@ -5228,7 +6253,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "2b40c4f687decb4fffa29e410b11516bc58161b6ef8f72e012be0561f93ba125",
+      "content_hash": "677c23a33cda385be2bf7f5e9a84471543a32ae5a6dded8d17c7665f2bd3d3d2",
       "family": "structure",
       "id": "sym:src/yigraf/drift.py#DriftItem",
       "kind": "class",
@@ -5237,10 +6262,10 @@
       "signature": "class DriftItem:",
       "source_file": "src/yigraf/drift.py",
       "source_range": [
-        19,
+        30,
         0,
-        25,
-        20
+        37,
+        96
       ]
     },
     {
@@ -5254,15 +6279,15 @@
       "signature": "def _hash_index(graph: nx.DiGraph) -> dict[str, list[str]]:",
       "source_file": "src/yigraf/drift.py",
       "source_range": [
-        28,
+        40,
         0,
-        36,
+        48,
         16
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "c7ae285a4357e06d486fc0b8212b2cfcbe8737528098b88febdc0dfe10ad2e3d",
+      "content_hash": "f8b633dccc7ce4d90d66190c6bb9399cd383b1795ad2d792e0e3f0d6b54eb9a3",
       "family": "structure",
       "id": "sym:src/yigraf/drift.py#compute_drift",
       "kind": "function",
@@ -5271,15 +6296,15 @@
       "signature": "def compute_drift(graph: nx.DiGraph) -> list[DriftItem]:",
       "source_file": "src/yigraf/drift.py",
       "source_range": [
-        68,
+        82,
         0,
-        89,
+        112,
         16
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "59de8a53d92c87f92bc96430017ed3d5634a5e0d5b21fb7ea5d4d08398faeca0",
+      "content_hash": "e716cbe43024eaa7324bd553b48116ef692ad82ae9c0205465f80cddb018a9d4",
       "family": "structure",
       "id": "sym:src/yigraf/drift.py#resolve_renames",
       "kind": "function",
@@ -5288,10 +6313,10 @@
       "signature": "def resolve_renames(graph: nx.DiGraph) -> None:",
       "source_file": "src/yigraf/drift.py",
       "source_range": [
-        39,
+        51,
         0,
-        65,
-        59
+        79,
+        46
       ]
     },
     {
@@ -5390,9 +6415,9 @@
       "signature": "def _add_import_edges(graph: nx.DiGraph, file_imports: dict[str, list[str]], file_sources: dict[str, str]) -> None:",
       "source_file": "src/yigraf/extract.py",
       "source_range": [
-        377,
+        380,
         0,
-        388,
+        391,
         67
       ]
     },
@@ -5526,9 +6551,9 @@
       "signature": "def _iter_python_files(root: Path, ignore_dirs: set[str]) -> list[str]:",
       "source_file": "src/yigraf/extract.py",
       "source_range": [
-        365,
+        368,
         0,
-        374,
+        377,
         14
       ]
     },
@@ -5543,9 +6568,9 @@
       "signature": "def _module_candidates(relpath: str) -> set[str]:",
       "source_file": "src/yigraf/extract.py",
       "source_range": [
-        404,
+        407,
         0,
-        418,
+        421,
         14
       ]
     },
@@ -5560,9 +6585,9 @@
       "signature": "def _module_path_map(file_sources: dict[str, str]) -> dict[str, str]:",
       "source_file": "src/yigraf/extract.py",
       "source_range": [
-        391,
+        394,
         0,
-        401,
+        404,
         18
       ]
     },
@@ -5670,7 +6695,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "a9ff8ea649f658e0c13bc77b46a58f373fa1aa115fc5565e04bfda5c51e33c6f",
+      "content_hash": "88a5333cb3cfef7104603db098202009cae063394745e9a19ed0ef6764366cdc",
       "family": "structure",
       "id": "sym:src/yigraf/extract.py#build_graph",
       "kind": "function",
@@ -5681,7 +6706,7 @@
       "source_range": [
         296,
         0,
-        342,
+        345,
         23
       ]
     },
@@ -5713,9 +6738,9 @@
       "signature": "def symbol_content_hash(root: Path, symbol_id: str, config: dict) -> str | None:",
       "source_file": "src/yigraf/extract.py",
       "source_range": [
-        345,
+        348,
         0,
-        362,
+        365,
         15
       ]
     },
@@ -5815,9 +6840,9 @@
       "signature": "class ClaudeHookResult:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        121,
+        138,
         0,
-        126,
+        143,
         23
       ]
     },
@@ -5849,9 +6874,9 @@
       "signature": "def _ensure_hook(hooks: dict, event: str, matcher: str, command: str, verb: str) -> bool:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        129,
+        146,
         0,
-        140,
+        157,
         15
       ]
     },
@@ -5883,9 +6908,9 @@
       "signature": "def _write_agents_block(agents_path: Path) -> Path:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        181,
+        198,
         0,
-        191,
+        208,
         22
       ]
     },
@@ -5917,9 +6942,9 @@
       "signature": "def install_claude_hooks(root: Path) -> ClaudeHookResult:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        143,
+        160,
         0,
-        178,
+        195,
         75
       ]
     },
@@ -5942,6 +6967,329 @@
     },
     {
       "confidence": "EXTRACTED",
+      "content_hash": "b3b1d131e98ffc4dd465a25fca35307ca388833f690f4ae9e2c999ec60b8d569",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#Concern",
+      "kind": "class",
+      "label": "Concern",
+      "language": "python",
+      "signature": "class Concern:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        83,
+        0,
+        89,
+        34
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "d958c6b28a197bd17fa022c4fb5baf36a8b074afd4630e03a4c1b35a2c669b3b",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#Memory",
+      "kind": "class",
+      "label": "Memory",
+      "language": "python",
+      "signature": "class Memory:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        92,
+        0,
+        107,
+        50
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "d6d861944e08e11ad97f524a7b28a22d1a284eee81e5dd01df136fc3bf753680",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#_compose",
+      "kind": "function",
+      "label": "_compose",
+      "language": "python",
+      "signature": "def _compose(meta: dict, body: str) -> str:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        72,
+        0,
+        75,
+        37
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "d1a9845a65cc73494ed5795fe9bab99c6f404401fb4c56da3b4b34dd38956b4a",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#_parse_body",
+      "kind": "function",
+      "label": "_parse_body",
+      "language": "python",
+      "signature": "def _parse_body(body: str) -> tuple[str, str, str | None]:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        121,
+        0,
+        141,
+        39
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "30bc7838061750242f4f4b17394ef220eefd29d3b3af7d3a7df14323452bce99",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#_project_memory_edges",
+      "kind": "function",
+      "label": "_project_memory_edges",
+      "language": "python",
+      "signature": "def _project_memory_edges(graph: nx.DiGraph, memory: Memory) -> None:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        277,
+        0,
+        300,
+        64
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "e398e2f02631fdf8ffef9467f768e6acc3051fa996f230324096b971d7f59581",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#_read_concern",
+      "kind": "function",
+      "label": "_read_concern",
+      "language": "python",
+      "signature": "def _read_concern(entry: Any) -> Concern:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        115,
+        0,
+        118,
+        102
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "c5fa86df17820adf55829929376478daa1a4e2c5649092cb58e64b617fc2e1c9",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#_seq_from_stem",
+      "kind": "function",
+      "label": "_seq_from_stem",
+      "language": "python",
+      "signature": "def _seq_from_stem(stem: str) -> int:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        202,
+        0,
+        204,
+        45
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "f85c6c27021cb016bf046a9be9677f6f481f50b8a314c44778e4196e19fb483c",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#_split_frontmatter",
+      "kind": "function",
+      "label": "_split_frontmatter",
+      "language": "python",
+      "signature": "def _split_frontmatter(text: str) -> tuple[dict, str]:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        62,
+        0,
+        69,
+        31
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "f9fd4709ee57e055e1e4e034f7e93a1453270bbf09d2ee16a1fbae95aa019a1a",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#_stash",
+      "kind": "function",
+      "label": "_stash",
+      "language": "python",
+      "signature": "def _stash(graph: nx.DiGraph, node_id: str, attr: str, value: Any) -> None:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        303,
+        0,
+        304,
+        59
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "0a4640ba341c1ba47aa9470e9d2dcb8348e3a968147744d10c4f2da71bfe589b",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#find_memory",
+      "kind": "function",
+      "label": "find_memory",
+      "language": "python",
+      "signature": "def find_memory(root: Path, mem_id: str) -> Path | None:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        243,
+        0,
+        249,
+        15
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "f2729f8ec39b8f53fceac818a0054ed634d09a389572cd4e696f532eb323443d",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#iter_memories",
+      "kind": "function",
+      "label": "iter_memories",
+      "language": "python",
+      "signature": "def iter_memories(root: Path) -> list[Memory]:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        238,
+        0,
+        240,
+        81
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "136a1f27a722a6aceb823b732cc79a189461b87252a33233b0c2c69269d59c6a",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#memory_dir",
+      "kind": "function",
+      "label": "memory_dir",
+      "language": "python",
+      "signature": "def memory_dir(root: Path) -> Path:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        207,
+        0,
+        208,
+        43
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "728d82e3ad4eca7d210173c509114547ac474288fc3e008a63883ccf4f3427df",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#memory_path",
+      "kind": "function",
+      "label": "memory_path",
+      "language": "python",
+      "signature": "def memory_path(root: Path, seq: int, slug: str) -> Path:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        229,
+        0,
+        230,
+        52
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "388574499ca0065ae04a7f8d9872023c734ea98273965b09cabc22c4fb20a069",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#next_seq",
+      "kind": "function",
+      "label": "next_seq",
+      "language": "python",
+      "signature": "def next_seq(root: Path) -> int:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        211,
+        0,
+        219,
+        22
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "154d8d28e1cd5dfbafefdd4d0e4d53c3cc73e5f61807e60e3ae4fd4bdcb7c4f1",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#project_into",
+      "kind": "function",
+      "label": "project_into",
+      "language": "python",
+      "signature": "def project_into(graph: nx.DiGraph, root: Path) -> None:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        252,
+        0,
+        274,
+        44
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "fb6caf3e3e81fd8b226f5dded7cd5f1d13b9e12df863d27154e7c1954e354926",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#read_memory",
+      "kind": "function",
+      "label": "read_memory",
+      "language": "python",
+      "signature": "def read_memory(path: Path) -> Memory:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        144,
+        0,
+        167,
+        5
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "12b62b7096cfcc56ca643c20b217b9902da9a167846d2115800c5bb3b2e05469",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#recompute_counters",
+      "kind": "function",
+      "label": "recompute_counters",
+      "language": "python",
+      "signature": "def recompute_counters(graph: nx.DiGraph) -> None:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        307,
+        0,
+        324,
+        9
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "4a38bd5ba68abb893abd195e2b8251adfe087a612a69ba2465db817d9b76214f",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#render_memory",
+      "kind": "function",
+      "label": "render_memory",
+      "language": "python",
+      "signature": "def render_memory(memory: Memory) -> str:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        170,
+        0,
+        194,
+        50
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "d7451ab1746c23e1201158646f10cc81534dc4e763da3b5ea1444fe93d30f622",
+      "family": "structure",
+      "id": "sym:src/yigraf/memory.py#slugify",
+      "kind": "function",
+      "label": "slugify",
+      "language": "python",
+      "signature": "def slugify(text: str, max_words: int = 6) -> str:",
+      "source_file": "src/yigraf/memory.py",
+      "source_range": [
+        222,
+        0,
+        226,
+        43
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
       "content_hash": "da3cdad8c0ea90780dfb99f206b067d487944423a7c17149c8dc30ffa706dc8c",
       "family": "structure",
       "id": "sym:src/yigraf/retrieval.py#ContextResult",
@@ -5951,9 +7299,9 @@
       "signature": "class ContextResult:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        207,
+        215,
         0,
-        212,
+        220,
         20
       ]
     },
@@ -5968,9 +7316,9 @@
       "signature": "class _Corpus:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        63,
+        71,
         0,
-        66,
+        74,
         25
       ]
     },
@@ -5985,10 +7333,27 @@
       "signature": "def _build_corpus(graph: nx.DiGraph) -> _Corpus:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        69,
+        77,
         0,
-        79,
+        87,
         50
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "b7cb50579c2046a87dfbfd7889b1811812b26d98139934de80db8a891910abfc",
+      "family": "structure",
+      "id": "sym:src/yigraf/retrieval.py#_drift_line",
+      "kind": "function",
+      "label": "_drift_line",
+      "language": "python",
+      "signature": "def _drift_line(item) -> str:",
+      "source_file": "src/yigraf/retrieval.py",
+      "source_range": [
+        223,
+        0,
+        230,
+        71
       ]
     },
     {
@@ -6002,9 +7367,9 @@
       "signature": "def _file_structure_nodes(graph: nx.DiGraph, pid: str) -> list[str]:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        305,
+        353,
         0,
-        310,
+        358,
         14
       ]
     },
@@ -6019,9 +7384,9 @@
       "signature": "def _hubs(graph: nx.DiGraph, config: dict) -> set[str]:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        123,
-        0,
         131,
+        0,
+        139,
         56
       ]
     },
@@ -6036,15 +7401,49 @@
       "signature": "def _match_scores(corpus: _Corpus, query_terms: list[str]) -> dict[str, float]:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        87,
+        95,
         0,
-        105,
+        113,
         17
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "d371ef485c5bb4de12f69375bb98597c01c6d7d9c9378642832a43220a15259a",
+      "content_hash": "9f0b1d16759067e63c0222a4a68a051de2c804544962152e10aa0fc96615a827",
+      "family": "structure",
+      "id": "sym:src/yigraf/retrieval.py#_memory_line",
+      "kind": "function",
+      "label": "_memory_line",
+      "language": "python",
+      "signature": "def _memory_line(graph: nx.DiGraph, node_id: str, attrs: dict) -> str:",
+      "source_file": "src/yigraf/retrieval.py",
+      "source_range": [
+        309,
+        0,
+        320,
+        23
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "1c96f33b9c6cfc9d858c70c32b9e60e863037a82a8d27203575a2d21914e8b56",
+      "family": "structure",
+      "id": "sym:src/yigraf/retrieval.py#_memory_links",
+      "kind": "function",
+      "label": "_memory_links",
+      "language": "python",
+      "signature": "def _memory_links(graph: nx.DiGraph, mem_id: str) -> str:",
+      "source_file": "src/yigraf/retrieval.py",
+      "source_range": [
+        323,
+        0,
+        334,
+        53
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "763e8e531b8336eb6104f100b1a5bbb66ba74ca204df8ac2bf13c0201cac5aa2",
       "family": "structure",
       "id": "sym:src/yigraf/retrieval.py#_node_line",
       "kind": "function",
@@ -6053,9 +7452,9 @@
       "signature": "def _node_line(graph: nx.DiGraph, node_id: str) -> str:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        274,
+        292,
         0,
-        286,
+        306,
         55
       ]
     },
@@ -6070,9 +7469,9 @@
       "signature": "def _normalize(values: dict[str, float]) -> dict[str, float]:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        181,
+        189,
         0,
-        187,
+        195,
         63
       ]
     },
@@ -6087,9 +7486,9 @@
       "signature": "def _percentile(sorted_vals: list[int], p: float) -> float:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        134,
+        142,
         0,
-        138,
+        146,
         27
       ]
     },
@@ -6104,9 +7503,9 @@
       "signature": "def _rank(graph: nx.DiGraph, hops: dict[str, int], match: dict[str, float], config: dict) -> list[str]:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        190,
+        198,
         0,
-        199,
+        207,
         53
       ]
     },
@@ -6121,9 +7520,9 @@
       "signature": "def _refs_in(graph: nx.DiGraph, node_id: str) -> int:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        167,
+        175,
         0,
-        169,
+        177,
         59
       ]
     },
@@ -6138,9 +7537,9 @@
       "signature": "def _relevance(graph: nx.DiGraph, node_id: str, config: dict) -> float:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        172,
+        180,
         0,
-        178,
+        186,
         16
       ]
     },
@@ -6155,15 +7554,15 @@
       "signature": "def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[str], reconcile_lines: list[str], budget_tokens: int) -> ContextResult:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        232,
+        250,
         0,
-        271,
+        289,
         49
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "541b06717172522dd42108529459cd0042fb996dfda57e148cd6f55f2e15c42e",
+      "content_hash": "ed0e11b4032bfce007d81bc7d9534ea47cb1a982dc560bcac5f22fbeb959285b",
       "family": "structure",
       "id": "sym:src/yigraf/retrieval.py#_searchable",
       "kind": "function",
@@ -6174,7 +7573,7 @@
       "source_range": [
         50,
         0,
-        60,
+        68,
         25
       ]
     },
@@ -6189,9 +7588,9 @@
       "signature": "def _seeds(match: dict[str, float], config: dict) -> list[str]:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        108,
+        116,
         0,
-        120,
+        128,
         17
       ]
     },
@@ -6206,9 +7605,9 @@
       "signature": "def _task_links(graph: nx.DiGraph, task_id: str) -> str:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        289,
+        337,
         0,
-        297,
+        345,
         53
       ]
     },
@@ -6223,9 +7622,9 @@
       "signature": "def _traverse(graph: nx.DiGraph, seeds: list[str], config: dict) -> dict[str, int]:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        141,
+        149,
         0,
-        164,
+        172,
         15
       ]
     },
@@ -6240,15 +7639,15 @@
       "signature": "def _verified_reconcile(graph: nx.DiGraph, drifted_edges: set[tuple[str, str]]) -> list[str]:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        215,
+        233,
         0,
-        229,
+        247,
         24
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "1d96bebeff547d7af30322c5cddeabc8ecc6de879dc0a5fb7c149dc399e31956",
+      "content_hash": "a53b3e3d1b86458cbdc27ecb9a24ae30237c308d5ec919bad0c39be4c308d14f",
       "family": "structure",
       "id": "sym:src/yigraf/retrieval.py#context",
       "kind": "function",
@@ -6257,15 +7656,15 @@
       "signature": "def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = None, budget_tokens: int | None = None) -> ContextResult:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        390,
+        436,
         0,
-        417,
+        462,
         86
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "a69f41391790fa81c55ef6ead28f82937326d8341d8fdc196910e5d10ce29f9e",
+      "content_hash": "8a8da94d764d87cf24a36f543b43902ad894d0f6dd1f6c18a6f056adbf1963e1",
       "family": "structure",
       "id": "sym:src/yigraf/retrieval.py#context_for_locus",
       "kind": "function",
@@ -6274,15 +7673,15 @@
       "signature": "def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict, budget_tokens: int | None = None) -> ContextResult | None:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        313,
+        361,
         0,
-        354,
+        401,
         100
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "f616aecd43a32b5432ad27203667684c553557d1dc543abc06eb74cf5f90d08f",
+      "content_hash": "f5ad6a5ef12750a3444bb7ab1aa42ea2173645cb905c94b186f7cfa2de1a5985",
       "family": "structure",
       "id": "sym:src/yigraf/retrieval.py#session_context",
       "kind": "function",
@@ -6291,9 +7690,9 @@
       "signature": "def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None = None) -> ContextResult | None:",
       "source_file": "src/yigraf/retrieval.py",
       "source_range": [
-        357,
+        404,
         0,
-        387,
+        433,
         108
       ]
     },
@@ -8029,6 +9428,312 @@
         0,
         28,
         54
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "a4f8e67b184f6680497b2d2ae5d4e89347bf1324ead2c0730b3e3c2b406d20fc",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#_graph",
+      "kind": "function",
+      "label": "_graph",
+      "language": "python",
+      "signature": "def _graph(root: Path):",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        46,
+        0,
+        47,
+        53
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "aea90e16ecaf4b8124e75b3077fa873badc8f468af29a0c6257d54e0393390e7",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#_remember",
+      "kind": "function",
+      "label": "_remember",
+      "language": "python",
+      "signature": "def _remember(root: Path, statement: str, **opts) -> None:",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        50,
+        0,
+        59,
+        14
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "75ed0e7ff7b179a39ccf54e09816140febb8158096d88ff2389b82e41fcdf7d3",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#_repo",
+      "kind": "function",
+      "label": "_repo",
+      "language": "python",
+      "signature": "def _repo(tmp_path: Path) -> Path:",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        26,
+        0,
+        37,
+        19
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "87cd2840615acfd203dfb36723e687aa15044cd9d96b4ed2a6e6db823e882d60",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#_run",
+      "kind": "function",
+      "label": "_run",
+      "language": "python",
+      "signature": "def _run(args: list[str]):",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        40,
+        0,
+        43,
+        17
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "f89dcdda5f0df832e2b2b7e5cd98391449a964692c1c50c84e8f0095f13ad472",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#test_active_decision_outranks_its_superseded_predecessor",
+      "kind": "function",
+      "label": "test_active_decision_outranks_its_superseded_predecessor",
+      "language": "python",
+      "signature": "def test_active_decision_outranks_its_superseded_predecessor(tmp_path: Path):",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        165,
+        0,
+        174,
+        40
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "ae10b2173c2784a83ebe7718b489d8f226008d2c565eae50503daf639a82dd45",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#test_concerns_edge_auto_reanchors_on_rename",
+      "kind": "function",
+      "label": "test_concerns_edge_auto_reanchors_on_rename",
+      "language": "python",
+      "signature": "def test_concerns_edge_auto_reanchors_on_rename(tmp_path: Path):",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        127,
+        0,
+        136,
+        92
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "df638acc345a1436a4cad3647bcd4de0fa88dd507539c84344b24e11e6f13d80",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#test_concerns_edge_is_anchored_to_the_symbol_hash",
+      "kind": "function",
+      "label": "test_concerns_edge_is_anchored_to_the_symbol_hash",
+      "language": "python",
+      "signature": "def test_concerns_edge_is_anchored_to_the_symbol_hash(tmp_path: Path):",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        82,
+        0,
+        88,
+        90
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "583471ac06ce87c410255639399401e41f2f03596e31756d2a182ae50b56d7b5",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#test_context_renders_the_decision_with_its_why",
+      "kind": "function",
+      "label": "test_context_renders_the_decision_with_its_why",
+      "language": "python",
+      "signature": "def test_context_renders_the_decision_with_its_why(tmp_path: Path):",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        188,
+        0,
+        196,
+        52
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "5d9df1511d1e16c9e78c68085f94aa818acc1c1feabcc45b61d5170f7bcb542b",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#test_deleting_concerned_code_is_hard_concerns_drift",
+      "kind": "function",
+      "label": "test_deleting_concerned_code_is_hard_concerns_drift",
+      "language": "python",
+      "signature": "def test_deleting_concerned_code_is_hard_concerns_drift(tmp_path: Path):",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        139,
+        0,
+        145,
+        74
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "92f70d0a0481d23f1fce2805e3c7d541fc3600eec4f087bda79b61aed6ceef8c",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#test_editing_concerned_code_surfaces_concerns_drift",
+      "kind": "function",
+      "label": "test_editing_concerned_code_surfaces_concerns_drift",
+      "language": "python",
+      "signature": "def test_editing_concerned_code_surfaces_concerns_drift(tmp_path: Path):",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        117,
+        0,
+        124,
+        68
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "940b55cea38c86aef6bda09663ee041a8fd30988c9e008f041613c83a47a0cec",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#test_memory_artifact_round_trips",
+      "kind": "function",
+      "label": "test_memory_artifact_round_trips",
+      "language": "python",
+      "signature": "def test_memory_artifact_round_trips(tmp_path: Path):",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        199,
+        0,
+        207,
+        76
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "3a69e738c5c5f15fb2109d4f7a49a539ea41edb32970ced8bf82a5e25570999b",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#test_next_seq_increments_across_captures",
+      "kind": "function",
+      "label": "test_next_seq_increments_across_captures",
+      "language": "python",
+      "signature": "def test_next_seq_increments_across_captures(tmp_path: Path):",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        210,
+        0,
+        216,
+        37
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "64ddd25b2456c2b17e1bed05bdf2a3f055b4941eb98cdddc41f5114062a80017",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#test_note_constraint_is_a_promotable_constraint",
+      "kind": "function",
+      "label": "test_note_constraint_is_a_promotable_constraint",
+      "language": "python",
+      "signature": "def test_note_constraint_is_a_promotable_constraint(tmp_path: Path):",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        104,
+        0,
+        109,
+        70
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "d6cf0cf620ddf3d60a653862ee9032cd908f923740f6fdebab6d6b1ea90ecd7e",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#test_remember_projects_a_memory_node_with_its_edges",
+      "kind": "function",
+      "label": "test_remember_projects_a_memory_node_with_its_edges",
+      "language": "python",
+      "signature": "def test_remember_projects_a_memory_node_with_its_edges(tmp_path: Path):",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        67,
+        0,
+        79,
+        60
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "c778df662b93b11ccfafbd090a5feeb6716e0fdec3ff21465e4c9647e80fd368",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#test_remember_rejects_an_unknown_concerns_symbol",
+      "kind": "function",
+      "label": "test_remember_rejects_an_unknown_concerns_symbol",
+      "language": "python",
+      "signature": "def test_remember_rejects_an_unknown_concerns_symbol(tmp_path: Path):",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        97,
+        0,
+        101,
+        65
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "22effa30f1f66df487397c10071545a1f9591b6dc44372f81dece4b1321c83ca",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#test_remember_rejects_an_unknown_type",
+      "kind": "function",
+      "label": "test_remember_rejects_an_unknown_type",
+      "language": "python",
+      "signature": "def test_remember_rejects_an_unknown_type(tmp_path: Path):",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        91,
+        0,
+        94,
+        77
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "a13e4a2d4292ed81857c0c8dcad876ffd444b038a6041b7c2da657ca0dd658bb",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#test_supersede_links_and_marks_the_predecessor_stale",
+      "kind": "function",
+      "label": "test_supersede_links_and_marks_the_predecessor_stale",
+      "language": "python",
+      "signature": "def test_supersede_links_and_marks_the_predecessor_stale(tmp_path: Path):",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        153,
+        0,
+        162,
+        51
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "089354afb65247867c88be8d266473cfba78e832443fc160801968d1f3d3db02",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#test_supersede_rejects_an_unknown_old_id",
+      "kind": "function",
+      "label": "test_supersede_rejects_an_unknown_old_id",
+      "language": "python",
+      "signature": "def test_supersede_rejects_an_unknown_old_id(tmp_path: Path):",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        177,
+        0,
+        180,
+        70
       ]
     },
     {

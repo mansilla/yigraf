@@ -13,7 +13,8 @@ from pathlib import Path
 
 import typer
 
-from yigraf import __version__, artifacts, retrieval
+from yigraf import __version__, artifacts, memory, retrieval
+from yigraf.astnorm import ANCHOR_ALGO
 from yigraf.config import load_config
 from yigraf.drift import compute_drift
 from yigraf.extract import build_graph, symbol_content_hash
@@ -194,6 +195,111 @@ def link(
         raise typer.Exit(code=1)
 
     _rebuild(repo)
+
+
+def _resolve_concerns(repo: Path, workspace: Path, syms: list[str]) -> list[memory.Concern]:
+    """Resolve each ``--concerns`` symbol to a :class:`Concern` with a stamped anchor (or exit)."""
+    config = load_config(workspace / "config.yaml")
+    concerns: list[memory.Concern] = []
+    for sym in syms:
+        if not sym.startswith("sym:"):
+            typer.echo(f"--concerns must be a symbol (sym:<path>#<name>), got: {sym}", err=True)
+            raise typer.Exit(code=1)
+        anchor = symbol_content_hash(repo, sym, config)
+        if anchor is None:
+            typer.echo(f"Symbol not found in the current source: {sym}", err=True)
+            raise typer.Exit(code=1)
+        concerns.append(memory.Concern(sym=sym, anchor=anchor, anchor_algo=ANCHOR_ALGO))
+    return concerns
+
+
+def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, why: str,
+                    serves: list[str], concern_syms: list[str], rejected: str | None,
+                    supersedes: list[str], promotable: bool) -> memory.Memory:
+    """Write a new memory artifact, then rebuild graph.json. Shared by remember/supersede/note-constraint."""
+    if type_ not in memory.MEMORY_TYPES:
+        typer.echo(f"--type must be one of {', '.join(memory.MEMORY_TYPES)} (got {type_}).", err=True)
+        raise typer.Exit(code=1)
+
+    concerns = _resolve_concerns(repo, workspace, concern_syms)
+    seq = memory.next_seq(repo)
+    slug = memory.slugify(statement)
+    node = memory.Memory(
+        id=f"mem:{seq:03d}", seq=seq, slug=slug, type=type_, statement=statement, why=why,
+        alternatives=rejected, serves=list(serves), concerns=concerns, supersedes=list(supersedes),
+        promotable=promotable, provenance={"source": "cli"},
+    )
+    dest = memory.memory_path(repo, seq, slug)
+    dest.write_text(memory.render_memory(node), encoding="utf-8")
+    _rebuild(repo)
+    return node
+
+
+def _report_capture(node: memory.Memory) -> None:
+    bits = [f"type={node.type}"]
+    if node.serves:
+        bits.append("serves " + ", ".join(node.serves))
+    if node.concerns:
+        bits.append("concerns " + ", ".join(c.sym for c in node.concerns))
+    if node.supersedes:
+        bits.append("supersedes " + ", ".join(node.supersedes))
+    typer.echo(f"Captured {node.id} ({'; '.join(bits)})")
+
+
+@app.command()
+def remember(
+    statement: str = typer.Argument(..., help="The claim in one line (the H2 heading)."),
+    type: str = typer.Option("decision", "--type", help=f"One of: {', '.join(memory.MEMORY_TYPES)}."),
+    why: str = typer.Option("", "--why", help="The reasoning (ReCAP's T) — what /clear loses."),
+    serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
+    concerns: list[str] = typer.Option(None, "--concerns", help="A symbol this governs, sym:<path>#<name> (repeatable, anchored)."),
+    rejected: str = typer.Option(None, "--rejected", help="The rejected alternative + why (the most perishable content)."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Capture a decision/rationale/learned-fact as a memory node (serves an intent, concerns code)."""
+    workspace = _require_workspace(repo)
+    node = _capture_memory(repo, workspace, statement=statement, type_=type, why=why,
+                           serves=serves or [], concern_syms=concerns or [], rejected=rejected,
+                           supersedes=[], promotable=False)
+    _report_capture(node)
+
+
+@app.command(name="note-constraint")
+def note_constraint(
+    rule: str = typer.Argument(..., help="The constraint in one line."),
+    concerns: list[str] = typer.Option(None, "--concerns", help="A symbol this constrains, sym:<path>#<name> (repeatable, anchored)."),
+    why: str = typer.Option("", "--why", help="Why the constraint holds (optional)."),
+    serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Capture a constraint memory (flagged promotable to an enforced check; capture-flow §0a)."""
+    workspace = _require_workspace(repo)
+    node = _capture_memory(repo, workspace, statement=rule, type_="constraint", why=why,
+                           serves=serves or [], concern_syms=concerns or [], rejected=None,
+                           supersedes=[], promotable=True)
+    _report_capture(node)
+
+
+@app.command()
+def supersede(
+    old_id: str = typer.Argument(..., help="The memory id being superseded, e.g. mem:001."),
+    statement: str = typer.Argument(..., help="The new claim in one line."),
+    type: str = typer.Option("decision", "--type", help=f"One of: {', '.join(memory.MEMORY_TYPES)}."),
+    why: str = typer.Option("", "--why", help="Why the mind changed."),
+    serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
+    concerns: list[str] = typer.Option(None, "--concerns", help="A symbol this governs (repeatable, anchored)."),
+    rejected: str = typer.Option(None, "--rejected", help="The rejected alternative + why."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Record a mind-change: a new memory node with a supersedes edge to the old one (never edit-in-place)."""
+    workspace = _require_workspace(repo)
+    if memory.find_memory(repo, old_id) is None:
+        typer.echo(f"No memory node with id {old_id} to supersede.", err=True)
+        raise typer.Exit(code=1)
+    node = _capture_memory(repo, workspace, statement=statement, type_=type, why=why,
+                           serves=serves or [], concern_syms=concerns or [], rejected=rejected,
+                           supersedes=[old_id], promotable=False)
+    _report_capture(node)
 
 
 @app.command()

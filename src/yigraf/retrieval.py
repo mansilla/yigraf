@@ -51,11 +51,19 @@ def terms(text: str) -> list[str]:
 def _searchable(node_id: str, attrs: dict) -> str:
     """The text a node is matched against: its id plus family-specific content."""
     bits = [node_id, str(attrs.get("label", ""))]
-    if attrs.get("family") == "intent":
+    family = attrs.get("family")
+    if family == "intent":
         bits.append(str(attrs.get("statement", "")))
         bits.extend(attrs.get("scenarios") or [])
         if attrs.get("design"):
             bits.append(str(attrs["design"]))
+    if family == "memory":
+        # Match a decision on its statement + the "why" (the words an agent would query for).
+        bits.append(str(attrs.get("statement", "")))
+        bits.append(str(attrs.get("why", "")))
+        if attrs.get("alternatives"):
+            bits.append(str(attrs["alternatives"]))
+        bits.append(str(attrs.get("kind", "")))
     if attrs.get("signature"):
         bits.append(str(attrs["signature"]))
     return " ".join(bits)
@@ -213,6 +221,16 @@ class ContextResult:
     nodes_total: int
 
 
+def _drift_line(item) -> str:
+    """A reconcile line for one drift item, worded for the relation that drifted (implements vs concerns)."""
+    verb = "changed since anchored" if item.kind == "soft" else "no longer found"
+    if item.relation == "concerns":
+        tail = "re-verify this decision still holds, then re-`remember` or `supersede` it."
+    else:
+        tail = "re-verify or relink."
+    return f"  ⚠ {item.task_id} → {item.locator} {verb} — {tail}"
+
+
 def _verified_reconcile(graph: nx.DiGraph, drifted_edges: set[tuple[str, str]]) -> list[str]:
     """R9c: intents marked ``satisfied`` but lacking a live, undrifted implementing link."""
     lines: list[str] = []
@@ -283,8 +301,38 @@ def _node_line(graph: nx.DiGraph, node_id: str) -> str:
         return f"  {box} {node_id}: {attrs.get('label', '')}{suffix}"
     if fam == "plan":
         return f"  {node_id}: {attrs.get('label', '')}"
+    if fam == "memory":
+        return _memory_line(graph, node_id, attrs)
     sig = attrs.get("signature")
     return f"  {node_id}" + (f"  {sig}" if sig else "")
+
+
+def _memory_line(graph: nx.DiGraph, node_id: str, attrs: dict) -> str:
+    """A compact decision line: ``mem:001 [decision]: <statement> — why: <why> (serves …; concerns …)``."""
+    tag = attrs.get("kind", "memory")
+    if attrs.get("superseded_in", 0):
+        tag += "·superseded"
+    line = f"  {node_id} [{tag}]: {attrs.get('statement') or attrs.get('label', '')}"
+    if attrs.get("why"):
+        line += f" — why: {attrs['why']}"
+    if attrs.get("alternatives"):
+        line += f" (rejected: {attrs['alternatives']})"
+    links = _memory_links(graph, node_id)
+    return line + links
+
+
+def _memory_links(graph: nx.DiGraph, mem_id: str) -> str:
+    serves = [d for _, d, a in graph.out_edges(mem_id, data=True) if a.get("relation") == "serves"]
+    concerns = [d for _, d, a in graph.out_edges(mem_id, data=True) if a.get("relation") == "concerns"]
+    supersedes = [d for _, d, a in graph.out_edges(mem_id, data=True) if a.get("relation") == "supersedes"]
+    parts = []
+    if serves:
+        parts.append("serves " + ", ".join(sorted(serves)))
+    if concerns:
+        parts.append("concerns " + ", ".join(sorted(concerns)))
+    if supersedes:
+        parts.append("supersedes " + ", ".join(sorted(supersedes)))
+    return f"  ({'; '.join(parts)})" if parts else ""
 
 
 def _task_links(graph: nx.DiGraph, task_id: str) -> str:
@@ -344,8 +392,7 @@ def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict,
         drifted_edges.add((item.task_id, item.locator))
         if item.task_id in hops or item.locator in seedset or item.locator in hops:
             has_drift = True
-            verb = "changed since anchored" if item.kind == "soft" else "no longer found"
-            drift_lines.append(f"  ⚠ {item.task_id} → {item.locator} {verb} — re-verify or relink.")
+            drift_lines.append(_drift_line(item))
 
     if not governing and not has_drift:
         return None  # silent: no governing intent/task and no drift → nothing worth interrupting for
@@ -381,8 +428,7 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
             continue
         drifted_edges.add((item.task_id, item.locator))
         if item.task_id in in_scope or item.locator in in_scope:
-            verb = "changed since anchored" if item.kind == "soft" else "no longer found"
-            drift_lines.append(f"  ⚠ {item.task_id} → {item.locator} {verb} — re-verify or relink.")
+            drift_lines.append(_drift_line(item))
 
     reconcile = _verified_reconcile(graph, drifted_edges)
     return _render(graph, ranked, "active plan & governing intents", sorted(drift_lines), reconcile, budget)
@@ -411,8 +457,7 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
             continue
         drifted_edges.add((item.task_id, item.locator))
         if item.task_id in in_scope or item.locator in in_scope:
-            verb = "changed since anchored" if item.kind == "soft" else "no longer found"
-            drift_lines.append(f"  ⚠ {item.task_id} → {item.locator} {verb} — re-verify or relink.")
+            drift_lines.append(_drift_line(item))
 
     reconcile_lines = _verified_reconcile(graph, drifted_edges)
     return _render(graph, ranked, query, sorted(drift_lines), reconcile_lines, budget)

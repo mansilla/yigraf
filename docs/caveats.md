@@ -98,6 +98,31 @@
 - 🟡 **Edited-file key is `tool_input.file_path`, but docs showed `.path`.** The hook reads both; if a
   future tool uses yet another key the locus won't resolve and the hook stays (correctly) silent.
 
+## M7 — memory node family + capture verbs
+
+- 🟡 **No write-time dedup or contradiction detection yet.** `remember` happily creates a near-duplicate
+  of an existing decision, or a node that contradicts one, with no `supersedes` link inferred. The
+  design's dedup/contradiction (capture-flow §4) is embedding-based and lands with the M8 index; until
+  then the graph can accumulate restatements. Mitigation: the agent supersedes deliberately. *(M8)*
+- 🟡 **`maturity` is always `working`.** The `working → settled` promotion needs the runtime `survival`
+  counter (commit/task boundaries survived un-superseded), which is the M9 telemetry milestone. The
+  relevance prior's maturity weight (`w3`) is therefore inert in M7. *(M9)*
+- 🟡 **`provenance` carries no timestamp or commit.** Set to `{source: cli}` to avoid coupling capture
+  to a wall clock before telemetry exists; `anchor_commit`/`ts` (for recency/decay) arrive with M9.
+- 🟡 **`serves`/`supersedes` targets aren't pre-validated; only `concerns` is.** `remember --concerns`
+  resolves the symbol (errors if missing, like `link`), but a typo'd `--serves int:…` or
+  `supersede`-target intent silently dangles (stashed, not surfaced — `tracks`-style, not drift, R7).
+  `supersede`'s *old-id* **is** validated (must be an existing memory node). *(post-v0 polish)*
+- 🟡 **Memory nodes inherit the plan/hub fan-out + `file:`/`module:` render noise** (M4/M6 caveats): a
+  decision that `serves` a busy intent or `concerns` a hub symbol pulls in its neighborhood like any
+  other node. Same candidate fixes (soft-hub plan/intent, suppress file/module beside a shown symbol).
+- 🟢 **Capture is agent-asserted only (memory-model §5 option A).** No pre-`/clear` distillation backstop
+  — a decision the agent doesn't think to `remember` is lost. Option B (distillation) is deferred until
+  agent-asserted capture proves insufficient.
+- 🟢 **Boundary A/B nudges not wired.** Only the in-flow skill path + the existing `PostToolUse`
+  (boundary C) prompt capture; the `UserPromptSubmit`/plan-mode-exit nudges (capture-flow §0a) are new
+  host wiring, deferred.
+
 ## M6 — dogfood
 
 - 🟡 **Plan-node fan-out in `context`.** Every task hangs off one `plan` node, so a query about a
