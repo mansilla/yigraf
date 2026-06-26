@@ -19,6 +19,22 @@ edges:
       sym: sym:src/yigraf/embeddings.py#semantic_scores
     tracks: int:semantic-recall
   task:memory-milestone/3:
+    implements:
+    - anchor: a63c7f8f20cf0f98747c769a7a85ccdcd60bcb8a4b82f610340674ab52728ba7
+      anchor_algo: astnorm-v1
+      sym: sym:src/yigraf/counters.py#apply_maturity
+    - anchor: 9963f92ba4614294c0bf682e772e229e8b0ce2e539c73162133009fc599237eb
+      anchor_algo: astnorm-v1
+      sym: sym:src/yigraf/counters.py#survival_of
+    - anchor: 13745330abda48c7d5d674cc44a1bf46e39b0960655ad9ec2ec39c80cef3249c
+      anchor_algo: astnorm-v1
+      sym: sym:src/yigraf/counters.py#record_injection
+    - anchor: 345dc85647e0255006c27566975147e536fa1046ab83b24a7c85560dee0c83d9
+      anchor_algo: astnorm-v1
+      sym: sym:src/yigraf/counters.py#classify_gc
+    - anchor: 7ad1b54aa9f4b3e005f6c01c7423a7c2d00d47c51ee97c0e40020b55fcc41014
+      anchor_algo: astnorm-v1
+      sym: sym:src/yigraf/counters.py#merge_node_link
     tracks: int:memory-maturity
 family: plan
 id: plan:memory-milestone
@@ -28,4 +44,4 @@ id: plan:memory-milestone
 ## Tasks
 - [x] {#1} M7 — memory node family + capture verbs (remember/note-constraint/supersede); concerns drift
 - [x] {#2} M8 — embedding index + semantic seeder + write-time dedup (scoped hybrid)
-- [ ] {#3} M9 — counters/maturity/GC + runtime telemetry (survival/usage/last_seen, union-merge driver)
+- [x] {#3} M9 — counters/maturity/GC + runtime telemetry (survival/usage/last_seen, union-merge driver)

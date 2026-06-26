@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -32,10 +32,17 @@ def file_sha(data: bytes) -> str:
 
 @dataclass
 class StructureCache:
-    """Reusable per-file extraction projections, keyed by relative path then content SHA."""
+    """Reusable per-file extraction projections, keyed by relative path then content SHA.
+
+    Also carries a small HEAD-keyed ``maturity`` slot (R2 survival counts): recomputing maturity
+    walks git history, but an edit never moves ``HEAD``, so this lets the hot ``PostToolUse`` rebuild
+    skip the walk until a commit actually lands. Like the rest of the cache it's gitignored,
+    rebuildable, and never alters the (deterministic) output graph — only how survival is obtained.
+    """
 
     algo: str
     entries: dict[str, dict]
+    maturity: dict = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: Path) -> "StructureCache":
@@ -47,8 +54,19 @@ class StructureCache:
             except (json.JSONDecodeError, OSError):
                 data = {}
             if data.get("format") == CACHE_FORMAT and data.get("algo") == ANCHOR_ALGO:
-                return cls(algo=ANCHOR_ALGO, entries=dict(data.get("files", {})))
+                return cls(algo=ANCHOR_ALGO, entries=dict(data.get("files", {})),
+                           maturity=dict(data.get("maturity", {})))
         return cls(algo=ANCHOR_ALGO, entries={})
+
+    def maturity_survival(self, head: str) -> dict | None:
+        """Cached ``{path: survival}`` if it was computed at this ``HEAD``, else ``None`` (a miss)."""
+        if self.maturity.get("head") == head:
+            return dict(self.maturity.get("survival", {}))
+        return None
+
+    def set_maturity_survival(self, head: str, survival: dict) -> None:
+        """Record the survival map computed at ``head`` (replaces any map from an earlier HEAD)."""
+        self.maturity = {"head": head, "survival": dict(survival)}
 
     def get(self, relpath: str, sha: str) -> "FileProjection | None":
         """Return the cached projection for ``relpath`` iff its content SHA still matches."""
@@ -73,5 +91,6 @@ class StructureCache:
         """Write the cache as deterministic JSON (sorted keys)."""
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        out = {"format": CACHE_FORMAT, "algo": self.algo, "files": self.entries}
+        out = {"format": CACHE_FORMAT, "algo": self.algo, "files": self.entries,
+               "maturity": self.maturity}
         p.write_text(json.dumps(out, indent=2, sort_keys=True) + "\n", encoding="utf-8")

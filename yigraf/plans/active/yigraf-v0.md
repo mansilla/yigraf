@@ -2,16 +2,16 @@
 edges:
   task:yigraf-v0/1:
     implements:
-    - anchor: 88a5333cb3cfef7104603db098202009cae063394745e9a19ed0ef6764366cdc
+    - anchor: 48d63dbb52cd99595dcddec244aa6b04a69306d135b8831af639cd8920d2ad25
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/extract.py#build_graph
-    - anchor: e72df3f4d2eb54a0236068cc3df68860bff3f0de6bc225204c88cd5901ebb42c
+    - anchor: bc5b1b0af4cbc9e1b99f4837ee704931625ab7e3e01f0f34a0a043bfbe3486a5
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/astnorm.py#content_hash
     tracks: int:structure-index
   task:yigraf-v0/2:
     implements:
-    - anchor: e8c1fe579a17cc4a857787b6b3590c551f6605c25bbeb351f0e0faf0c8d01cb4
+    - anchor: 0bdbe77b588a33fcc371cd499904d817f308a20139f505435ec81ab4f859b9bc
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/extract.py#symbol_content_hash
     - anchor: 06b11a96d735a11dcc998f5fd2d16c66c191e54288c6b7db2c9592d4c1c61b28
