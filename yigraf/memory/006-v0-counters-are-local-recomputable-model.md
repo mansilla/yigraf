@@ -1,6 +1,6 @@
 ---
 concerns:
-- anchor: c89cd8aa3c0f2ccb315be135c9f7389b09cd58b3094c5d3638fb47863d1687a6
+- anchor: a63c7f8f20cf0f98747c769a7a85ccdcd60bcb8a4b82f610340674ab52728ba7
   anchor_algo: astnorm-v1
   sym: sym:src/yigraf/counters.py#apply_maturity
 family: memory

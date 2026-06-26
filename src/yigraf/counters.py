@@ -55,40 +55,110 @@ def _git(root: Path, *args: str) -> str | None:
     return out.stdout if out.returncode == 0 else None
 
 
-def survival_of(root: Path, repo_relpath: str) -> int:
-    """Commits the branch has accrued since ``repo_relpath`` was introduced (R2's maturity clock).
+def _head_sha(root: Path) -> str | None:
+    """The current ``HEAD`` commit (cache key for survival), or ``None`` without git/commits."""
+    out = _git(root, "rev-parse", "HEAD")
+    return out.strip() if out and out.strip() else None
 
-    Derived from history, not accumulated: the count of commits from the file's *add* commit to
-    ``HEAD``. ``0`` when there's no git, no such file, or it was added in the tip commit — so a
-    freshly-captured memory starts at ``0`` and matures as the branch moves on past it.
+
+def _intro_commits(root: Path, paths: list[str]) -> dict[str, str]:
+    """The *introducing* (oldest add) commit for each path, in one history traversal.
+
+    One ``git log --diff-filter=A --name-status`` over all paths replaces the per-path ``log`` of the
+    old fan-out. ``git log`` is newest-first, so re-assigning per add-event leaves the oldest add (the
+    true introduction, mirroring the original ``splitlines()[-1]``) as the final value.
     """
-    adds = _git(root, "log", "--diff-filter=A", "--format=%H", "--", repo_relpath)
-    if not adds or not adds.strip():
-        return 0
-    intro = adds.strip().splitlines()[-1]
-    count = _git(root, "rev-list", "--count", f"{intro}..HEAD")
-    try:
-        return int(count.strip()) if count else 0
-    except ValueError:
-        return 0
+    out = _git(root, "log", "--diff-filter=A", "--name-status", "--format=%x00%H", "--", *paths)
+    if not out:
+        return {}
+    want = set(paths)
+    intro: dict[str, str] = {}
+    current: str | None = None
+    for line in out.split("\n"):
+        if line.startswith("\x00"):
+            current = line[1:].strip()
+        elif line.startswith("A\t") and current:
+            path = line[2:]
+            if path in want:
+                intro[path] = current
+    return intro
 
 
-def apply_maturity(graph: nx.DiGraph, root: Path, config: dict) -> None:
+def _survival_map(root: Path, repo_relpaths: list[str]) -> dict[str, int]:
+    """Survival (the R2 maturity clock) for many paths in a flat *two* git calls, regardless of count.
+
+    One ``git log`` gives the HEAD-rooted commit order (index ``0`` = tip); one batched
+    :func:`_intro_commits` gives each path's introducing commit. Survival is that commit's distance
+    from ``HEAD``. ``0`` when there's no git, no such file, or it was added in the tip commit. On a
+    branchy history the topo-order distance under-counts merged side branches, so a node matures no
+    *faster* than the strict ``intro..HEAD`` count — conservative, and exact on linear history.
+    """
+    paths = sorted(set(repo_relpaths))
+    if not paths:
+        return {}
+    order = _git(root, "log", "--topo-order", "--format=%H")
+    if not order or not order.strip():
+        return {p: 0 for p in paths}
+    position = {h: i for i, h in enumerate(order.split())}
+    intro = _intro_commits(root, paths)
+    return {p: position.get(intro.get(p, ""), 0) for p in paths}
+
+
+def survival_of(root: Path, repo_relpath: str) -> int:
+    """Commits the branch has accrued since ``repo_relpath`` was introduced (single-path R2 clock).
+
+    A thin wrapper over :func:`_survival_map`; builds batch every memory path through that helper in a
+    flat number of git calls (see :func:`apply_maturity`). ``0`` when there's no git, no such file, or
+    it was added in the tip commit — so a freshly-captured memory starts at ``0`` and matures as the
+    branch moves on past it.
+    """
+    return _survival_map(root, [repo_relpath]).get(repo_relpath, 0)
+
+
+def _survival_for(root: Path, repo_relpaths: list[str], cache) -> dict[str, int]:
+    """Survival for ``repo_relpaths``, served from the HEAD-keyed structure cache when it can be.
+
+    An edit never moves ``HEAD``, so on the hot ``PostToolUse`` path this is a single ``rev-parse``
+    and zero history walks — survival can only change when a commit lands. Paths absent from a cached
+    map are necessarily uncommitted-since-that-build, so they score ``0`` (their git survival too).
+    """
+    head = _head_sha(root) if cache is not None else None
+    if head is not None:
+        cached = cache.maturity_survival(head)
+        if cached is not None:
+            return {p: cached.get(p, 0) for p in repo_relpaths}
+    survival = _survival_map(root, repo_relpaths)
+    if head is not None:
+        cache.set_maturity_survival(head, survival)
+    return survival
+
+
+def apply_maturity(graph: nx.DiGraph, root: Path, config: dict, cache=None) -> None:
     """Stamp git-derived ``survival`` + ``maturity`` on every memory node (recomputed each build).
 
     ``settled`` once ``survival ≥ K`` with ``superseded_in == 0`` (graph-design §3 / DESIGN R2):
     certainty earned by surviving boundaries, not self-reported, and self-healing — a later
     supersession reverts the node to ``working`` on the next build. Recomputable, so it lives happily
     in the committed (recomputable) ``graph.json`` without an accumulating counter or a merge driver.
+
+    Survival is derived in a flat number of git calls — batched across all memory paths and, given a
+    ``cache`` (the build path), memoized by ``HEAD`` so an edit-triggered rebuild that hasn't committed
+    re-uses the prior survival instead of re-walking history (caveats.md M9 / DESIGN R2).
     """
     k = int(config.get("maturity_k", 3))
+    paths = sorted({
+        f"yigraf/{attrs['source_file']}"
+        for _, attrs in graph.nodes(data=True)
+        if attrs.get("family") == MEMORY_FAMILY and attrs.get("source_file")
+    })
+    survival = _survival_for(root, paths, cache)
     for _, attrs in graph.nodes(data=True):
         if attrs.get("family") != MEMORY_FAMILY:
             continue
         source = attrs.get("source_file")
-        survival = survival_of(root, f"yigraf/{source}") if source else 0
-        attrs["survival"] = survival
-        attrs["maturity"] = "settled" if (survival >= k and not attrs.get("superseded_in", 0)) else "working"
+        s = survival.get(f"yigraf/{source}", 0) if source else 0
+        attrs["survival"] = s
+        attrs["maturity"] = "settled" if (s >= k and not attrs.get("superseded_in", 0)) else "working"
 
 
 # --------------------------------------------------------------------------------------------------
