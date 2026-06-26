@@ -130,9 +130,9 @@ def test_generic_languages_are_enabled_by_default():
 
 
 def test_vendored_languages_are_enabled():
-    # c_sharp/kotlin/scala/swift ship no usable TAGS_QUERY, so yigraf vendors one for each.
+    # c_sharp/kotlin/scala/swift/bash/sql ship no usable TAGS_QUERY, so yigraf vendors one for each.
     exts = extension_map(available_extractors(default_config()))
-    for suffix in (".cs", ".kt", ".scala", ".swift"):
+    for suffix in (".cs", ".kt", ".scala", ".swift", ".sh", ".sql"):
         assert suffix in exts, suffix
 
 
@@ -185,6 +185,44 @@ def test_kotlin_comment_edit_is_not_drift():
     h1 = {n: a["content_hash"] for n, a in extract_file("m.kt", base).nodes.items()}
     h2 = {n: a["content_hash"] for n, a in extract_file("m.kt", edited).nodes.items()}
     assert h1 == h2
+
+
+def test_kotlin_calls_resolve():
+    src = b'class Repo {\n    fun find(): String { return load() }\n    fun load(): String = "x"\n}\n'
+    assert ("sym:r.kt#Repo.find", "sym:r.kt#Repo.load") in _edges(extract_file("r.kt", src), "calls")
+
+
+def test_swift_calls_resolve():
+    src = b'class V {\n    func render() -> String { return layout() }\n    func layout() -> String { return "v" }\n}\n'
+    assert ("sym:v.swift#V.render", "sym:v.swift#V.layout") in _edges(extract_file("v.swift", src), "calls")
+
+
+# --- Bash + SQL -----------------------------------------------------------------------------------
+
+
+def test_bash_functions_and_calls():
+    src = b"helper() {\n  echo hi\n}\nmain() {\n  helper\n}\n"
+    proj = extract_file("s.sh", src)
+    assert _kinds(proj) == {"helper": "function", "main": "function"}
+    # `helper` invocation resolves to the in-file function; `echo` (external) is dropped.
+    assert _edges(proj, "calls") == {("sym:s.sh#main", "sym:s.sh#helper")}
+
+
+def test_sql_schema_symbols_and_drift():
+    src = (b"CREATE TABLE users (id INT);\n"
+           b"CREATE VIEW active AS SELECT id FROM users;\n"
+           b"CREATE FUNCTION addone(a INT) RETURNS INT AS $$ SELECT a+1 $$ LANGUAGE sql;\n")
+    proj = extract_file("schema.sql", src)
+    kinds = _kinds(proj)
+    assert kinds["users"] == "table"
+    assert kinds["active"] == "view"
+    assert kinds["addone"] == "function"
+
+    # A schema change (new column) drifts the table — the useful migration signal.
+    edited = b"CREATE TABLE users (id INT, name TEXT);\n"
+    h1 = {n: a["content_hash"] for n, a in extract_file("t.sql", b"CREATE TABLE users (id INT);\n").nodes.items()}
+    h2 = {n: a["content_hash"] for n, a in extract_file("t.sql", edited).nodes.items()}
+    assert h1["sym:t.sql#users"] != h2["sym:t.sql#users"]
 
 
 # --- Import + call enrichment (the per-language "extra layer") -------------------------------------

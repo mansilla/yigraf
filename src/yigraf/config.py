@@ -17,7 +17,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # Structure extraction (M1). Languages with a shipped extractor; grammars for the rest of the
     # core set are bundled and light up as their extractors land.
     "languages": ["python", "go", "javascript", "typescript", "rust", "java", "c", "cpp",
-                  "ruby", "php", "c_sharp", "kotlin", "scala", "swift"],
+                  "ruby", "php", "c_sharp", "kotlin", "scala", "swift", "bash", "sql"],
     "ignore": [".git/", "__pycache__/", ".venv/", "node_modules/", "origins/"],
     # Maturity (R2): a memory node settles after K commits on the default branch un-superseded.
     "maturity_k": 3,
@@ -54,9 +54,10 @@ schema_version: 0
 
 # --- Structure extraction (M1) ---
 # bespoke extractors (python, go, javascript, typescript); grammar tags-query extractors
-# (rust, java, c, cpp, ruby, php); yigraf-vendored tags-query extractors (c_sharp, kotlin, scala, swift).
+# (rust, java, c, cpp, ruby, php); yigraf-vendored tags-query extractors (c_sharp, kotlin, scala,
+# swift, bash, sql).
 languages: [python, go, javascript, typescript, rust, java, c, cpp, ruby, php,
-            c_sharp, kotlin, scala, swift]
+            c_sharp, kotlin, scala, swift, bash, sql]
 ignore:                        # path prefixes skipped when indexing the repo
   - .git/
   - __pycache__/

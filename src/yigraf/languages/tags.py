@@ -39,6 +39,8 @@ _KIND_MAP = {
     "type": "type",
     "module": "module",
     "macro": "macro",
+    "table": "table",  # SQL
+    "view": "view",    # SQL
 }
 
 
@@ -492,16 +494,81 @@ _SWIFT_TAGS = """
 (function_declaration name: (simple_identifier) @name) @definition.function
 """
 
+# Bash ships no TAGS_QUERY; functions are definitions and `command` invocations are call references
+# (only those matching an in-file function resolve to an edge — external commands are dropped).
+_BASH_TAGS = """
+(function_definition (word) @name) @definition.function
+(command (command_name) @name) @reference.call
+"""
+
+# SQL: schema objects are the "symbols" (drift on a CREATE is a useful schema-change signal). No call
+# model. Only verified node types — an unknown one would fail query compile and skip the language.
+_SQL_TAGS = """
+(create_table (object_reference (identifier) @name)) @definition.table
+(create_view (object_reference (identifier) @name)) @definition.view
+(create_function (object_reference (identifier) @name)) @definition.function
+"""
+
 
 def _vendored(name: str, exts: tuple[str, ...], module: str, lang_attrs: tuple[str, ...],
               query: str) -> TagExtractor:
     return TagExtractor(name, exts, name, _grammar(module, *lang_attrs), lambda: query, _SPEC_VENDORED_COMMENT)
 
 
-#: Extractors using a yigraf-vendored tags query (the grammar ships none usable).
+def _member_callee(call: Node, id_types: frozenset[str]) -> str | None:
+    """Callee name of a Kotlin/Swift ``call_expression``: a bare identifier, or the member of a
+    ``navigation_expression`` (``this.m()`` / ``self.m()`` → ``m``)."""
+    if not call.named_children:
+        return None
+    callee = call.named_children[0]  # the value_arguments node is a later child
+    if callee.type in id_types:
+        return callee.text.decode()
+    last = None
+    for node in _walk(callee):
+        if node.type in id_types:
+            last = node
+    return last.text.decode() if last is not None else None
+
+
+class _CallExprMixin(TagExtractor):
+    """Adds intra-file call edges for languages whose tags query has no ``@reference.call`` and whose
+    ``call_expression`` has no function field (Kotlin/Swift) — resolution reuses the generic machinery."""
+
+    _ID_TYPES: frozenset[str] = frozenset()
+
+    def _extra_call_refs(self, root, source):
+        out = []
+        for node in _walk(root):
+            if node.type == "call_expression":
+                name = _member_callee(node, self._ID_TYPES)
+                if name:
+                    out.append((node, name))
+        return out
+
+
+class KotlinExtractor(_CallExprMixin):
+    _ID_TYPES = frozenset({"identifier", "simple_identifier"})
+
+    def __init__(self) -> None:
+        super().__init__("kotlin", (".kt", ".kts"), "kotlin", _grammar("kotlin", "language"),
+                         lambda: _KOTLIN_TAGS, _SPEC_VENDORED_COMMENT)
+
+
+class SwiftExtractor(_CallExprMixin):
+    _ID_TYPES = frozenset({"simple_identifier"})
+
+    def __init__(self) -> None:
+        super().__init__("swift", (".swift",), "swift", _grammar("swift", "language"),
+                         lambda: _SWIFT_TAGS, _SPEC_VENDORED_COMMENT)
+
+
+#: Extractors using a yigraf-vendored tags query (the grammar ships none usable). Kotlin/Swift add
+#: call edges via a hook (their call_expression has no function field for the query to key on).
 VENDORED_EXTRACTORS: tuple[TagExtractor, ...] = (
     _vendored("c_sharp", (".cs",), "c_sharp", ("language",), _CSHARP_TAGS),
-    _vendored("kotlin", (".kt", ".kts"), "kotlin", ("language",), _KOTLIN_TAGS),
+    KotlinExtractor(),
     _vendored("scala", (".scala", ".sc"), "scala", ("language",), _SCALA_TAGS),
-    _vendored("swift", (".swift",), "swift", ("language",), _SWIFT_TAGS),
+    SwiftExtractor(),
+    _vendored("bash", (".sh", ".bash"), "bash", ("language",), _BASH_TAGS),
+    _vendored("sql", (".sql",), "sql", ("language",), _SQL_TAGS),
 )
