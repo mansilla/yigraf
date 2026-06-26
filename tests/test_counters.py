@@ -74,21 +74,21 @@ def _commit(root: Path, msg: str) -> None:
 
 
 def test_apply_maturity_settles_from_git_survival(monkeypatch):
-    monkeypatch.setattr(counters, "survival_of", lambda root, path: 3)
+    monkeypatch.setattr(counters, "_survival_map", lambda root, paths: {p: 3 for p in paths})
     g = _mem_graph(source_file="memory/001-x.md")
     counters.apply_maturity(g, Path("."), {"maturity_k": 3})
     assert g.nodes["mem:001"]["survival"] == 3 and g.nodes["mem:001"]["maturity"] == "settled"
 
 
 def test_apply_maturity_stays_working_below_k(monkeypatch):
-    monkeypatch.setattr(counters, "survival_of", lambda root, path: 2)
+    monkeypatch.setattr(counters, "_survival_map", lambda root, paths: {p: 2 for p in paths})
     g = _mem_graph(source_file="memory/001-x.md")
     counters.apply_maturity(g, Path("."), {"maturity_k": 3})
     assert g.nodes["mem:001"]["maturity"] == "working"
 
 
 def test_superseded_node_never_settles(monkeypatch):
-    monkeypatch.setattr(counters, "survival_of", lambda root, path: 99)
+    monkeypatch.setattr(counters, "_survival_map", lambda root, paths: {p: 99 for p in paths})
     g = _mem_graph(source_file="memory/001-x.md", superseded_in=1)
     counters.apply_maturity(g, Path("."), {"maturity_k": 3})
     assert g.nodes["mem:001"]["maturity"] == "working"
@@ -109,6 +109,54 @@ def test_decision_settles_after_k_commits(tmp_path: Path):
     _run(["build", str(root)])
     node = _graph(root).nodes["mem:001"]
     assert node["survival"] == 3 and node["maturity"] == "settled"
+
+
+def test_survival_is_head_cached_to_skip_the_walk(tmp_path: Path, monkeypatch):
+    """The perf fix (caveats.md M9): on an unchanged HEAD the git history walk is skipped entirely."""
+    from yigraf.cache import StructureCache
+
+    cache = StructureCache(algo="x", entries={})
+    walks: list[int] = []
+    monkeypatch.setattr(counters, "_head_sha", lambda root: "HEAD1")
+    monkeypatch.setattr(counters, "_survival_map",
+                        lambda root, paths: (walks.append(1), {p: 5 for p in paths})[1])
+    g = _mem_graph(source_file="memory/001-x.md")
+
+    counters.apply_maturity(g, tmp_path, {"maturity_k": 3}, cache=cache)
+    counters.apply_maturity(g, tmp_path, {"maturity_k": 3}, cache=cache)  # same HEAD → served from cache
+
+    assert len(walks) == 1                                                  # only the first build walked git
+    assert g.nodes["mem:001"]["survival"] == 5
+    assert cache.maturity_survival("HEAD1") == {"yigraf/memory/001-x.md": 5}
+
+
+def test_survival_recomputes_when_head_moves(tmp_path: Path, monkeypatch):
+    """A commit moves HEAD, invalidating the cached survival so maturity re-derives from history."""
+    from yigraf.cache import StructureCache
+
+    cache = StructureCache(algo="x", entries={})
+    heads = iter(["HEAD1", "HEAD2"])
+    walks: list[int] = []
+    monkeypatch.setattr(counters, "_head_sha", lambda root: next(heads))
+    monkeypatch.setattr(counters, "_survival_map",
+                        lambda root, paths: (walks.append(1), {p: len(walks) for p in paths})[1])
+    g = _mem_graph(source_file="memory/001-x.md")
+
+    counters.apply_maturity(g, tmp_path, {"maturity_k": 9}, cache=cache)
+    counters.apply_maturity(g, tmp_path, {"maturity_k": 9}, cache=cache)  # HEAD changed → re-walk
+
+    assert len(walks) == 2
+
+
+def test_structure_cache_round_trips_maturity(tmp_path: Path):
+    """The HEAD-keyed survival map survives a save/load (it lives in the gitignored structure cache)."""
+    from yigraf.cache import StructureCache
+
+    cache = StructureCache.load(tmp_path / "absent.json")  # empty, but with the live algo so load accepts it back
+    cache.set_maturity_survival("HEADX", {"yigraf/memory/001-x.md": 7})
+    path = tmp_path / "structure.json"
+    cache.save(path)
+    assert StructureCache.load(path).maturity_survival("HEADX") == {"yigraf/memory/001-x.md": 7}
 
 
 # --------------------------------------------------------------------------------------------------
