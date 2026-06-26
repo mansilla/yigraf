@@ -14,8 +14,10 @@ import yaml
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "schema_version": 0,
-    # Structure extraction (M1). v0 is Python-only.
-    "languages": ["python"],
+    # Structure extraction (M1). Languages with a shipped extractor; grammars for the rest of the
+    # core set are bundled and light up as their extractors land.
+    "languages": ["python", "go", "javascript", "typescript", "rust", "java", "c", "cpp",
+                  "ruby", "php", "c_sharp", "kotlin", "scala", "swift"],
     "ignore": [".git/", "__pycache__/", ".venv/", "node_modules/", "origins/"],
     # Maturity (R2): a memory node settles after K commits on the default branch un-superseded.
     "maturity_k": 3,
@@ -32,7 +34,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "query_token_budget": 4000,
     },
     # Relevance prior weights (graph-design §3). Tuned empirically later.
-    "relevance": {"w1": 1.0, "w2": 1.0, "w3": 1.0, "w4": 1.0},
+    #   w1·log(1+refs_in) + w2·recency(last_seen) + w3·maturity − w4·[superseded_in>0]
+    "relevance": {"w1": 1.0, "w2": 1.0, "w3": 1.0, "w4": 1.0, "half_life_days": 14},
     # Embeddings (M8) — scoped semantic recall over memory+intent only (retrieval-design §10).
     # Optional: install the `[embeddings]` extra. Absent backend ⇒ graceful lexical-only fallback.
     "embeddings": {
@@ -50,7 +53,10 @@ DEFAULT_CONFIG_YAML = """\
 schema_version: 0
 
 # --- Structure extraction (M1) ---
-languages: [python]            # v0 is Python-only
+# bespoke extractors (python, go, javascript, typescript); grammar tags-query extractors
+# (rust, java, c, cpp, ruby, php); yigraf-vendored tags-query extractors (c_sharp, kotlin, scala, swift).
+languages: [python, go, javascript, typescript, rust, java, c, cpp, ruby, php,
+            c_sharp, kotlin, scala, swift]
 ignore:                        # path prefixes skipped when indexing the repo
   - .git/
   - __pycache__/
@@ -82,6 +88,7 @@ relevance:                     # w1·log(1+refs_in) + w2·recency + w3·maturity
   w2: 1.0
   w3: 1.0
   w4: 1.0
+  half_life_days: 14           # recency exp-decay half-life on last_seen (M9 runtime counter)
 
 # --- Embeddings (M8) — scoped semantic recall over memory+intent (docs/retrieval-design.md §10) ---
 # Optional: requires the `[embeddings]` extra (numpy + sentence-transformers). With no backend,

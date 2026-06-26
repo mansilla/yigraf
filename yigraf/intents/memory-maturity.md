@@ -1,7 +1,7 @@
 ---
 family: intent
 id: int:memory-maturity
-status: proposed
+status: active
 type: requirement
 ---
 ## Requirement
