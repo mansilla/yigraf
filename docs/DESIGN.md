@@ -87,13 +87,33 @@ authored artifacts (TRUTH)          repo source (TRUTH)
   telemetry (`usage`, `last_seen`) moves to a gitignored sidecar** `yigraf/.local/telemetry.json` —
   local, best-effort, soft ranking hint only. Reconciles D2 (files-are-truth) with D7 + team-sharing.
   [review #4]
+  - *Realized (M9):* shipped exactly. `usage`/`last_seen` live in `yigraf/.local/telemetry.json`
+    (`counters.record_injection`), applied as a query-time overlay (`apply_telemetry`) and feeding
+    `recency` in the relevance prior; they are **never** written to `graph.json`, so a `context` query
+    or a hook never dirties git. The `merge=yigraf-graph` driver therefore just unions the recomputable
+    projection (no counter reconciliation).
 - **R2 — `survival`/`maturity` are git-derived, not session counters.** A memory node is `settled`
   when it has lived on the **default branch for ≥K commits** (K=3) with no superseding node — computed
   from git history + supersede edges at build time. Recomputable, branch-cadence-independent, merge-
   safe. Removes the ambiguous per-session `survival` counter. [review #4.3]
+  - *Realized (M9):* `counters.survival_of` reads the commit count from the artifact's *add* commit to
+    `HEAD`; `apply_maturity` (inside `build_graph`) stamps `survival` + `maturity` each build —
+    recomputed, never accumulated. Settled iff `survival ≥ maturity_k ∧ superseded_in == 0`. Outside
+    git, `survival = 0` (everything stays `working`).
 - **R3 — GC never deletes files and never gates on `usage`.** Churn (`superseded_in>0 ∧ refs_in=0`) is
   **archived** (moved to `yigraf/**/archive/`, append-only-friendly), never deleted; gated only on
   recomputable `refs_in`/`superseded_in`. [review #11]
+  - *Realized (M9):* `yigraf gc` (dry-run by default, `--apply` to act) moves churn artifacts to
+    `yigraf/memory/archive/` — out of the active `memory/*.md` glob, so they drop from the graph but
+    stay in git. `counters.classify_gc` gates only on `superseded_in`/`refs_in`; `usage` is never read.
+
+> **Counter models — v0 (local) vs v1 (shared).** R1–R3 above define the **v0** model: counters are
+> **local + recomputable**, so the repo needs no service. A *shared* model — `survival`/`usage`
+> accumulated and **committed** in `graph.json`, reconciled across branches/teammates by a
+> counter-aware merge driver (max `survival` / latest `last_seen` / summed `usage`), with a
+> delete-capable GC — is **v1 / Enterprise** work: it lives in the planned **cloud service** where
+> teams share yigraf artifacts and specs through an **API** (paid plan). It is deliberately out of
+> scope for v0; don't add committed runtime counters to `graph.json` until that service exists.
 - **R4 — Drift uses an AST-normalized hash and handles rename/move in v0.** Hash strips comments +
   whitespace (cosmetic edits don't trip drift). Rename/move is detected via tree-sitter symbol identity
   + similarity and **auto-re-anchored** (no false drift); only a genuinely vanished symbol = hard drift.

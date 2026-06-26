@@ -8,12 +8,13 @@
 ## 0. Three principles
 
 1. **Authored artifacts are the source of truth for content & edges; `graph.json` is a committed,
-   shareable projection that also holds the runtime counters.** Plans, intents, and captured memory
-   live as versioned `.md` artifacts (git-diffable, reviewable — OpenSpec/harness-post principle);
-   the repo's own source code is the truth for structure. `graph.json` is built from all of them
-   **and** is the authoritative store for runtime-accumulated counters (`survival`/`usage`/
-   `last_seen`). It is **committed** (with a union-merge driver) so teammates and CI query without
-   rebuilding; a rebuild re-projects content/edges while **preserving** those counters.
+   fully *recomputable* projection.** Plans, intents, and captured memory live as versioned `.md`
+   artifacts (git-diffable, reviewable — OpenSpec/harness-post principle); the repo's own source code
+   is the truth for structure. `graph.json` is built from all of them and committed (with a union-merge
+   driver) so teammates and CI query without rebuilding — but in **v0 it holds *only recomputable*
+   state** (DESIGN R1): a rebuild reproduces it. `maturity` is **git-derived** (R2); volatile telemetry
+   (`usage`/`last_seen`) lives in a **gitignored sidecar** (`.local/telemetry.json`), never committed.
+   *(The shared model — accumulated, committed, merge-reconciled counters — is v1/Enterprise; see §3.)*
 2. **Repo-local and inspectable.** No opaque service; the agent (and human) can read the graph and
    the artifacts directly ("boring, in-repo, agent-can-reason-about-it").
 3. **One graph, four node families, connected by cross-family edges.** The cross-family edges are
@@ -61,34 +62,41 @@ edges), `created_at` (commit/seq).
 
 ## 3. Counters & lifecycle (the relevance/GC engine)
 
-Maintained **on each node**, bumped atomically inside the single edge-mutation code path:
+v0 keeps everything that touches `graph.json` **recomputable** (DESIGN R1/R2/R3). Where a counter lives:
 
-| counter | meaning | recomputable on rebuild? |
+| counter | meaning | where / how |
 | --- | --- | --- |
-| `refs_in` | # incoming semantic edges (`implements`/`serves`/`concerns`/`tracks`/`references`) → importance | yes (edge-derived) |
-| `supersedes_out` | # nodes this one supersedes | yes |
-| `superseded_in` | # nodes that supersede this one (`>0` ⇒ stale) | yes |
-| `usage` | runtime # of times surfaced/injected → soft popularity | **no — authoritative in committed `graph.json`** |
-| `last_seen` | most recent usage or edge-touch → recency | **no — in `graph.json`** |
-| `survival` | # of commit/task boundaries survived un-superseded → drives `maturity` | **no — in `graph.json`** |
+| `refs_in` | # incoming semantic edges (`implements`/`serves`/`concerns`/`tracks`/`references`) → importance | `graph.json`, **edge-derived** (recomputed each build) |
+| `supersedes_out` | # nodes this one supersedes | `graph.json`, edge-derived |
+| `superseded_in` | # nodes that supersede this one (`>0` ⇒ stale) | `graph.json`, edge-derived |
+| `survival` | # of commits the branch accrued since the artifact was introduced → drives `maturity` | `graph.json`, **git-derived** (recomputed each build — R2; *not* an accumulating counter) |
+| `usage` | # of times surfaced/injected → soft popularity | **gitignored sidecar** `.local/telemetry.json` (R1) — never committed |
+| `last_seen` | most recent surfacing → recency | **gitignored sidecar** (R1) |
 
-**Consistency rule:** edge-derived counters (`refs_in`/`supersedes_out`/`superseded_in`) and
-`maturity` (= `working → settled` once `survival ≥ K`) are **recomputed** on every rebuild
-(self-healing). The runtime counters (`survival`/`usage`/`last_seen`) are **not** recomputable from
-files — they live in the committed `graph.json`, are **preserved** on rebuild, and are
-**reconciled by the merge driver**: `survival` = max, `last_seen` = latest, `usage` = best-effort.
+**Consistency rule (v0):** everything in `graph.json` is recomputable. Edge-derived counters,
+git-derived `survival`, and `maturity` (= `working → settled` once `survival ≥ K`) are **recomputed**
+every build (self-healing — a later supersession reverts a node to `working`). `usage`/`last_seen`
+are a **machine-local overlay** read from the sidecar at query time only; branches reconcile
+`graph.json` by **rebuilding**, so the merge driver merely unions nodes+edges to avoid line conflicts.
 
 **Relevance** (O(1) from counters — no traversal):
 ```
 relevance(n) = w1·log(1+refs_in) + w2·recency(last_seen) + w3·maturity_weight − w4·[superseded_in>0]
 ```
-Used three ways:
+(`recency`/`maturity_weight` come from the sidecar overlay + git-derived maturity; structure nodes,
+having neither, fall back to the `refs_in`/proximity terms.) Used three ways:
 - **Retrieval ranking** — a cheap prior fused with semantic + structural scores (§5).
-- **Garbage collection** — `superseded_in>0 ∧ refs_in=0 ∧ usage=0` ⇒ delete (pure churn);
-  `superseded_in>0 ∧ (refs_in>0 ∨ usage>0)` ⇒ keep as `rejected-alternative`/`archived` (it was
-  acted on / referenced — historical value); stale ∧ never-referenced ∧ old ⇒ archive.
+- **Garbage collection** — `superseded_in>0 ∧ refs_in=0` ⇒ **archive** (move to `memory/archive/`,
+  out of the active graph but kept in git); a still-referenced superseded node is left in place as an
+  available rejected alternative. v0 GC **never deletes** and **never gates on `usage`** (R3).
 - **Maturity promotion** — `working → settled` once `survival ≥ K` with `superseded_in=0`
   (behavioral certainty, per memory-model §0; no self-reported confidence needed).
+
+> **v1 / Enterprise (shared counters).** When yigraf gains a **cloud service + API** for teams to
+> share artifacts and specs, the counters become *accumulated and committed*: `usage`/`survival` live
+> in `graph.json`, bumped at runtime and **reconciled across branches by the merge driver** (max
+> `survival` / latest `last_seen` / summed `usage`), and GC may delete pure churn. That richer model
+> is a paid-plan feature; v0 stays local + recomputable so a solo repo needs no service.
 
 ## 4. Storage layout & file↔graph mapping
 
@@ -209,17 +217,25 @@ edges:
 - **Memory milestone — M7+M8 (done):** memory family + `serves`/`concerns`/`supersedes` +
   capture-at-boundary (`remember`/`note-constraint`/`supersede`) + the embedding index (scoped hybrid)
   + write-time dedup. Counters so far: `refs_in`/`superseded_in`/`supersedes_out` (all edge-derived,
-  recomputed on build). **Still M9:** the *runtime* counters (`survival`/`usage`/`last_seen`,
-  authoritative + preserved), `working→settled` maturity, the GC pass, and the union-merge driver.
-- **Later**: non-code modalities, auto-inferred edges, cross-project graph, team MCP.
+  recomputed on build).
+- **Memory milestone — M9 (done, v0/local model):** git-derived `survival` + `working→settled`
+  `maturity` (recomputed each build — R2); the `usage`/`last_seen` telemetry **sidecar** + recency in
+  the relevance prior (R1); the **archive-only** GC pass (R3); the union-merge driver registered via
+  `install-hooks`. No accumulated/committed counters — `graph.json` stays recomputable.
+- **Later (v1 / Enterprise)**: the shared counter model (committed, merge-reconciled `usage`/`survival`,
+  delete-GC) behind a cloud service + API; non-code modalities, auto-inferred edges, cross-project
+  graph, team MCP.
 
 ## 8. Open questions
 
-- `K` for maturity promotion, and the retrieval weights (`w*`, `α,β,γ`) — tune empirically.
-- Merge-driver reconciliation for `usage` (max vs. sum-of-deltas); `survival`/`last_seen` merge
-  cleanly (max/latest), `usage` is best-effort.
+- `K` for maturity promotion, and the retrieval weights (`w*`, `α,β,γ`, `half_life_days`) — intuition-set
+  in M9, tune empirically once there's usage data.
 - Locator stability under refactors (rename/move): how aggressively to auto-relink vs. surface as
   drift.
 
 *Resolved (2026-06-17): `graph.json` committed + shareable (union-merge driver); cross-family edges
-in artifact frontmatter; runtime counters in `graph.json`; one file per node.*
+in artifact frontmatter; one file per node.*
+*Resolved (2026-06-25, M9): v0 counters are **local + recomputable** (DESIGN R1/R2/R3) — `maturity`
+git-derived, `usage`/`last_seen` in a gitignored sidecar, GC archive-only. The accumulated/committed/
+merge-reconciled counter model is **v1/Enterprise** (cloud sharing service), explicitly not v0. This
+supersedes the earlier "runtime counters authoritative in `graph.json`" wording.*

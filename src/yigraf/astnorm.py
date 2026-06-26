@@ -30,15 +30,32 @@ ANCHOR_ALGO = "astnorm-v1"
 _FIELD = "\x1f"
 _TOKEN = "\x1e"
 
+#: Python defaults for the per-language astnorm knobs. They are the function defaults below, so a
+#: caller that passes nothing reproduces the original Python rule byte-for-byte (no ``astnorm-v2``
+#: bump, existing anchors stay valid). Other languages pass their own sets (e.g. Go: all empty — no
+#: docstrings, no quote-style ambiguity), keeping the *algorithm* astnorm-v1 while varying the
+#: language-specific token vocabulary it normalizes.
+
 #: Token types whose text is a quote delimiter (prefix + quotes) we canonicalize.
-_QUOTE_TOKENS = frozenset({"string_start", "string_end"})
+_PY_QUOTE_TOKENS = frozenset({"string_start", "string_end"})
 
 #: Block-like containers whose *leading* string statement is a docstring to drop.
-_BODY_CONTAINERS = frozenset({"block", "module"})
+_PY_BODY_CONTAINERS = frozenset({"block", "module"})
+
+#: Node types that count as a lone string statement (a docstring) inside a body container.
+_PY_DOCSTRING_TYPES = frozenset({"string", "concatenated_string"})
+
+#: Node types dropped as comments. Default fits Python/Go/JS/C; languages whose grammar names them
+#: differently (Rust/Java: ``line_comment``/``block_comment``) pass their own set.
+_PY_COMMENT_TYPES = frozenset({"comment"})
 
 
 def content_hash(node: Node, source: bytes, boundaries: Mapping[int, str],
-                 exclude: frozenset[int] = frozenset()) -> str:
+                 exclude: frozenset[int] = frozenset(), *,
+                 quote_tokens: frozenset[str] = _PY_QUOTE_TOKENS,
+                 body_containers: frozenset[str] = _PY_BODY_CONTAINERS,
+                 docstring_types: frozenset[str] = _PY_DOCSTRING_TYPES,
+                 comment_types: frozenset[str] = _PY_COMMENT_TYPES) -> str:
     """Hash ``node``'s significant token stream (``astnorm-v1``); see module docstring.
 
     ``boundaries`` maps the tree-sitter node id of each *directly nested extracted symbol* (a
@@ -49,15 +66,21 @@ def content_hash(node: Node, source: bytes, boundaries: Mapping[int, str],
     ``exclude`` is a set of node ids dropped outright — used for the symbol's **own declared name**,
     so a pure rename leaves the body-hash unchanged and M3 can re-anchor by exact match
     (docs/m3-notes.md §2). A *container's* member names (the ``<def:NAME>`` markers) are unaffected.
+
+    ``quote_tokens`` / ``body_containers`` / ``docstring_types`` are the per-language knobs (default:
+    Python). Empty sets disable quote canonicalization / docstring dropping for languages that have
+    neither (e.g. Go), while the rest of the algorithm — and ``ANCHOR_ALGO`` — is unchanged.
     """
     tokens: list[str] = []
-    _emit(node, source, boundaries, exclude, tokens)
+    _emit(node, source, boundaries, exclude, tokens, quote_tokens, body_containers, docstring_types,
+          comment_types)
     blob = _TOKEN.join(tokens).encode("utf-8", "surrogatepass")
     return hashlib.sha256(blob).hexdigest()
 
 
 def _emit(node: Node, source: bytes, boundaries: Mapping[int, str], exclude: frozenset[int],
-          out: list[str]) -> None:
+          out: list[str], quote_tokens: frozenset[str], body_containers: frozenset[str],
+          docstring_types: frozenset[str], comment_types: frozenset[str]) -> None:
     """Append ``node``'s significant tokens to ``out`` in pre-order."""
     if node.id in exclude:
         return  # the symbol's own name — dropped so a rename doesn't change the body-hash
@@ -68,24 +91,30 @@ def _emit(node: Node, source: bytes, boundaries: Mapping[int, str], exclude: fro
         return
 
     kind = node.type
-    if kind == "comment":
+    if kind in comment_types:
         return
 
     if node.child_count == 0:
         text = source[node.start_byte : node.end_byte].decode("utf-8", "surrogatepass")
-        if kind in _QUOTE_TOKENS:
+        if kind in quote_tokens:
+            # Canonicalize the *kind* too: in some grammars (JS/TS) the delimiter's node type IS the
+            # quote char (``"`` vs ``'``), so normalizing only the text would still differ by type.
+            # On Python's ``string_start``/``string_end`` this is a no-op (no quote char in the name),
+            # so existing anchors stay byte-identical.
+            kind = _canon_quote(kind)
             text = _canon_quote(text)
         out.append(f"{kind}{_FIELD}{text}")
         return
 
     children = node.children
-    if kind in _BODY_CONTAINERS:
-        children = _without_leading_docstring(children)
+    if kind in body_containers:
+        children = _without_leading_docstring(children, docstring_types)
     for child in children:
-        _emit(child, source, boundaries, exclude, out)
+        _emit(child, source, boundaries, exclude, out, quote_tokens, body_containers, docstring_types,
+              comment_types)
 
 
-def _without_leading_docstring(children: list[Node]) -> list[Node]:
+def _without_leading_docstring(children: list[Node], docstring_types: frozenset[str]) -> list[Node]:
     """Return ``children`` with a leading docstring statement removed, if present.
 
     A docstring is the first *statement* (comments don't count) of a body that is a bare string
@@ -95,16 +124,16 @@ def _without_leading_docstring(children: list[Node]) -> list[Node]:
     for i, child in enumerate(children):
         if child.type == "comment":
             continue  # comments precede the docstring but aren't the first statement
-        if child.type == "expression_statement" and _is_string_only(child):
+        if child.type == "expression_statement" and _is_string_only(child, docstring_types):
             return children[:i] + children[i + 1 :]
         return children  # first real statement isn't a docstring
     return children
 
 
-def _is_string_only(stmt: Node) -> bool:
+def _is_string_only(stmt: Node, docstring_types: frozenset[str]) -> bool:
     """True when an ``expression_statement`` is a lone string literal (a docstring)."""
     kids = stmt.children
-    return len(kids) == 1 and kids[0].type in ("string", "concatenated_string")
+    return len(kids) == 1 and kids[0].type in docstring_types
 
 
 def _canon_quote(token: str) -> str:
