@@ -12,12 +12,16 @@ from __future__ import annotations
 
 import json
 import stat
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 #: Marks a hook as yigraf-authored, so re-install overwrites ours but never a user's own hook.
 _MARKER = "# yigraf-managed post-commit hook"
+
+#: The git merge-driver name keyed in .gitattributes (``graph.json merge=yigraf-graph``).
+_MERGE_DRIVER = "yigraf-graph"
 
 #: Markers bounding the always-on block yigraf maintains in AGENTS.md (idempotent replace).
 _AGENTS_START = "<!-- yigraf:start -->"
@@ -28,6 +32,7 @@ _AGENTS_END = "<!-- yigraf:end -->"
 class HookResult:
     path: Path
     installed: bool  # False when an unmanaged hook is already present (left untouched)
+    merge_driver: bool = False  # whether the graph.json union-merge driver was registered (M9)
 
 
 def _hook_body(python: str, root: Path) -> str:
@@ -71,7 +76,33 @@ def install_post_commit_hook(root: Path) -> HookResult:
 
     hook_path.write_text(_hook_body(sys.executable, root), encoding="utf-8")
     hook_path.chmod(hook_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    return HookResult(path=hook_path, installed=True)
+    merge_driver = register_merge_driver(root)
+    return HookResult(path=hook_path, installed=True, merge_driver=merge_driver)
+
+
+def register_merge_driver(root: Path) -> bool:
+    """Register the ``graph.json`` union-merge driver in ``.git/config`` (DESIGN R1).
+
+    ``.gitattributes`` already routes ``graph.json`` to ``merge=yigraf-graph``; this points that name
+    at ``yigraf graph-merge`` so a merge/rebase unions the two sides instead of throwing a line-level
+    JSON conflict. v0 ``graph.json`` is recomputable, so the post-merge build re-projects it exactly —
+    the driver just keeps the merge clean in the meantime. Bakes in the absolute interpreter (like the
+    hook) so it runs without the venv on ``PATH``. Fail-open: returns ``False`` if ``git config`` is
+    unavailable rather than aborting the install.
+    """
+    driver = f'"{sys.executable}" -m yigraf graph-merge %O %A %B'
+    try:
+        for key, value in (
+            (f"merge.{_MERGE_DRIVER}.name", "yigraf graph union-merge driver"),
+            (f"merge.{_MERGE_DRIVER}.driver", driver),
+        ):
+            done = subprocess.run(["git", "-C", str(root), "config", key, value],
+                                  capture_output=True, timeout=5)
+            if done.returncode != 0:
+                return False
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return True
 
 
 # --------------------------------------------------------------------------------------------------

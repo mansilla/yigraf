@@ -27,16 +27,18 @@ _WORKSPACE_GITIGNORE = """\
 # yigraf runtime state — rebuildable or machine-local, never committed (DESIGN.md R1).
 # index/  : embedding index, rebuilt from memory+intent text
 # cache/  : SHA256 content-extraction cache
-# .local/ : volatile telemetry (usage / last_seen) — soft ranking hints only
+# .local/ : machine-local telemetry (telemetry.json: usage / last_seen) — a soft recency/popularity
+#           ranking nudge only; graph.json itself stays fully recomputable (maturity is git-derived)
 index/
 cache/
 .local/
 """
 
 _WORKSPACE_GITATTRIBUTES = """\
-# graph.json is reconciled with yigraf's union merge driver (max survival / latest last_seen /
-# union of nodes+edges), registered in .git/config by the git hooks (M2+). Until that driver is
-# registered, git falls back to an ordinary 3-way merge.
+# graph.json holds only recomputable state (DESIGN.md R1), so branches reconcile by rebuilding.
+# yigraf's union merge driver (registered in .git/config by `yigraf install-hooks`) just unions
+# nodes+edges to avoid a line-level JSON conflict in the meantime; until it's registered, git falls
+# back to an ordinary 3-way merge.
 graph.json merge=yigraf-graph
 """
 

@@ -24,4 +24,7 @@ def test_load_config_merges_over_defaults(tmp_path):
     assert cfg["maturity_k"] == 7              # top-level override
     assert cfg["retrieval"]["seeds"] == 9      # nested override
     assert cfg["retrieval"]["max_hops"] == 2   # sibling default preserved
-    assert cfg["languages"] == ["python"]      # untouched default
+    assert cfg["languages"] == [  # untouched default
+        "python", "go", "javascript", "typescript", "rust", "java", "c", "cpp",
+        "ruby", "php", "c_sharp", "kotlin", "scala", "swift", "bash", "sql",
+    ]
