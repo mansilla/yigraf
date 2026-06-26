@@ -20,10 +20,10 @@ edges:
     tracks: int:semantic-recall
   task:memory-milestone/3:
     implements:
-    - anchor: c89cd8aa3c0f2ccb315be135c9f7389b09cd58b3094c5d3638fb47863d1687a6
+    - anchor: a63c7f8f20cf0f98747c769a7a85ccdcd60bcb8a4b82f610340674ab52728ba7
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/counters.py#apply_maturity
-    - anchor: 50db74c6f4eb553a5608542f6c76460c3908c28a86afc0c1467dcb857184dc00
+    - anchor: 9963f92ba4614294c0bf682e772e229e8b0ce2e539c73162133009fc599237eb
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/counters.py#survival_of
     - anchor: 13745330abda48c7d5d674cc44a1bf46e39b0960655ad9ec2ec39c80cef3249c

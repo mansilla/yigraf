@@ -100,11 +100,18 @@
 
 ## M9 — maturity / telemetry / GC (v0 local model)
 
-- 🔴 **`build_graph` now runs git per memory node** (`survival_of`: a `log --diff-filter=A` + a
-  `rev-list --count` per node) to derive `maturity` every build — including the `PostToolUse` hook path
-  (already the heaviest per-edit cost, M5). For yigraf's ~8 memory nodes that's ~16 short git calls per
-  build; it scales with memory count. Candidate fixes: batch the intro-commit lookup into one `git log`,
-  cache survival by `(HEAD, intro)` in the structure cache, or skip maturity in the hook path. *(perf)*
+- 🟢 **Resolved — maturity is now derived in a flat, HEAD-cached handful of git calls.** Originally
+  `survival_of` ran a `log --diff-filter=A` + a `rev-list --count` *per memory node* on every build
+  (~2N calls, on the hot `PostToolUse` path too). Now `apply_maturity` (1) batches all paths through
+  `_survival_map` — one `git log --topo-order` for HEAD-rooted commit order + one batched
+  `log --diff-filter=A --name-status` for every file's intro commit, **2 calls regardless of node
+  count** — and (2) memoizes the result by `HEAD` in the structure cache. An edit never moves `HEAD`,
+  so the hook path is a single `rev-parse` and zero history walks; survival only re-derives when a
+  commit lands. Measured on yigraf (8 memory nodes): **16 → 3 cold / 1 on the unchanged-HEAD hook
+  path**. Survival stays byte-identical, so `graph.json` is still recomputable (R2). One nuance: on a
+  *branchy* history the topo-order distance under-counts merged side branches, so a node matures no
+  *faster* than the strict `intro..HEAD` count — conservative by construction, and exact on a linear
+  history (every test + yigraf's own line). *(perf — M9)*
 - 🟡 **Telemetry is machine-local and unshared (by design, R1).** `usage`/`last_seen` live in
   `.local/telemetry.json`, so recency/popularity ranking reflects *only this clone's* surfacings — a
   teammate's queries never lift your ranking. That's the v0 line; the shared/committed counter model is

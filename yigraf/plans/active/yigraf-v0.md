@@ -2,7 +2,7 @@
 edges:
   task:yigraf-v0/1:
     implements:
-    - anchor: 9055634ae6ea7653d5248de239598b3d19d650e969845423db9b6bb982c67d42
+    - anchor: 48d63dbb52cd99595dcddec244aa6b04a69306d135b8831af639cd8920d2ad25
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/extract.py#build_graph
     - anchor: bc5b1b0af4cbc9e1b99f4837ee704931625ab7e3e01f0f34a0a043bfbe3486a5

@@ -113,7 +113,7 @@ def build_graph(root: Path, config: dict) -> tuple[nx.DiGraph, BuildStats]:
     memory.project_into(graph, root)  # memory nodes + serves/concerns/supersedes edges (M7)
     drift.resolve_renames(graph)  # re-anchor moved/renamed implements + concerns targets (M3/M7)
     memory.recompute_counters(graph)  # edge-derived superseded_in/out for the relevance prior
-    counters.apply_maturity(graph, root, config)  # git-derived working/settled — recomputable (R2)
+    counters.apply_maturity(graph, root, config, cache=cache)  # git-derived working/settled, HEAD-cached (R2)
 
     cache.prune(set(relpaths))
     cache.save(cache_path)
