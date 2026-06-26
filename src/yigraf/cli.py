@@ -13,12 +13,13 @@ from pathlib import Path
 
 import typer
 
-from yigraf import __version__, artifacts, embeddings, memory, retrieval
+from yigraf import __version__, artifacts, counters, embeddings, memory, retrieval
 from yigraf.astnorm import ANCHOR_ALGO
 from yigraf.config import load_config
 from yigraf.drift import compute_drift
 from yigraf.extract import build_graph, symbol_content_hash
-from yigraf.graph import write_graph
+from yigraf.graph import from_node_link, write_graph
+from yigraf.languages import available_extractors, extension_map
 from yigraf.hooks import install_claude_hooks, install_post_commit_hook
 from yigraf.scaffold import WORKSPACE_DIRNAME, init_workspace
 
@@ -84,7 +85,7 @@ def build(
         raise typer.Exit(code=1)
 
     config = load_config(workspace / "config.yaml")
-    graph, stats = build_graph(root, config)
+    graph, stats = build_graph(root, config)  # maturity is git-derived inside build_graph (R2)
     write_graph(graph, workspace / "graph.json")
     reindexed = embeddings.refresh_index(root, graph, config)  # scoped semantic index (M8; no-op if no backend)
 
@@ -114,6 +115,26 @@ def _rebuild(root: Path) -> None:
     graph, _ = build_graph(root, config)
     write_graph(graph, root / WORKSPACE_DIRNAME / "graph.json")
     embeddings.refresh_index(root, graph, config)
+
+
+def _ranked_with_telemetry(root: Path, graph) -> None:
+    """Overlay the machine-local usage/last_seen sidecar onto the graph for recency-aware ranking (R1).
+
+    Read-path only: ``graph.json`` stays recomputable — telemetry is never written back into it.
+    """
+    counters.apply_telemetry(graph, counters.load_telemetry(root))
+
+
+def _record_injection(root: Path, graph, result) -> None:
+    """Record a surfacing in the gitignored telemetry sidecar (R1): a soft recency/popularity nudge.
+
+    Machine-local and best-effort — it never touches the committed ``graph.json``, so a query/hook
+    never dirties git. A failed write must never break a query or a hook.
+    """
+    try:
+        counters.record_injection(root, graph, list(result.rendered))
+    except OSError:
+        pass
 
 
 def _find_plan_file(workspace: Path, plan_slug_cf: str) -> Path | None:
@@ -349,9 +370,11 @@ def context(
     workspace = _require_workspace(repo)
     config = load_config(workspace / "config.yaml")
     graph, _ = build_graph(repo, config)
+    _ranked_with_telemetry(repo, graph)  # recency/popularity overlay from the local sidecar (R1)
     semantic = embeddings.semantic_scores(repo, graph, config, query)  # {} ⇒ lexical-only (M8 / v0)
     result = retrieval.context(graph, query, config, family=family, budget_tokens=budget,
                                semantic_match=semantic)
+    _record_injection(repo, graph, result)  # a surfacing is a soft usage signal (sidecar, not graph.json)
     typer.echo(result.text, nl=False)
     typer.echo(f"[~{result.token_estimate} tokens · {result.nodes_rendered}/{result.nodes_total} nodes shown]")
 
@@ -382,6 +405,70 @@ def drift(
         raise typer.Exit(code=1)
 
 
+@app.command()
+def gc(
+    path: Path = typer.Argument(Path("."), help="Repo root (default: current dir)."),
+    apply: bool = typer.Option(False, "--apply", help="Actually archive (default: dry-run report)."),
+) -> None:
+    """Archive superseded churn memory — never delete, never gate on usage (DESIGN R3).
+
+    A superseded node nothing still references (``superseded_in>0 ∧ refs_in=0``) is moved to
+    ``yigraf/memory/archive/`` — out of the active graph but kept in the repo for history. A
+    superseded node that's still referenced is left in place as an available rejected alternative.
+    Dry-run by default — pass ``--apply`` to move the artifacts (the source of truth).
+    """
+    workspace = _require_workspace(path)
+    config = load_config(workspace / "config.yaml")
+    graph, _ = build_graph(path, config)
+    actions = counters.classify_gc(graph)
+
+    if not actions:
+        typer.echo("Nothing to collect (no superseded, unreferenced memory).")
+        return
+
+    for mem_id in sorted(actions):
+        label = graph.nodes[mem_id].get("statement") or mem_id
+        typer.echo(f"  {'✓' if apply else '·'} {mem_id} → archive (superseded churn, kept as history): {label}")
+
+    if not apply:
+        typer.echo(f"Dry run — {len(actions)} node(s) would be archived. Re-run with --apply.")
+        return
+
+    archive_dir = workspace / "memory" / "archive"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    for mem_id in sorted(actions):
+        mem_path = memory.find_memory(path, mem_id)
+        if mem_path is None:
+            continue
+        mem_path.rename(archive_dir / mem_path.name)  # out of memory/*.md → drops from the active graph
+    _rebuild(path)
+    typer.echo(f"Archived {len(actions)} node(s) → {archive_dir.relative_to(path)}/.")
+
+
+@app.command(name="graph-merge")
+def graph_merge(
+    base: Path = typer.Argument(..., help="Common-ancestor graph.json (git %O; ignored — v0 graph.json is recomputable)."),
+    ours: Path = typer.Argument(..., help="Our graph.json (git %A) — the merged result is written here."),
+    theirs: Path = typer.Argument(..., help="Their graph.json (git %B)."),
+) -> None:
+    """Union-merge driver for graph.json (DESIGN R1): union nodes+edges so branches don't conflict.
+
+    Registered as ``merge=yigraf-graph`` (see ``.gitattributes``) by ``yigraf install-hooks``. v0
+    ``graph.json`` holds only *recomputable* state, so the post-merge build re-projects it exactly —
+    this driver just avoids a line-level JSON conflict in the meantime (no counter reconciliation;
+    that's the v1/Enterprise shared-counter model). git invokes it as ``graph-merge %O %A %B`` and
+    expects the result in %A with exit 0.
+    """
+    def _load(p: Path) -> dict:
+        try:
+            return json.loads(Path(p).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    merged = counters.merge_node_link(_load(ours), _load(theirs))
+    write_graph(from_node_link(merged), ours)
+
+
 @app.command(name="install-hooks")
 def install_hooks(
     path: Path = typer.Argument(Path("."), help="Repo root (must be a git repository)."),
@@ -397,6 +484,11 @@ def install_hooks(
         typer.echo(f"A non-yigraf post-commit hook already exists at {result.path} — left untouched.")
         raise typer.Exit(code=1)
     typer.echo(f"Installed post-commit hook at {result.path}")
+    if result.merge_driver:
+        typer.echo("Registered graph.json union-merge driver (merge=yigraf-graph).")
+    else:
+        typer.echo("Could not register the graph.json merge driver (git config unavailable) — "
+                   "graph.json will fall back to an ordinary 3-way merge.")
 
 
 @app.command(name="install-claude-hooks")
@@ -455,12 +547,14 @@ def _post_tool_use(data: dict) -> dict | None:
         rel = Path(file_path).resolve().relative_to(root.resolve())
     except ValueError:
         return None  # edited file is outside the repo
-    if rel.suffix != ".py":
-        return None
     graph, config = built
+    if rel.suffix not in extension_map(available_extractors(config)):
+        return None  # not a language yigraf indexes in this repo
+    _ranked_with_telemetry(root, graph)  # local recency/popularity overlay (R1)
     result = retrieval.context_for_locus(graph, rel.as_posix(), config)
     if result is None:
         return None  # silent: nothing governs this locus and no drift
+    _record_injection(root, graph, result)  # a surfaced decision/intent is a soft usage signal (sidecar)
     return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": result.text}}
 
 
@@ -470,9 +564,11 @@ def _session_start(data: dict) -> dict | None:
     if built is None:
         return None
     graph, config = built
+    _ranked_with_telemetry(root, graph)  # local recency/popularity overlay (R1)
     result = retrieval.session_context(graph, config)
     if result is None:
         return None
+    _record_injection(root, graph, result)  # the re-injection is a soft usage signal (sidecar)
     return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": result.text}}
 
 

@@ -12,14 +12,17 @@ from __future__ import annotations
 
 import math
 import re
+import time
 from dataclasses import dataclass, field
 
 import networkx as nx
 
+from yigraf import counters
 from yigraf.drift import compute_drift
 
-#: Edges that count toward a node's incoming "importance" (refs_in), the v0 relevance prior.
-_SEMANTIC_RELATIONS = frozenset({"implements", "tracks", "serves", "concerns", "references"})
+#: Edges that count toward a node's incoming "importance" (refs_in). Shared with the GC/relevance
+#: engine so the two notions of "referenced" can't drift apart.
+_SEMANTIC_RELATIONS = counters.SEMANTIC_RELATIONS
 
 #: Seed-match precedence weights (exact > prefix > substring), retrieval-design §2.
 _EXACT, _PREFIX, _SUBSTR = 1.0, 0.6, 0.3
@@ -174,15 +177,25 @@ def _traverse(graph: nx.DiGraph, seeds: list[str], config: dict) -> dict[str, in
 
 
 def _refs_in(graph: nx.DiGraph, node_id: str) -> int:
-    return sum(1 for _, _, a in graph.in_edges(node_id, data=True)
-               if a.get("relation") in _SEMANTIC_RELATIONS)
+    return counters.refs_in(graph, node_id)
 
 
-def _relevance(graph: nx.DiGraph, node_id: str, config: dict) -> float:
-    """v0 relevance prior: ``w1·log(1+refs_in) − w4·[superseded]`` (recency/maturity are memory-era)."""
+def _relevance(graph: nx.DiGraph, node_id: str, config: dict, now: float) -> float:
+    """The relevance prior (graph-design §3), O(1) from the counters — no traversal:
+
+    ``w1·log(1+refs_in) + w2·recency(last_seen) + w3·maturity − w4·[superseded_in>0]``.
+
+    ``recency``/``maturity`` are the M9 runtime terms: a memory that's been surfaced lately or has
+    earned ``settled`` ranks higher; a superseded one is docked. Nodes without runtime counters
+    contribute ``0`` to those terms, so the prior reduces to the v0 form for un-aged structure.
+    """
     w = config.get("relevance", {})
+    attrs = graph.nodes[node_id]
     score = w.get("w1", 1.0) * math.log(1 + _refs_in(graph, node_id))
-    if graph.nodes[node_id].get("superseded_in", 0):
+    half_life = config.get("relevance", {}).get("half_life_days", 14)
+    score += w.get("w2", 1.0) * counters.recency(attrs.get("last_seen"), now, half_life)
+    score += w.get("w3", 1.0) * counters.maturity_weight(attrs)
+    if attrs.get("superseded_in", 0):
         score -= w.get("w4", 1.5)
     return score
 
@@ -196,13 +209,15 @@ def _normalize(values: dict[str, float]) -> dict[str, float]:
     return {k: (v - lo) / (hi - lo) for k, v in values.items()}
 
 
-def _rank(graph: nx.DiGraph, hops: dict[str, int], match: dict[str, float], config: dict) -> list[str]:
+def _rank(graph: nx.DiGraph, hops: dict[str, int], match: dict[str, float], config: dict,
+          now: float | None = None) -> list[str]:
     r = config.get("retrieval", {}).get("ranking", {})
     alpha, beta, gamma = r.get("alpha", 0.5), r.get("beta", 0.3), r.get("gamma", 0.2)
+    now = now if now is not None else time.time()
 
     match_n = _normalize({n: match.get(n, 0.0) for n in hops})
     prox_n = _normalize({n: 1.0 / (1 + hops[n]) for n in hops})
-    rel_n = _normalize({n: _relevance(graph, n, config) for n in hops})
+    rel_n = _normalize({n: _relevance(graph, n, config, now) for n in hops})
 
     final = {n: alpha * match_n[n] + beta * prox_n[n] + gamma * rel_n[n] for n in hops}
     return sorted(hops, key=lambda n: (-final[n], n))
@@ -219,6 +234,8 @@ class ContextResult:
     token_estimate: int
     nodes_rendered: int
     nodes_total: int
+    #: Ids of the nodes that made it into the render — the set an injection bumps usage on (M9).
+    rendered: list[str] = field(default_factory=list)
 
 
 def _drift_line(item) -> str:
@@ -257,12 +274,14 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
     rendered = 0
 
     by_family: dict[str, list[str]] = {fam: [] for fam in _FAMILY_ORDER}
+    rendered_ids: list[str] = []
     for node_id in ranked:
         line = _node_line(graph, node_id)
         if used + len(line) > char_budget:
             break
         fam = graph.nodes[node_id].get("family", "structure")
         by_family.setdefault(fam, []).append(line)
+        rendered_ids.append(node_id)
         used += len(line) + 1
         rendered += 1
 
@@ -287,7 +306,7 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
 
     text = "\n".join(out).rstrip() + "\n"
     return ContextResult(text=text, token_estimate=len(text) // 3, nodes_rendered=rendered,
-                         nodes_total=len(ranked))
+                         nodes_total=len(ranked), rendered=rendered_ids)
 
 
 def _node_line(graph: nx.DiGraph, node_id: str) -> str:
