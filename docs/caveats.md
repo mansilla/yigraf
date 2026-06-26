@@ -98,6 +98,29 @@
 - 🟡 **Edited-file key is `tool_input.file_path`, but docs showed `.path`.** The hook reads both; if a
   future tool uses yet another key the locus won't resolve and the hook stays (correctly) silent.
 
+## M9 — maturity / telemetry / GC (v0 local model)
+
+- 🔴 **`build_graph` now runs git per memory node** (`survival_of`: a `log --diff-filter=A` + a
+  `rev-list --count` per node) to derive `maturity` every build — including the `PostToolUse` hook path
+  (already the heaviest per-edit cost, M5). For yigraf's ~8 memory nodes that's ~16 short git calls per
+  build; it scales with memory count. Candidate fixes: batch the intro-commit lookup into one `git log`,
+  cache survival by `(HEAD, intro)` in the structure cache, or skip maturity in the hook path. *(perf)*
+- 🟡 **Telemetry is machine-local and unshared (by design, R1).** `usage`/`last_seen` live in
+  `.local/telemetry.json`, so recency/popularity ranking reflects *only this clone's* surfacings — a
+  teammate's queries never lift your ranking. That's the v0 line; the shared/committed counter model is
+  v1/Enterprise (cloud sharing service). Don't "fix" it by committing counters into `graph.json`.
+- 🟡 **Maturity is `working` everywhere without git** (e.g. a non-git checkout, or the test repos):
+  `survival_of` returns 0, so nothing settles and `w3` is inert. Intentional — maturity is git-derived
+  (R2) — but worth knowing when a sandbox seems to "never mature."
+- 🟡 **`K`, `w2`/`w3`, and `half_life_days` are intuition-set** (graph-design §8). The maturity/recency
+  terms are wired and tested but the weights haven't been tuned against real usage data.
+- 🟢 **GC archives, never deletes (R3).** `yigraf gc --apply` moves superseded churn to
+  `memory/archive/`; recovering it is a `git mv` back. There is intentionally no delete path in v0.
+- 🟢 **Built against the wrong model first.** M9 was initially implemented as the *shared/committed*
+  counter model (counters authoritative in `graph.json` + a counter-reconciling merge driver) per a
+  stale reading of graph-design/BUILD-PLAN, then reworked to the v0 *local* model once DESIGN R1/R2/R3
+  was reconciled (the shared model is v1/Enterprise). See `mem:006` and DESIGN's "Counter models" note.
+
 ## M8 — embedding index + semantic seeder + dedup
 
 - 🟡 **`dup_cosine = 0.9` is a coarse, untuned threshold.** `bge-small` paraphrase cosines sit roughly
