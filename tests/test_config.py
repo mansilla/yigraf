@@ -26,5 +26,5 @@ def test_load_config_merges_over_defaults(tmp_path):
     assert cfg["retrieval"]["max_hops"] == 2   # sibling default preserved
     assert cfg["languages"] == [  # untouched default
         "python", "go", "javascript", "typescript", "rust", "java", "c", "cpp",
-        "ruby", "php", "c_sharp", "kotlin", "scala", "swift",
+        "ruby", "php", "c_sharp", "kotlin", "scala", "swift", "bash", "sql",
     ]

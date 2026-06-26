@@ -289,9 +289,21 @@
     },
     {
       "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "file:src/yigraf/languages/resolve.py",
+      "target": "module:src/yigraf/languages/resolve.py"
+    },
+    {
+      "confidence": "EXTRACTED",
       "relation": "imports",
       "source": "file:src/yigraf/languages/tags.py",
       "target": "file:src/yigraf/languages/base.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
+      "source": "file:src/yigraf/languages/tags.py",
+      "target": "file:src/yigraf/languages/resolve.py"
     },
     {
       "confidence": "EXTRACTED",
@@ -1822,8 +1834,62 @@
     {
       "confidence": "EXTRACTED",
       "relation": "contains",
+      "source": "module:src/yigraf/languages/resolve.py",
+      "target": "sym:src/yigraf/languages/resolve.py#resolve_relative"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/languages/resolve.py",
+      "target": "sym:src/yigraf/languages/resolve.py#resolve_segments"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/languages/tags.py",
+      "target": "sym:src/yigraf/languages/tags.py#CExtractor"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/languages/tags.py",
+      "target": "sym:src/yigraf/languages/tags.py#CppExtractor"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/languages/tags.py",
+      "target": "sym:src/yigraf/languages/tags.py#JavaExtractor"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/languages/tags.py",
+      "target": "sym:src/yigraf/languages/tags.py#PhpExtractor"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/languages/tags.py",
+      "target": "sym:src/yigraf/languages/tags.py#RubyExtractor"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/languages/tags.py",
+      "target": "sym:src/yigraf/languages/tags.py#RustExtractor"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
       "source": "module:src/yigraf/languages/tags.py",
       "target": "sym:src/yigraf/languages/tags.py#TagExtractor"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/languages/tags.py",
+      "target": "sym:src/yigraf/languages/tags.py#_CFamilyExtractor"
     },
     {
       "confidence": "EXTRACTED",
@@ -1835,13 +1901,13 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:src/yigraf/languages/tags.py",
-      "target": "sym:src/yigraf/languages/tags.py#_enclosing_fn"
+      "target": "sym:src/yigraf/languages/tags.py#_grammar"
     },
     {
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:src/yigraf/languages/tags.py",
-      "target": "sym:src/yigraf/languages/tags.py#_grammar"
+      "target": "sym:src/yigraf/languages/tags.py#_plain_ancestor"
     },
     {
       "confidence": "EXTRACTED",
@@ -1865,13 +1931,19 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:src/yigraf/languages/tags.py",
-      "target": "sym:src/yigraf/languages/tags.py#_tag"
+      "target": "sym:src/yigraf/languages/tags.py#_tags_query"
     },
     {
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:src/yigraf/languages/tags.py",
-      "target": "sym:src/yigraf/languages/tags.py#_tags_query"
+      "target": "sym:src/yigraf/languages/tags.py#_vendored"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/languages/tags.py",
+      "target": "sym:src/yigraf/languages/tags.py#_walk"
     },
     {
       "confidence": "EXTRACTED",
@@ -3221,6 +3293,12 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:tests/test_tags.py",
+      "target": "sym:tests/test_tags.py#_import_edges"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_tags.py",
       "target": "sym:tests/test_tags.py#_kinds"
     },
     {
@@ -3228,6 +3306,30 @@
       "relation": "contains",
       "source": "module:tests/test_tags.py",
       "target": "sym:tests/test_tags.py#_rs"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_tags.py",
+      "target": "sym:tests/test_tags.py#proj_imports"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_tags.py",
+      "target": "sym:tests/test_tags.py#test_c_body_change_drifts_after_declarator_promotion"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_tags.py",
+      "target": "sym:tests/test_tags.py#test_c_extracts_calls_and_include_edges"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_tags.py",
+      "target": "sym:tests/test_tags.py#test_csharp_symbols_and_calls"
     },
     {
       "confidence": "EXTRACTED",
@@ -3245,6 +3347,12 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:tests/test_tags.py",
+      "target": "sym:tests/test_tags.py#test_java_import_edges_resolve_by_package_path"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_tags.py",
       "target": "sym:tests/test_tags.py#test_java_nests_methods_under_class_and_resolves_calls"
     },
     {
@@ -3252,6 +3360,30 @@
       "relation": "contains",
       "source": "module:tests/test_tags.py",
       "target": "sym:tests/test_tags.py#test_java_rename_preserves_body_hash_for_reanchoring"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_tags.py",
+      "target": "sym:tests/test_tags.py#test_kotlin_class_and_methods_nest"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_tags.py",
+      "target": "sym:tests/test_tags.py#test_kotlin_comment_edit_is_not_drift"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_tags.py",
+      "target": "sym:tests/test_tags.py#test_php_require_recorded"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_tags.py",
+      "target": "sym:tests/test_tags.py#test_ruby_require_relative_recorded"
     },
     {
       "confidence": "EXTRACTED",
@@ -3275,13 +3407,43 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:tests/test_tags.py",
+      "target": "sym:tests/test_tags.py#test_rust_impl_method_nests_under_its_type"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_tags.py",
+      "target": "sym:tests/test_tags.py#test_rust_method_body_change_does_not_flip_the_module"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_tags.py",
+      "target": "sym:tests/test_tags.py#test_rust_mod_import_edges"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_tags.py",
       "target": "sym:tests/test_tags.py#test_rust_symbols_and_kinds"
     },
     {
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:tests/test_tags.py",
-      "target": "sym:tests/test_tags.py#test_unsupported_languages_are_absent"
+      "target": "sym:tests/test_tags.py#test_scala_symbols_and_calls"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_tags.py",
+      "target": "sym:tests/test_tags.py#test_swift_class_protocol_and_methods"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_tags.py",
+      "target": "sym:tests/test_tags.py#test_vendored_languages_are_enabled"
     },
     {
       "confidence": "EXTRACTED",
@@ -4540,8 +4702,206 @@
     {
       "confidence": "EXTRACTED",
       "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#CExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#CExtractor.__init__"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#CExtractor.__init__",
+      "target": "sym:src/yigraf/languages/tags.py#_grammar"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#CExtractor.__init__",
+      "target": "sym:src/yigraf/languages/tags.py#_tags_query"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#CppExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#CppExtractor.__init__"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#CppExtractor.__init__",
+      "target": "sym:src/yigraf/languages/tags.py#_grammar"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#CppExtractor.__init__",
+      "target": "sym:src/yigraf/languages/tags.py#_tags_query"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#JavaExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#JavaExtractor.__init__"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#JavaExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#JavaExtractor._import_specs"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#JavaExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#JavaExtractor._resolve_import"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#JavaExtractor.__init__",
+      "target": "sym:src/yigraf/languages/tags.py#_grammar"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#JavaExtractor.__init__",
+      "target": "sym:src/yigraf/languages/tags.py#_tags_query"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#PhpExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#PhpExtractor.__init__"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#PhpExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#PhpExtractor._import_specs"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#PhpExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#PhpExtractor._resolve_import"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#PhpExtractor.__init__",
+      "target": "sym:src/yigraf/languages/tags.py#_grammar"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#PhpExtractor.__init__",
+      "target": "sym:src/yigraf/languages/tags.py#_tags_query"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#PhpExtractor._import_specs",
+      "target": "sym:src/yigraf/languages/tags.py#_walk"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#RubyExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#RubyExtractor.__init__"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#RubyExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#RubyExtractor._import_specs"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#RubyExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#RubyExtractor._resolve_import"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#RubyExtractor.__init__",
+      "target": "sym:src/yigraf/languages/tags.py#_grammar"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#RubyExtractor.__init__",
+      "target": "sym:src/yigraf/languages/tags.py#_tags_query"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#RubyExtractor._import_specs",
+      "target": "sym:src/yigraf/languages/tags.py#_walk"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#RustExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#RustExtractor.__init__"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#RustExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#RustExtractor._import_specs"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#RustExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#RustExtractor._logical_container"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#RustExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#RustExtractor._resolve_import"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#RustExtractor.__init__",
+      "target": "sym:src/yigraf/languages/tags.py#_grammar"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#RustExtractor.__init__",
+      "target": "sym:src/yigraf/languages/tags.py#_tags_query"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
       "source": "sym:src/yigraf/languages/tags.py#TagExtractor",
       "target": "sym:src/yigraf/languages/tags.py#TagExtractor.__init__"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#TagExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#TagExtractor._extra_call_refs"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#TagExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#TagExtractor._import_specs"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#TagExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#TagExtractor._logical_container"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#TagExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#TagExtractor._normalize_def_node"
     },
     {
       "confidence": "EXTRACTED",
@@ -4553,7 +4913,19 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "sym:src/yigraf/languages/tags.py#TagExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#TagExtractor._resolve_import"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#TagExtractor",
       "target": "sym:src/yigraf/languages/tags.py#TagExtractor._run_query"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#TagExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#TagExtractor.add_import_edges"
     },
     {
       "confidence": "EXTRACTED",
@@ -4570,6 +4942,12 @@
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#TagExtractor._logical_container",
+      "target": "sym:src/yigraf/languages/tags.py#_plain_ancestor"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
       "source": "sym:src/yigraf/languages/tags.py#TagExtractor._query",
       "target": "sym:src/yigraf/languages/tags.py#TagExtractor.ts_language"
     },
@@ -4577,7 +4955,37 @@
       "confidence": "EXTRACTED",
       "relation": "calls",
       "source": "sym:src/yigraf/languages/tags.py#TagExtractor._run_query",
+      "target": "sym:src/yigraf/languages/tags.py#TagExtractor._normalize_def_node"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#TagExtractor._run_query",
       "target": "sym:src/yigraf/languages/tags.py#TagExtractor._query"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#TagExtractor.add_import_edges",
+      "target": "sym:src/yigraf/languages/tags.py#TagExtractor._resolve_import"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#TagExtractor.discover",
+      "target": "sym:src/yigraf/languages/tags.py#TagExtractor._extra_call_refs"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#TagExtractor.discover",
+      "target": "sym:src/yigraf/languages/tags.py#TagExtractor._import_specs"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#TagExtractor.discover",
+      "target": "sym:src/yigraf/languages/tags.py#TagExtractor._logical_container"
     },
     {
       "confidence": "EXTRACTED",
@@ -4595,7 +5003,7 @@
       "confidence": "EXTRACTED",
       "relation": "calls",
       "source": "sym:src/yigraf/languages/tags.py#TagExtractor.discover",
-      "target": "sym:src/yigraf/languages/tags.py#_enclosing_fn"
+      "target": "sym:src/yigraf/languages/tags.py#_plain_ancestor"
     },
     {
       "confidence": "EXTRACTED",
@@ -4617,21 +5025,51 @@
     },
     {
       "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#_CFamilyExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#_CFamilyExtractor._extra_call_refs"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#_CFamilyExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#_CFamilyExtractor._import_specs"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#_CFamilyExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#_CFamilyExtractor._normalize_def_node"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/languages/tags.py#_CFamilyExtractor",
+      "target": "sym:src/yigraf/languages/tags.py#_CFamilyExtractor._resolve_import"
+    },
+    {
+      "confidence": "EXTRACTED",
       "relation": "calls",
-      "source": "sym:src/yigraf/languages/tags.py#_tag",
+      "source": "sym:src/yigraf/languages/tags.py#_CFamilyExtractor._extra_call_refs",
+      "target": "sym:src/yigraf/languages/tags.py#_walk"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#_CFamilyExtractor._import_specs",
+      "target": "sym:src/yigraf/languages/tags.py#_walk"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/languages/tags.py#_vendored",
       "target": "sym:src/yigraf/languages/tags.py#TagExtractor"
     },
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
-      "source": "sym:src/yigraf/languages/tags.py#_tag",
+      "source": "sym:src/yigraf/languages/tags.py#_vendored",
       "target": "sym:src/yigraf/languages/tags.py#_grammar"
-    },
-    {
-      "confidence": "EXTRACTED",
-      "relation": "calls",
-      "source": "sym:src/yigraf/languages/tags.py#_tag",
-      "target": "sym:src/yigraf/languages/tags.py#_tags_query"
     },
     {
       "confidence": "EXTRACTED",
@@ -5878,6 +6316,30 @@
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
+      "source": "sym:tests/test_tags.py#test_c_extracts_calls_and_include_edges",
+      "target": "sym:tests/test_tags.py#_edges"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_tags.py#test_c_extracts_calls_and_include_edges",
+      "target": "sym:tests/test_tags.py#_import_edges"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_tags.py#test_csharp_symbols_and_calls",
+      "target": "sym:tests/test_tags.py#_edges"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_tags.py#test_csharp_symbols_and_calls",
+      "target": "sym:tests/test_tags.py#_kinds"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
       "source": "sym:tests/test_tags.py#test_java_comment_edit_is_not_drift",
       "target": "sym:tests/test_tags.py#_changed"
     },
@@ -5886,6 +6348,12 @@
       "relation": "calls",
       "source": "sym:tests/test_tags.py#test_java_comment_edit_is_not_drift",
       "target": "sym:tests/test_tags.py#_hashes"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_tags.py#test_java_import_edges_resolve_by_package_path",
+      "target": "sym:tests/test_tags.py#_import_edges"
     },
     {
       "confidence": "EXTRACTED",
@@ -5908,6 +6376,18 @@
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
+      "source": "sym:tests/test_tags.py#test_kotlin_class_and_methods_nest",
+      "target": "sym:tests/test_tags.py#_edges"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_tags.py#test_kotlin_class_and_methods_nest",
+      "target": "sym:tests/test_tags.py#_kinds"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
       "source": "sym:tests/test_tags.py#test_rust_body_change_flips_exactly_one_symbol",
       "target": "sym:tests/test_tags.py#_changed"
     },
@@ -5944,6 +6424,42 @@
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
+      "source": "sym:tests/test_tags.py#test_rust_impl_method_nests_under_its_type",
+      "target": "sym:tests/test_tags.py#_edges"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_tags.py#test_rust_impl_method_nests_under_its_type",
+      "target": "sym:tests/test_tags.py#_rs"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_tags.py#test_rust_method_body_change_does_not_flip_the_module",
+      "target": "sym:tests/test_tags.py#_changed"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_tags.py#test_rust_method_body_change_does_not_flip_the_module",
+      "target": "sym:tests/test_tags.py#_hashes"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_tags.py#test_rust_mod_import_edges",
+      "target": "sym:tests/test_tags.py#_import_edges"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_tags.py#test_rust_mod_import_edges",
+      "target": "sym:tests/test_tags.py#proj_imports"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
       "source": "sym:tests/test_tags.py#test_rust_symbols_and_kinds",
       "target": "sym:tests/test_tags.py#_kinds"
     },
@@ -5952,6 +6468,30 @@
       "relation": "calls",
       "source": "sym:tests/test_tags.py#test_rust_symbols_and_kinds",
       "target": "sym:tests/test_tags.py#_rs"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_tags.py#test_scala_symbols_and_calls",
+      "target": "sym:tests/test_tags.py#_edges"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_tags.py#test_scala_symbols_and_calls",
+      "target": "sym:tests/test_tags.py#_kinds"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_tags.py#test_swift_class_protocol_and_methods",
+      "target": "sym:tests/test_tags.py#_edges"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_tags.py#test_swift_class_protocol_and_methods",
+      "target": "sym:tests/test_tags.py#_kinds"
     },
     {
       "confidence": "EXTRACTED",
@@ -6420,7 +6960,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "29d2f073bf29b9559e533657991f72557f55a851af79a3942e0addb7b6f11dea",
+      "content_hash": "396fa85c9ce195d8e56465207cacc1a3e5c5dcbdb807c58c178996ab4778c372",
       "family": "structure",
       "id": "file:src/yigraf/config.py",
       "imports": [
@@ -6436,7 +6976,7 @@
       "source_range": [
         0,
         0,
-        129,
+        130,
         0
       ]
     },
@@ -6584,7 +7124,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "e687aa28c0190b4c19c31506e75d2b9f1294a42fd26959b8ccf4b05ddcd6536b",
+      "content_hash": "6c325c875904b1a64f3ef4f94b25d574cf056d25520d782e794e64266f928d70",
       "family": "structure",
       "id": "file:src/yigraf/languages/__init__.py",
       "imports": [
@@ -6602,7 +7142,7 @@
       "source_range": [
         0,
         0,
-        71,
+        73,
         0
       ]
     },
@@ -6694,14 +7234,35 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "6539d0afe5c711cbd391c8a123a54208060ecc3fe6da7423d5da8b48a8158949",
+      "content_hash": "01d14f56788315e74e7dba62455c1c08cebdbdf8d87368f510b679b2dd42ed9d",
+      "family": "structure",
+      "id": "file:src/yigraf/languages/resolve.py",
+      "imports": [
+        "posixpath"
+      ],
+      "kind": "file",
+      "label": "src/yigraf/languages/resolve.py",
+      "language": "python",
+      "source_file": "src/yigraf/languages/resolve.py",
+      "source_range": [
+        0,
+        0,
+        42,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "63f2c80e9a57c67cb685d1de2a2e9f2ecb6ba592aaf11987be79f0f1b38e6c91",
       "family": "structure",
       "id": "file:src/yigraf/languages/tags.py",
       "imports": [
         "importlib",
+        "pathlib",
         "tree_sitter",
         "typing",
-        "yigraf.languages.base"
+        "yigraf.languages.base",
+        "yigraf.languages.resolve"
       ],
       "kind": "file",
       "label": "src/yigraf/languages/tags.py",
@@ -6710,7 +7271,7 @@
       "source_range": [
         0,
         0,
-        252,
+        507,
         0
       ]
     },
@@ -6933,7 +7494,7 @@
       "source_range": [
         0,
         0,
-        29,
+        30,
         0
       ]
     },
@@ -7173,7 +7734,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "2a454ae5a4be67dcc8081646b36e11b1d7c1793189f7852551969a4cba5bb86a",
+      "content_hash": "2407c555c86285cdca46686213a5943238c3e39abe336c13d6e4f0b1288b04b9",
       "family": "structure",
       "id": "file:tests/test_tags.py",
       "imports": [
@@ -7188,7 +7749,7 @@
       "source_range": [
         0,
         0,
-        123,
+        261,
         0
       ]
     },
@@ -7342,14 +7903,14 @@
       "id": "mem:001",
       "kind": "decision",
       "label": "concerns reuses the implements drift machinery via one relation table, not a parallel code path",
-      "maturity": "working",
+      "maturity": "settled",
       "promotable": false,
       "source_file": "memory/001-concerns-reuses-the-implements-drift-machinery.md",
       "statement": "concerns reuses the implements drift machinery via one relation table, not a parallel code path",
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 2,
+      "survival": 3,
       "why": "the two drift-bearing relations differ only in source family + dangling-attr name; folding them into _DRIFT_RELATIONS means rename re-anchoring, the SHA cache, and soft/hard detection are written once"
     },
     {
@@ -7359,14 +7920,14 @@
       "id": "mem:002",
       "kind": "decision",
       "label": "the first memory milestone captures agent-asserted only; no pre-/clear distillation backstop",
-      "maturity": "working",
+      "maturity": "settled",
       "promotable": false,
       "source_file": "memory/002-the-first-memory-milestone-captures-agent.md",
       "statement": "the first memory milestone captures agent-asserted only; no pre-/clear distillation backstop",
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 2,
+      "survival": 3,
       "why": "memory-model \u00a75 option A: cheapest, deterministic, EXTRACTED confidence, mirrors the v0 implements pattern we already trust; add distillation (option B) only once links prove valuable"
     },
     {
@@ -7376,14 +7937,14 @@
       "id": "mem:003",
       "kind": "decision",
       "label": "supersession counters are stamped only on memory nodes, not every node",
-      "maturity": "working",
+      "maturity": "settled",
       "promotable": false,
       "source_file": "memory/003-supersession-counters-are-stamped-only-on.md",
       "statement": "supersession counters are stamped only on memory nodes, not every node",
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 2,
+      "survival": 3,
       "why": "only memory carries supersedes edges, so stamping superseded_in:0 on every structure node would bloat graph.json; retrieval reads the counter with a 0 default"
     },
     {
@@ -7400,7 +7961,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 1,
+      "survival": 2,
       "why": "we embed tens-to-thousands of short statements, not the codebase, so N is tiny; a query is one matmul (exact, sub-ms). FAISS/hnswlib add a heavy native dep that buys nothing until N is very large"
     },
     {
@@ -7417,7 +7978,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 1,
+      "survival": 2,
       "why": "no host exposes an embedding endpoint to a hook, so embeddings are yigraf's own responsibility; making them required would break the zero-config promise \u2014 absent backend degrades to the v0 lexical seeder"
     },
     {
@@ -7569,7 +8130,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "29d2f073bf29b9559e533657991f72557f55a851af79a3942e0addb7b6f11dea",
+      "content_hash": "396fa85c9ce195d8e56465207cacc1a3e5c5dcbdb807c58c178996ab4778c372",
       "family": "structure",
       "id": "module:src/yigraf/config.py",
       "kind": "module",
@@ -7579,7 +8140,7 @@
       "source_range": [
         0,
         0,
-        129,
+        130,
         0
       ]
     },
@@ -7681,7 +8242,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "e687aa28c0190b4c19c31506e75d2b9f1294a42fd26959b8ccf4b05ddcd6536b",
+      "content_hash": "6c325c875904b1a64f3ef4f94b25d574cf056d25520d782e794e64266f928d70",
       "family": "structure",
       "id": "module:src/yigraf/languages/__init__.py",
       "kind": "module",
@@ -7691,7 +8252,7 @@
       "source_range": [
         0,
         0,
-        71,
+        73,
         0
       ]
     },
@@ -7761,7 +8322,23 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "6539d0afe5c711cbd391c8a123a54208060ecc3fe6da7423d5da8b48a8158949",
+      "content_hash": "01d14f56788315e74e7dba62455c1c08cebdbdf8d87368f510b679b2dd42ed9d",
+      "family": "structure",
+      "id": "module:src/yigraf/languages/resolve.py",
+      "kind": "module",
+      "label": "src/yigraf/languages/resolve.py",
+      "language": "python",
+      "source_file": "src/yigraf/languages/resolve.py",
+      "source_range": [
+        0,
+        0,
+        42,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "63f2c80e9a57c67cb685d1de2a2e9f2ecb6ba592aaf11987be79f0f1b38e6c91",
       "family": "structure",
       "id": "module:src/yigraf/languages/tags.py",
       "kind": "module",
@@ -7771,7 +8348,7 @@
       "source_range": [
         0,
         0,
-        252,
+        507,
         0
       ]
     },
@@ -7931,7 +8508,7 @@
       "source_range": [
         0,
         0,
-        29,
+        30,
         0
       ]
     },
@@ -8097,7 +8674,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "2a454ae5a4be67dcc8081646b36e11b1d7c1793189f7852551969a4cba5bb86a",
+      "content_hash": "2407c555c86285cdca46686213a5943238c3e39abe336c13d6e4f0b1288b04b9",
       "family": "structure",
       "id": "module:tests/test_tags.py",
       "kind": "module",
@@ -8107,7 +8684,7 @@
       "source_range": [
         0,
         0,
-        123,
+        261,
         0
       ]
     },
@@ -9225,9 +9802,9 @@
       "signature": "def _deep_merge(base: dict[str, Any], over: dict[str, Any]) -> dict[str, Any]:",
       "source_file": "src/yigraf/config.py",
       "source_range": [
-        106,
+        107,
         0,
-        113,
+        114,
         14
       ]
     },
@@ -9242,9 +9819,9 @@
       "signature": "def default_config() -> dict[str, Any]:",
       "source_file": "src/yigraf/config.py",
       "source_range": [
-        101,
+        102,
         0,
-        103,
+        104,
         40
       ]
     },
@@ -9259,9 +9836,9 @@
       "signature": "def load_config(path: Path) -> dict[str, Any]:",
       "source_file": "src/yigraf/config.py",
       "source_range": [
-        116,
+        117,
         0,
-        128,
+        129,
         14
       ]
     },
@@ -10194,9 +10771,9 @@
       "signature": "def all_extractors() -> tuple[LanguageExtractor, ...]:",
       "source_file": "src/yigraf/languages/__init__.py",
       "source_range": [
-        32,
-        0,
         34,
+        0,
+        36,
         15
       ]
     },
@@ -10211,9 +10788,9 @@
       "signature": "def available_extractors(config: dict) -> list[LanguageExtractor]:",
       "source_file": "src/yigraf/languages/__init__.py",
       "source_range": [
-        47,
+        49,
         0,
-        56,
+        58,
         14
       ]
     },
@@ -10228,9 +10805,9 @@
       "signature": "def enabled_extractors(config: dict) -> list[LanguageExtractor]:",
       "source_file": "src/yigraf/languages/__init__.py",
       "source_range": [
-        37,
+        39,
         0,
-        44,
+        46,
         67
       ]
     },
@@ -10245,9 +10822,9 @@
       "signature": "def extension_map(extractors) -> dict[str, LanguageExtractor]:",
       "source_file": "src/yigraf/languages/__init__.py",
       "source_range": [
-        59,
+        61,
         0,
-        65,
+        67,
         14
       ]
     },
@@ -10262,9 +10839,9 @@
       "signature": "def extractor_for_path(relpath: str, extractors) -> LanguageExtractor | None:",
       "source_file": "src/yigraf/languages/__init__.py",
       "source_range": [
-        68,
-        0,
         70,
+        0,
+        72,
         71
       ]
     },
@@ -11443,7 +12020,398 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "f7404979e4129fd342ed14aad31c41a81e7c6afb531a8f23f0a582c104c6f936",
+      "content_hash": "495825cc92bdc6ad7c211b4ec88ef9c7088e27a4c0236fdc9b888b676d1df35a",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/resolve.py#resolve_relative",
+      "kind": "function",
+      "label": "resolve_relative",
+      "language": "python",
+      "signature": "def resolve_relative(base_dir: str, spec: str, relset: set[str], exts: tuple[str, ...]) -> str | None:",
+      "source_file": "src/yigraf/languages/resolve.py",
+      "source_range": [
+        17,
+        0,
+        27,
+        15
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "84214f98f6e2abb0dc6b3e63685d4ba75b57dcac7d00d37ee798c981e701c3e5",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/resolve.py#resolve_segments",
+      "kind": "function",
+      "label": "resolve_segments",
+      "language": "python",
+      "signature": "def resolve_segments(segments: list[str], relset: set[str], exts: tuple[str, ...]) -> str | None:",
+      "source_file": "src/yigraf/languages/resolve.py",
+      "source_range": [
+        30,
+        0,
+        41,
+        15
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "3b81451e915a51117f1629e772d9d36f120e9435d5fc3cc83e47497fef67eba6",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#CExtractor",
+      "kind": "class",
+      "label": "CExtractor",
+      "language": "python",
+      "signature": "class CExtractor(_CFamilyExtractor):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        395,
+        0,
+        398,
+        59
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "c381098bbb5106e7d17fe3c016e6f7f449187dbe0004f8c426f268eda93445de",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#CExtractor.__init__",
+      "kind": "method",
+      "label": "CExtractor.__init__",
+      "language": "python",
+      "signature": "def __init__(self) -> None:",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        396,
+        4,
+        398,
+        59
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "3b81451e915a51117f1629e772d9d36f120e9435d5fc3cc83e47497fef67eba6",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#CppExtractor",
+      "kind": "class",
+      "label": "CppExtractor",
+      "language": "python",
+      "signature": "class CppExtractor(_CFamilyExtractor):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        401,
+        0,
+        404,
+        90
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "0cd083455193bec0adf522811194bb05dd89e241fe4e15f64bffe7d1d6b4fb56",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#CppExtractor.__init__",
+      "kind": "method",
+      "label": "CppExtractor.__init__",
+      "language": "python",
+      "signature": "def __init__(self) -> None:",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        402,
+        4,
+        404,
+        90
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "04b2a9de45b4da81272b61c3a528379e86389ba49712c89089c4675247f588d0",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#JavaExtractor",
+      "kind": "class",
+      "label": "JavaExtractor",
+      "language": "python",
+      "signature": "class JavaExtractor(TagExtractor):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        340,
+        0,
+        355,
+        68
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "fbb101937de4f7096bde3b67bf11049a74831ee783aae9d50e609fe23e5380f8",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#JavaExtractor.__init__",
+      "kind": "method",
+      "label": "JavaExtractor.__init__",
+      "language": "python",
+      "signature": "def __init__(self) -> None:",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        341,
+        4,
+        343,
+        64
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "5e0cca54d501f789439202df659b2dfe020a5aa1ebb15c6cd1d1272d01a6d4d3",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#JavaExtractor._import_specs",
+      "kind": "method",
+      "label": "JavaExtractor._import_specs",
+      "language": "python",
+      "signature": "def _import_specs(self, root, source):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        345,
+        4,
+        352,
+        26
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "4e4e6a5fdfe4779ac437dcec85943737ed792a96e9290d52611cc6a999e8f2ce",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#JavaExtractor._resolve_import",
+      "kind": "method",
+      "label": "JavaExtractor._resolve_import",
+      "language": "python",
+      "signature": "def _resolve_import(self, spec, base_dir, relset):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        354,
+        4,
+        355,
+        68
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "04b2a9de45b4da81272b61c3a528379e86389ba49712c89089c4675247f588d0",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#PhpExtractor",
+      "kind": "class",
+      "label": "PhpExtractor",
+      "language": "python",
+      "signature": "class PhpExtractor(TagExtractor):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        428,
+        0,
+        444,
+        66
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "6f2d5235f6a5dcd9074f0cc49e3bdbf1d58e69ecbb79dffa87901f1a72246efd",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#PhpExtractor.__init__",
+      "kind": "method",
+      "label": "PhpExtractor.__init__",
+      "language": "python",
+      "signature": "def __init__(self) -> None:",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        429,
+        4,
+        431,
+        61
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "4f6d5fe50a45d13181c631b03140c525391827ee93be17d601d8f44bdd660cce",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#PhpExtractor._import_specs",
+      "kind": "method",
+      "label": "PhpExtractor._import_specs",
+      "language": "python",
+      "signature": "def _import_specs(self, root, source):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        433,
+        4,
+        441,
+        42
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "8e11e087cad43765e8822cb81d65d32964dfdc2b0293b78fd49984d573f9b2f2",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#PhpExtractor._resolve_import",
+      "kind": "method",
+      "label": "PhpExtractor._resolve_import",
+      "language": "python",
+      "signature": "def _resolve_import(self, spec, base_dir, relset):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        443,
+        4,
+        444,
+        66
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "04b2a9de45b4da81272b61c3a528379e86389ba49712c89089c4675247f588d0",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#RubyExtractor",
+      "kind": "class",
+      "label": "RubyExtractor",
+      "language": "python",
+      "signature": "class RubyExtractor(TagExtractor):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        407,
+        0,
+        425,
+        65
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "d2ce807d9e9cbae1b9c7765d6ad5d0613b0062b66e63f82e4e129edbf267269d",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#RubyExtractor.__init__",
+      "kind": "method",
+      "label": "RubyExtractor.__init__",
+      "language": "python",
+      "signature": "def __init__(self) -> None:",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        408,
+        4,
+        410,
+        62
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "83da8eb8f929d3dafeae6d6a297dbaec1ebebe5bc56dbba9fbe1d5f4b20c062b",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#RubyExtractor._import_specs",
+      "kind": "method",
+      "label": "RubyExtractor._import_specs",
+      "language": "python",
+      "signature": "def _import_specs(self, root, source):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        412,
+        4,
+        422,
+        42
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "ce090c6f3c752289d25f746b92f702c2c77c0ec35bf4e9b5d1de7b97704d3be1",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#RubyExtractor._resolve_import",
+      "kind": "method",
+      "label": "RubyExtractor._resolve_import",
+      "language": "python",
+      "signature": "def _resolve_import(self, spec, base_dir, relset):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        424,
+        4,
+        425,
+        65
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "36aa75be51063bce021271300ba82a189c537ac5159b5cd611535acc1a05f8df",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#RustExtractor",
+      "kind": "class",
+      "label": "RustExtractor",
+      "language": "python",
+      "signature": "class RustExtractor(TagExtractor):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        306,
+        0,
+        337,
+        65
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "73388a8287689a636580faacb35b6b5e7a588d7fffeca915d5f810d9687051cc",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#RustExtractor.__init__",
+      "kind": "method",
+      "label": "RustExtractor.__init__",
+      "language": "python",
+      "signature": "def __init__(self) -> None:",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        307,
+        4,
+        309,
+        64
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "db43fd97c1d141c2e161279cc65e54da12f71e68f1ef95b4df4ffbc92dabbdb1",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#RustExtractor._import_specs",
+      "kind": "method",
+      "label": "RustExtractor._import_specs",
+      "language": "python",
+      "signature": "def _import_specs(self, root, source):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        327,
+        4,
+        334,
+        28
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "cb51a4263aadf50134e298fa9c8359dad72da19a8aa44a7284b14a24c04eaabe",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#RustExtractor._logical_container",
+      "kind": "method",
+      "label": "RustExtractor._logical_container",
+      "language": "python",
+      "signature": "def _logical_container(self, node, nodeid_to_entry, name_to_entry): # `impl Type { fn m }`: impl blocks aren't tag-definitions, so attach the method to its type.",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        311,
+        4,
+        325,
+        19
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "181a429385084595f15fa207906e4e5623535e620998c6968f4cf219f5fcf014",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#RustExtractor._resolve_import",
+      "kind": "method",
+      "label": "RustExtractor._resolve_import",
+      "language": "python",
+      "signature": "def _resolve_import(self, spec, base_dir, relset):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        336,
+        4,
+        337,
+        65
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "5871e25c0f97c46c76d5fbef66ae9ce098a5517db55a55a9bc9db69e38fff003",
       "family": "structure",
       "id": "sym:src/yigraf/languages/tags.py#TagExtractor",
       "kind": "class",
@@ -11452,9 +12420,9 @@
       "signature": "class TagExtractor(LanguageExtractor):",
       "source_file": "src/yigraf/languages/tags.py",
       "source_range": [
-        42,
+        44,
         0,
-        124,
+        179,
         34
       ]
     },
@@ -11469,10 +12437,78 @@
       "signature": "def __init__(self, name: str, extensions: tuple[str, ...], language_label: str, grammar: Callable[[], Language], tags_query: Callable[[], str], astnorm_spec: AstnormSpec) -> None:",
       "source_file": "src/yigraf/languages/tags.py",
       "source_range": [
-        45,
+        47,
         4,
-        56,
+        58,
         43
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "76d0bccd33e9fb0dc58e597a18f964779ac5be5b45a70b1dc374988d33c4fe7d",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#TagExtractor._extra_call_refs",
+      "kind": "method",
+      "label": "TagExtractor._extra_call_refs",
+      "language": "python",
+      "signature": "def _extra_call_refs(self, root: Node, source: bytes) -> list[tuple[Node, str]]:",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        140,
+        4,
+        142,
+        17
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "a427f35f5872b008efd26c3c98a3db5143b09ecea2f5a271cad227cbdb5696a6",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#TagExtractor._import_specs",
+      "kind": "method",
+      "label": "TagExtractor._import_specs",
+      "language": "python",
+      "signature": "def _import_specs(self, root: Node, source: bytes) -> list[str]:",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        144,
+        4,
+        146,
+        17
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "128f04e1b23c410d005e0679c398f12df8900a2b1e34345b29c4a1872a237df0",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#TagExtractor._logical_container",
+      "kind": "method",
+      "label": "TagExtractor._logical_container",
+      "language": "python",
+      "signature": "def _logical_container(self, node: Node, nodeid_to_entry: dict[int, dict], name_to_entry: dict[str, dict]) -> dict | None:",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        135,
+        4,
+        138,
+        53
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "83483110efdd64e8276f133248bb4c898a6662b276ef8301c6677fcd64d8d6e5",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#TagExtractor._normalize_def_node",
+      "kind": "method",
+      "label": "TagExtractor._normalize_def_node",
+      "language": "python",
+      "signature": "def _normalize_def_node(self, node: Node) -> Node:",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        126,
+        4,
+        133,
+        19
       ]
     },
     {
@@ -11486,15 +12522,32 @@
       "signature": "def _query(self) -> Query:",
       "source_file": "src/yigraf/languages/tags.py",
       "source_range": [
-        66,
+        68,
         4,
-        69,
+        71,
         29
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "30887e7459d3b51587790bd4330e6833af9d7f5ef5d438928b42e4c99aa5f989",
+      "content_hash": "011ce3953acd757563e8ad319eaa95e2a59a5935912e9f35043c8f36324025ee",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#TagExtractor._resolve_import",
+      "kind": "method",
+      "label": "TagExtractor._resolve_import",
+      "language": "python",
+      "signature": "def _resolve_import(self, spec: str, base_dir: str, relset: set[str]) -> str | None:",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        148,
+        4,
+        150,
+        19
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "79d7521ac7dc12a220fac3e64a54919dca50c6dc20a255601b0f1a46c2afdbee",
       "family": "structure",
       "id": "sym:src/yigraf/languages/tags.py#TagExtractor._run_query",
       "kind": "method",
@@ -11503,15 +12556,32 @@
       "signature": "def _run_query(self, root: Node) -> tuple[list, list]:",
       "source_file": "src/yigraf/languages/tags.py",
       "source_range": [
-        108,
+        163,
         4,
-        124,
+        179,
         34
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "a281ebd134409ecf280a412d2856c535c4c1c0ec2eab4b80a28b5c16e9ab5436",
+      "content_hash": "1276b5f11f7903d5cc19ff2671021de52ab106d99d2ca7b0d06beab3ceb67513",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#TagExtractor.add_import_edges",
+      "kind": "method",
+      "label": "TagExtractor.add_import_edges",
+      "language": "python",
+      "signature": "def add_import_edges(self, graph, file_imports, file_sources, root) -> None:",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        152,
+        4,
+        161,
+        70
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "5d64d70d51a561110dc1681b0826cfeabb5e00fcf928743745cc44cdf4cc5450",
       "family": "structure",
       "id": "sym:src/yigraf/languages/tags.py#TagExtractor.discover",
       "kind": "method",
@@ -11520,10 +12590,10 @@
       "signature": "def discover(self, root: Node, pid: str, module_id: str, source: bytes) -> Discovery:",
       "source_file": "src/yigraf/languages/tags.py",
       "source_range": [
-        71,
+        73,
         4,
-        106,
-        103
+        122,
+        108
       ]
     },
     {
@@ -11537,10 +12607,95 @@
       "signature": "def ts_language(self) -> Language:",
       "source_file": "src/yigraf/languages/tags.py",
       "source_range": [
-        58,
+        60,
         4,
-        64,
+        66,
         25
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "4e133761628aef03d295585de68518cd16fd621545979342f5a428edaf941d20",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#_CFamilyExtractor",
+      "kind": "class",
+      "label": "_CFamilyExtractor",
+      "language": "python",
+      "signature": "class _CFamilyExtractor(TagExtractor):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        358,
+        0,
+        392,
+        101
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "9c2773f6c765b2cc689bc1758b18e4f67341706b0468f78debf77ad1700e4f54",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#_CFamilyExtractor._extra_call_refs",
+      "kind": "method",
+      "label": "_CFamilyExtractor._extra_call_refs",
+      "language": "python",
+      "signature": "def _extra_call_refs(self, root, source):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        372,
+        4,
+        379,
+        18
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "00af0e351e3a9100f1daf5fde386a7908c434bb5ddc044f90f1286c5d09cfcf1",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#_CFamilyExtractor._import_specs",
+      "kind": "method",
+      "label": "_CFamilyExtractor._import_specs",
+      "language": "python",
+      "signature": "def _import_specs(self, root, source):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        381,
+        4,
+        388,
+        26
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "bb6533dd410c5ca1af994179195c79000c55fb010af183b9da965e328053fba9",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#_CFamilyExtractor._normalize_def_node",
+      "kind": "method",
+      "label": "_CFamilyExtractor._normalize_def_node",
+      "language": "python",
+      "signature": "def _normalize_def_node(self, node): # C/C++ tags capture the function_declarator; promote it to the function_definition (when one # exists \u2014 i.e. not a bare prototype) so the body is hashed and calls sit inside it.",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        361,
+        4,
+        370,
+        19
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "83662848237902256cc109086812d16a982a83271b06037e8531d455ec9095c8",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#_CFamilyExtractor._resolve_import",
+      "kind": "method",
+      "label": "_CFamilyExtractor._resolve_import",
+      "language": "python",
+      "signature": "def _resolve_import(self, spec, base_dir, relset): # include path already carries its extension; try relative to the file, then repo-root.",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        390,
+        4,
+        392,
+        101
       ]
     },
     {
@@ -11554,27 +12709,10 @@
       "signature": "def _dedup_definitions(raw_defs: list) -> tuple[list[dict], dict[int, dict]]:",
       "source_file": "src/yigraf/languages/tags.py",
       "source_range": [
-        132,
+        187,
         0,
-        144,
+        199,
         35
-      ]
-    },
-    {
-      "confidence": "EXTRACTED",
-      "content_hash": "e39d05a5853db6f6f1a4d9c66f59d53c9d57f201ba8c6de5efc559762f5c967e",
-      "family": "structure",
-      "id": "sym:src/yigraf/languages/tags.py#_enclosing_fn",
-      "kind": "function",
-      "label": "_enclosing_fn",
-      "language": "python",
-      "signature": "def _enclosing_fn(nodeid_to_entry: dict[int, dict]) -> Callable[[Node], dict | None]:",
-      "source_file": "src/yigraf/languages/tags.py",
-      "source_range": [
-        147,
-        0,
-        157,
-        20
       ]
     },
     {
@@ -11588,9 +12726,26 @@
       "signature": "def _grammar(module: str, *attrs: str) -> Callable[[], Language]:",
       "source_file": "src/yigraf/languages/tags.py",
       "source_range": [
-        216,
+        272,
         0,
-        225,
+        281,
+        15
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "f8ba75d0b3aa30b5a41f7c518e7beae320b9ff9cb0acd1ffe345161a072306b4",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#_plain_ancestor",
+      "kind": "function",
+      "label": "_plain_ancestor",
+      "language": "python",
+      "signature": "def _plain_ancestor(node: Node, nodeid_to_entry: dict[int, dict]) -> dict | None:",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        202,
+        0,
+        210,
         15
       ]
     },
@@ -11605,9 +12760,9 @@
       "signature": "def _qualname_fn(enclosing: Callable[[Node], dict | None]) -> Callable[[dict], str]:",
       "source_file": "src/yigraf/languages/tags.py",
       "source_range": [
-        160,
+        213,
         0,
-        170,
+        223,
         22
       ]
     },
@@ -11622,9 +12777,9 @@
       "signature": "def _resolve_calls(raw_calls: list, entries: list[dict], enclosing, sym_id_of: dict[int, str]) -> list[tuple[str, str]]:",
       "source_file": "src/yigraf/languages/tags.py",
       "source_range": [
-        173,
+        226,
         0,
-        189,
+        242,
         24
       ]
     },
@@ -11639,27 +12794,10 @@
       "signature": "def _signature(node: Node, source: bytes, body_field: str) -> str | None:",
       "source_file": "src/yigraf/languages/tags.py",
       "source_range": [
-        192,
+        245,
         0,
-        202,
+        255,
         29
-      ]
-    },
-    {
-      "confidence": "EXTRACTED",
-      "content_hash": "61a5f9b50302e81a4620b34a0e7f58a9d60a897f8f1b0f16542c9ce66510c98f",
-      "family": "structure",
-      "id": "sym:src/yigraf/languages/tags.py#_tag",
-      "kind": "function",
-      "label": "_tag",
-      "language": "python",
-      "signature": "def _tag(name: str, exts: tuple[str, ...], module: str, lang_attrs: tuple[str, ...], spec: AstnormSpec) -> TagExtractor:",
-      "source_file": "src/yigraf/languages/tags.py",
-      "source_range": [
-        237,
-        0,
-        239,
-        99
       ]
     },
     {
@@ -11673,10 +12811,44 @@
       "signature": "def _tags_query(module: str) -> Callable[[], str]:",
       "source_file": "src/yigraf/languages/tags.py",
       "source_range": [
-        228,
+        284,
         0,
-        234,
+        290,
         15
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "e344b08de805eeeebb955f352ee0925014672aea603ec42de33c7e76e30c3067",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#_vendored",
+      "kind": "function",
+      "label": "_vendored",
+      "language": "python",
+      "signature": "def _vendored(name: str, exts: tuple[str, ...], module: str, lang_attrs: tuple[str, ...], query: str) -> TagExtractor:",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        495,
+        0,
+        497,
+        111
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "2be3fb0b8eb4ec374eb695a5e360211150367a786c926e3c157fa18108abf072",
+      "family": "structure",
+      "id": "sym:src/yigraf/languages/tags.py#_walk",
+      "kind": "function",
+      "label": "_walk",
+      "language": "python",
+      "signature": "def _walk(node: Node):",
+      "source_file": "src/yigraf/languages/tags.py",
+      "source_range": [
+        293,
+        0,
+        299,
+        48
       ]
     },
     {
@@ -13364,7 +14536,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "04ace0946672eefacdf1efba9d0cc4b9cb741b6fb36d296b93dd25635c49d8db",
+      "content_hash": "b644d6396d12d46227a7c8137964183533705d5a4302a0b597a83d0d3ba6cbfc",
       "family": "structure",
       "id": "sym:tests/test_config.py#test_load_config_merges_over_defaults",
       "kind": "function",
@@ -13375,7 +14547,7 @@
       "source_range": [
         19,
         0,
-        28,
+        29,
         5
       ]
     },
@@ -15506,6 +16678,23 @@
     },
     {
       "confidence": "EXTRACTED",
+      "content_hash": "13a8c2cae0934e8e69177da567938c0c3d8c8d4341dda9979d5875fb73044634",
+      "family": "structure",
+      "id": "sym:tests/test_tags.py#_import_edges",
+      "kind": "function",
+      "label": "_import_edges",
+      "language": "python",
+      "signature": "def _import_edges(extractor, file_imports, file_sources):",
+      "source_file": "tests/test_tags.py",
+      "source_range": [
+        192,
+        0,
+        197,
+        29
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
       "content_hash": "0b1d8c92f1afe436690900dda0f7f27c794131e2a32a0a81a82345b7cbc77292",
       "family": "structure",
       "id": "sym:tests/test_tags.py#_kinds",
@@ -15540,6 +16729,74 @@
     },
     {
       "confidence": "EXTRACTED",
+      "content_hash": "e39e5618e90b808982f34b1fa7c45d2ffedd976fd50d0e4f4deaa546628a7a47",
+      "family": "structure",
+      "id": "sym:tests/test_tags.py#proj_imports",
+      "kind": "function",
+      "label": "proj_imports",
+      "language": "python",
+      "signature": "def proj_imports(relpath, src):",
+      "source_file": "tests/test_tags.py",
+      "source_range": [
+        259,
+        0,
+        260,
+        84
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "fb25808c1ab68e65db5521588138a6d9608f475029d7d593c7dbaa33c569c9cf",
+      "family": "structure",
+      "id": "sym:tests/test_tags.py#test_c_body_change_drifts_after_declarator_promotion",
+      "kind": "function",
+      "label": "test_c_body_change_drifts_after_declarator_promotion",
+      "language": "python",
+      "signature": "def test_c_body_change_drifts_after_declarator_promotion(): # C tags capture the function_declarator; promotion to function_definition means the *body* is in # the hash, so a body edit must drift (it wouldn't if we hashed only the declarator).",
+      "source_file": "tests/test_tags.py",
+      "source_range": [
+        239,
+        0,
+        246,
+        55
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "b2c15ac1e998f675644360849197395b1b112395ac6e83df64668a1c3afea440",
+      "family": "structure",
+      "id": "sym:tests/test_tags.py#test_c_extracts_calls_and_include_edges",
+      "kind": "function",
+      "label": "test_c_extracts_calls_and_include_edges",
+      "language": "python",
+      "signature": "def test_c_extracts_calls_and_include_edges():",
+      "source_file": "tests/test_tags.py",
+      "source_range": [
+        223,
+        0,
+        236,
+        57
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "d6f8048ec778629746ae5433d1b85379e4f9251892ab84d6e531218b05c8e05c",
+      "family": "structure",
+      "id": "sym:tests/test_tags.py#test_csharp_symbols_and_calls",
+      "kind": "function",
+      "label": "test_csharp_symbols_and_calls",
+      "language": "python",
+      "signature": "def test_csharp_symbols_and_calls():",
+      "source_file": "tests/test_tags.py",
+      "source_range": [
+        141,
+        0,
+        151,
+        81
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
       "content_hash": "d344da593da780aaaf2fe30ef24c47df68d236111c0dc19026f66cf0b0f87636",
       "family": "structure",
       "id": "sym:tests/test_tags.py#test_generic_languages_are_enabled_by_default",
@@ -15549,9 +16806,9 @@
       "signature": "def test_generic_languages_are_enabled_by_default():",
       "source_file": "tests/test_tags.py",
       "source_range": [
-        113,
+        125,
         0,
-        116,
+        128,
         37
       ]
     },
@@ -15566,10 +16823,27 @@
       "signature": "def test_java_comment_edit_is_not_drift():",
       "source_file": "tests/test_tags.py",
       "source_range": [
-        98,
+        110,
         0,
-        100,
+        112,
         80
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "af970126e56c3fe2330bf9be05af839ea8ea2fbcc589fff702ccbe77a6299ea9",
+      "family": "structure",
+      "id": "sym:tests/test_tags.py#test_java_import_edges_resolve_by_package_path",
+      "kind": "function",
+      "label": "test_java_import_edges_resolve_by_package_path",
+      "language": "python",
+      "signature": "def test_java_import_edges_resolve_by_package_path():",
+      "source_file": "tests/test_tags.py",
+      "source_range": [
+        212,
+        0,
+        220,
+        73
       ]
     },
     {
@@ -15583,9 +16857,9 @@
       "signature": "def test_java_nests_methods_under_class_and_resolves_calls():",
       "source_file": "tests/test_tags.py",
       "source_range": [
-        85,
+        97,
         0,
-        95,
+        107,
         5
       ]
     },
@@ -15600,10 +16874,78 @@
       "signature": "def test_java_rename_preserves_body_hash_for_reanchoring():",
       "source_file": "tests/test_tags.py",
       "source_range": [
-        103,
+        115,
         0,
-        107,
+        119,
         97
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "44ad178e903558da21d5f2f7202f485cdac0df89b5ab3b72572935cc56764761",
+      "family": "structure",
+      "id": "sym:tests/test_tags.py#test_kotlin_class_and_methods_nest",
+      "kind": "function",
+      "label": "test_kotlin_class_and_methods_nest",
+      "language": "python",
+      "signature": "def test_kotlin_class_and_methods_nest():",
+      "source_file": "tests/test_tags.py",
+      "source_range": [
+        154,
+        0,
+        160,
+        85
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "5409631226778132bc1e84c2c2a448f582f5570b1f7065afc09b2190ccfcbf6a",
+      "family": "structure",
+      "id": "sym:tests/test_tags.py#test_kotlin_comment_edit_is_not_drift",
+      "kind": "function",
+      "label": "test_kotlin_comment_edit_is_not_drift",
+      "language": "python",
+      "signature": "def test_kotlin_comment_edit_is_not_drift():",
+      "source_file": "tests/test_tags.py",
+      "source_range": [
+        181,
+        0,
+        186,
+        19
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "863f38e93e8e7f172a20b149da5fdab9a3f7edc15554e47b74667073c1ceb5f7",
+      "family": "structure",
+      "id": "sym:tests/test_tags.py#test_php_require_recorded",
+      "kind": "function",
+      "label": "test_php_require_recorded",
+      "language": "python",
+      "signature": "def test_php_require_recorded():",
+      "source_file": "tests/test_tags.py",
+      "source_range": [
+        254,
+        0,
+        256,
+        62
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "40188f18a8ad18dedf6c9ceed62a393a7deff1173e39d905e3769d826a9a53f9",
+      "family": "structure",
+      "id": "sym:tests/test_tags.py#test_ruby_require_relative_recorded",
+      "kind": "function",
+      "label": "test_ruby_require_relative_recorded",
+      "language": "python",
+      "signature": "def test_ruby_require_relative_recorded():",
+      "source_file": "tests/test_tags.py",
+      "source_range": [
+        249,
+        0,
+        251,
+        59
       ]
     },
     {
@@ -15617,15 +16959,15 @@
       "signature": "def test_rust_body_change_flips_exactly_one_symbol():",
       "source_file": "tests/test_tags.py",
       "source_range": [
-        66,
+        69,
         0,
-        68,
+        71,
         90
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "7e435796f3a02a980c0d8b2e38d117853e16cdc07ce61188e80118bab4572304",
+      "content_hash": "4259b8228ceb4ccf9dab571b4d217ed4bf1caabcb7f0107734b1849bd41b28dc",
       "family": "structure",
       "id": "sym:tests/test_tags.py#test_rust_calls_resolve_intra_file",
       "kind": "function",
@@ -15634,10 +16976,10 @@
       "signature": "def test_rust_calls_resolve_intra_file():",
       "source_file": "tests/test_tags.py",
       "source_range": [
-        56,
+        59,
         0,
-        57,
-        75
+        60,
+        81
       ]
     },
     {
@@ -15651,44 +16993,129 @@
       "signature": "def test_rust_comment_edit_is_not_drift(): # Rust comments are line_comment/block_comment \u2014 the comment_types knob must cover them.",
       "source_file": "tests/test_tags.py",
       "source_range": [
-        60,
-        0,
         63,
+        0,
+        66,
         76
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "f5a716023a867babfea0970934b7394a253a98fcc9f10a528bf328f5779aad70",
+      "content_hash": "5bd54f8e8dbc94a755262baf812581344940215f03039470e9f92491f8bf6016",
+      "family": "structure",
+      "id": "sym:tests/test_tags.py#test_rust_impl_method_nests_under_its_type",
+      "kind": "function",
+      "label": "test_rust_impl_method_nests_under_its_type",
+      "language": "python",
+      "signature": "def test_rust_impl_method_nests_under_its_type():",
+      "source_file": "tests/test_tags.py",
+      "source_range": [
+        55,
+        0,
+        56,
+        81
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "c3f0c3ce4cf86d9b57ce1ddec93a3079b271d9a1b15d258399c283a84b2338b0",
+      "family": "structure",
+      "id": "sym:tests/test_tags.py#test_rust_method_body_change_does_not_flip_the_module",
+      "kind": "function",
+      "label": "test_rust_method_body_change_does_not_flip_the_module",
+      "language": "python",
+      "signature": "def test_rust_method_body_change_does_not_flip_the_module(): # The method nests under Stack *logically* but lives in an impl block syntactically; editing its # body must flip only the method, not the module (syntactic vs logical containment).",
+      "source_file": "tests/test_tags.py",
+      "source_range": [
+        74,
+        0,
+        80,
+        70
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "ce4d4e1f0a0da72d4567c09f657b08948777d0f11ab36a1ecb43ee6aa6a509dd",
+      "family": "structure",
+      "id": "sym:tests/test_tags.py#test_rust_mod_import_edges",
+      "kind": "function",
+      "label": "test_rust_mod_import_edges",
+      "language": "python",
+      "signature": "def test_rust_mod_import_edges():",
+      "source_file": "tests/test_tags.py",
+      "source_range": [
+        200,
+        0,
+        209,
+        61
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "e559eba11639e2ba5b1eee9742aa4afcab956260688d9fd4c1aef9591fb7626e",
       "family": "structure",
       "id": "sym:tests/test_tags.py#test_rust_symbols_and_kinds",
       "kind": "function",
       "label": "test_rust_symbols_and_kinds",
       "language": "python",
-      "signature": "def test_rust_symbols_and_kinds(): # struct \u2192 class, impl method \u2192 method, free fn \u2192 function. (impl blocks aren't tag definitions, # so `push` is module-level rather than Stack.push \u2014 a documented generic-path limitation.)",
+      "signature": "def test_rust_symbols_and_kinds(): # struct \u2192 class, impl method \u2192 method (nested under its receiver type), free fn \u2192 function.",
       "source_file": "tests/test_tags.py",
       "source_range": [
         50,
         0,
-        53,
-        86
+        52,
+        92
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "c1eb0b134fffedef4a288b2617217cd3090579bad8b1bec0a0cefd6149e54a43",
+      "content_hash": "a837fa8169cf673992fd38638c064694821e6bdda621a8127bc6ec8909c516e2",
       "family": "structure",
-      "id": "sym:tests/test_tags.py#test_unsupported_languages_are_absent",
+      "id": "sym:tests/test_tags.py#test_scala_symbols_and_calls",
       "kind": "function",
-      "label": "test_unsupported_languages_are_absent",
+      "label": "test_scala_symbols_and_calls",
       "language": "python",
-      "signature": "def test_unsupported_languages_are_absent(): # c_sharp's grammar ships TAGS_QUERY=None; kotlin/scala/swift ship none \u2014 none are wired up.",
+      "signature": "def test_scala_symbols_and_calls():",
       "source_file": "tests/test_tags.py",
       "source_range": [
-        119,
+        163,
         0,
-        122,
-        68
+        167,
+        83
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "ebb1acd2b175a93e9660a8bf2d033bdb65b999e71e2d0a35c4c8099b6ef53e84",
+      "family": "structure",
+      "id": "sym:tests/test_tags.py#test_swift_class_protocol_and_methods",
+      "kind": "function",
+      "label": "test_swift_class_protocol_and_methods",
+      "language": "python",
+      "signature": "def test_swift_class_protocol_and_methods():",
+      "source_file": "tests/test_tags.py",
+      "source_range": [
+        170,
+        0,
+        178,
+        79
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "83defe8540e9d7d3986dfd6411fb7b253796af7d1a84e2773ee5338c9b5e9b1e",
+      "family": "structure",
+      "id": "sym:tests/test_tags.py#test_vendored_languages_are_enabled",
+      "kind": "function",
+      "label": "test_vendored_languages_are_enabled",
+      "language": "python",
+      "signature": "def test_vendored_languages_are_enabled(): # c_sharp/kotlin/scala/swift ship no usable TAGS_QUERY, so yigraf vendors one for each.",
+      "source_file": "tests/test_tags.py",
+      "source_range": [
+        131,
+        0,
+        135,
+        37
       ]
     },
     {
