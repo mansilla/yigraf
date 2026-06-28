@@ -100,6 +100,8 @@ def test_session_start_is_silent_with_no_specs(tmp_path: Path):
 def test_install_writes_settings_skill_and_agents(tmp_path: Path):
     init_workspace(tmp_path)
     result = install_claude_hooks(tmp_path)
+    # Machine-specific wiring lands in the per-machine, gitignored local file (caveats M5 🔴 fix).
+    assert result.settings_path.name == "settings.local.json"
     settings = json.loads(result.settings_path.read_text())
     assert any(e.get("matcher") == "Edit|Write" for e in settings["hooks"]["PostToolUse"])
     assert "hook post-tool-use" in json.dumps(settings)
@@ -108,27 +110,51 @@ def test_install_writes_settings_skill_and_agents(tmp_path: Path):
     assert _AGENTS_START in result.agents_path.read_text()
 
 
+def test_install_gitignores_local_settings(tmp_path: Path):
+    init_workspace(tmp_path)
+    result = install_claude_hooks(tmp_path)
+    # The absolute interpreter path is per-machine, so the file it lives in must never be committed.
+    assert result.gitignore_path == tmp_path / ".claude" / ".gitignore"
+    assert "settings.local.json" in result.gitignore_path.read_text()
+
+
+def test_install_leaves_committed_settings_untouched(tmp_path: Path):
+    init_workspace(tmp_path)
+    claude = tmp_path / ".claude"
+    claude.mkdir()
+    shared = {"model": "some-model",
+              "hooks": {"PostToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "team.sh"}]}]}}
+    (claude / "settings.json").write_text(json.dumps(shared, indent=2))
+    install_claude_hooks(tmp_path)
+    # The committed/shared settings.json is never read or rewritten — yigraf hooks go in the local file.
+    assert json.loads((claude / "settings.json").read_text()) == shared
+    local = json.loads((claude / "settings.local.json").read_text())
+    assert any("hook post-tool-use" in h["command"]
+               for e in local["hooks"]["PostToolUse"] for h in e["hooks"])
+
+
 def test_install_is_idempotent(tmp_path: Path):
     init_workspace(tmp_path)
     install_claude_hooks(tmp_path)
     install_claude_hooks(tmp_path)
-    settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+    settings = json.loads((tmp_path / ".claude" / "settings.local.json").read_text())
     count = sum(1 for e in settings["hooks"]["PostToolUse"]
                 for h in e.get("hooks", []) if "hook post-tool-use" in h.get("command", ""))
     assert count == 1
     assert (tmp_path / "AGENTS.md").read_text().count(_AGENTS_START) == 1
+    assert (tmp_path / ".claude" / ".gitignore").read_text().count("settings.local.json") == 1
 
 
-def test_install_preserves_foreign_settings_and_hooks(tmp_path: Path):
+def test_install_preserves_foreign_local_settings_and_hooks(tmp_path: Path):
     init_workspace(tmp_path)
     claude = tmp_path / ".claude"
     claude.mkdir()
-    (claude / "settings.json").write_text(json.dumps({
+    (claude / "settings.local.json").write_text(json.dumps({
         "model": "some-model",
         "hooks": {"PostToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "mine.sh"}]}]},
     }))
     install_claude_hooks(tmp_path)
-    settings = json.loads((claude / "settings.json").read_text())
+    settings = json.loads((claude / "settings.local.json").read_text())
     assert settings["model"] == "some-model"
     commands = [h["command"] for e in settings["hooks"]["PostToolUse"] for h in e["hooks"]]
     assert "mine.sh" in commands and any("hook post-tool-use" in c for c in commands)

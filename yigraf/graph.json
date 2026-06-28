@@ -923,6 +923,20 @@
     },
     {
       "confidence": "EXTRACTED",
+      "relation": "serves",
+      "source": "mem:010",
+      "target": "int:hook-surfacing"
+    },
+    {
+      "anchor": "2a281e77f465206f6c79cbcbe889751afa7a59ad72065bd39cda384ca66208dd",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:010",
+      "target": "sym:src/yigraf/hooks.py#install_claude_hooks"
+    },
+    {
+      "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:src/yigraf/artifacts.py",
       "target": "sym:src/yigraf/artifacts.py#Implements"
@@ -1568,6 +1582,12 @@
       "relation": "contains",
       "source": "module:src/yigraf/hooks.py",
       "target": "sym:src/yigraf/hooks.py#HookResult"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/hooks.py",
+      "target": "sym:src/yigraf/hooks.py#_ensure_claude_gitignore"
     },
     {
       "confidence": "EXTRACTED",
@@ -2509,13 +2529,25 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:tests/test_cchooks.py",
+      "target": "sym:tests/test_cchooks.py#test_install_gitignores_local_settings"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_cchooks.py",
       "target": "sym:tests/test_cchooks.py#test_install_is_idempotent"
     },
     {
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:tests/test_cchooks.py",
-      "target": "sym:tests/test_cchooks.py#test_install_preserves_foreign_settings_and_hooks"
+      "target": "sym:tests/test_cchooks.py#test_install_leaves_committed_settings_untouched"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_cchooks.py",
+      "target": "sym:tests/test_cchooks.py#test_install_preserves_foreign_local_settings_and_hooks"
     },
     {
       "confidence": "EXTRACTED",
@@ -4334,6 +4366,12 @@
       "relation": "calls",
       "source": "sym:src/yigraf/hooks.py#install_claude_hooks",
       "target": "sym:src/yigraf/hooks.py#ClaudeHookResult"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/hooks.py#install_claude_hooks",
+      "target": "sym:src/yigraf/hooks.py#_ensure_claude_gitignore"
     },
     {
       "confidence": "EXTRACTED",
@@ -7044,7 +7082,7 @@
       "target": "int:hook-surfacing"
     },
     {
-      "anchor": "93a7507c388ed929cc1e72cc180de4c11c01c98a938f9390f24b012ebbeec5fe",
+      "anchor": "2a281e77f465206f6c79cbcbe889751afa7a59ad72065bd39cda384ca66208dd",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "implements",
@@ -7196,7 +7234,7 @@
       "source_range": [
         0,
         0,
-        589,
+        590,
         0
       ]
     },
@@ -7342,7 +7380,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "f471f9aca1380426170cafdbc2ae89e11220091f7394c69081ca2042f73dce89",
+      "content_hash": "6bef70e2d906c7e736a8aa4e4ef04de43dceb025efb3788ead5db40f251c1b9a",
       "family": "structure",
       "id": "file:src/yigraf/hooks.py",
       "imports": [
@@ -7360,7 +7398,7 @@
       "source_range": [
         0,
         0,
-        240,
+        265,
         0
       ]
     },
@@ -7677,7 +7715,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "df6c68ead3b176703b1007d9081d69b21528fc3537d9087174cda50126bd2a6d",
+      "content_hash": "1de6135af6cfc994ca06bd06d5eced89667d199f41172a59ca8bbef5129536c2",
       "family": "structure",
       "id": "file:tests/test_cchooks.py",
       "imports": [
@@ -7695,7 +7733,7 @@
       "source_range": [
         0,
         0,
-        134,
+        160,
         0
       ]
     },
@@ -8152,7 +8190,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 4,
+      "survival": 7,
       "why": "the two drift-bearing relations differ only in source family + dangling-attr name; folding them into _DRIFT_RELATIONS means rename re-anchoring, the SHA cache, and soft/hard detection are written once"
     },
     {
@@ -8169,7 +8207,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 4,
+      "survival": 7,
       "why": "memory-model \u00a75 option A: cheapest, deterministic, EXTRACTED confidence, mirrors the v0 implements pattern we already trust; add distillation (option B) only once links prove valuable"
     },
     {
@@ -8186,7 +8224,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 4,
+      "survival": 7,
       "why": "only memory carries supersedes edges, so stamping superseded_in:0 on every structure node would bloat graph.json; retrieval reads the counter with a 0 default"
     },
     {
@@ -8203,7 +8241,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 3,
+      "survival": 6,
       "why": "we embed tens-to-thousands of short statements, not the codebase, so N is tiny; a query is one matmul (exact, sub-ms). FAISS/hnswlib add a heavy native dep that buys nothing until N is very large"
     },
     {
@@ -8220,7 +8258,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 3,
+      "survival": 6,
       "why": "no host exposes an embedding endpoint to a hook, so embeddings are yigraf's own responsibility; making them required would break the zero-config promise \u2014 absent backend degrades to the v0 lexical seeder"
     },
     {
@@ -8230,14 +8268,14 @@
       "id": "mem:006",
       "kind": "decision",
       "label": "v0 counters are local + recomputable (Model D): maturity is git-derived, telemetry lives in a gitignored sidecar, GC archives; the shared committed-counter model is deferred to v1/Enterprise",
-      "maturity": "working",
+      "maturity": "settled",
       "promotable": false,
       "source_file": "memory/006-v0-counters-are-local-recomputable-model.md",
       "statement": "v0 counters are local + recomputable (Model D): maturity is git-derived, telemetry lives in a gitignored sidecar, GC archives; the shared committed-counter model is deferred to v1/Enterprise",
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 1,
+      "survival": 4,
       "why": "DESIGN R1/R2/R3 scope v0 to local state so graph.json stays fully recomputable (no query-time writes, trivial merges, CI-reproducible); the accumulated/shared/merge-reconciled counter model (Model G) needs a cloud service + API for teams to share artifacts, which is v1 Enterprise paid-plan work"
     },
     {
@@ -8247,14 +8285,14 @@
       "id": "mem:007",
       "kind": "decision",
       "label": "maturity is git-derived: survival = commits since the memory artifact was introduced, recomputed each build, not a stored counter",
-      "maturity": "working",
+      "maturity": "settled",
       "promotable": false,
       "source_file": "memory/007-maturity-is-git-derived-survival-commits.md",
       "statement": "maturity is git-derived: survival = commits since the memory artifact was introduced, recomputed each build, not a stored counter",
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 1,
+      "survival": 4,
       "why": "R2 wants maturity branch-cadence-independent and identical on every clone/CI; deriving it from git history (intro commit .. HEAD) makes it recomputable and merge-safe, so no per-session survival counter is stored or reconciled"
     },
     {
@@ -8264,14 +8302,14 @@
       "id": "mem:008",
       "kind": "decision",
       "label": "GC archives superseded churn (moves it to memory/archive/), never deletes and never gates on usage",
-      "maturity": "working",
+      "maturity": "settled",
       "promotable": false,
       "source_file": "memory/008-gc-archives-superseded-churn-moves-it.md",
       "statement": "GC archives superseded churn (moves it to memory/archive/), never deletes and never gates on usage",
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 1,
+      "survival": 4,
       "why": "R3: history must stay auditable, so churn (superseded_in>0 \u2227 refs_in=0) is moved out of the active glob rather than removed; usage is machine-local sidecar state, not authoritative, so GC must not depend on it"
     },
     {
@@ -8288,8 +8326,25 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 0,
+      "survival": 2,
       "why": "the per-node fan-out (~2N git calls, on the hot PostToolUse path) was a \ud83d\udd34 perf caveat; _survival_map batches all paths into 2 calls (one topo-order log for commit order + one batched --diff-filter=A --name-status for intros) and the result is memoized by HEAD in the structure cache, since an edit never moves HEAD \u2014 so the hook path is 1 rev-parse and 0 walks. Survival stays byte-identical so graph.json is still recomputable"
+    },
+    {
+      "alternatives": "a PATH-portable command (yigraf/uv run yigraf) in the committed settings.json \u2014 a Claude Code hook shell often lacks the project venv on PATH, which is the exact reason the abs path was used; portability there would silently fail-open",
+      "confidence": "EXTRACTED",
+      "family": "memory",
+      "id": "mem:010",
+      "kind": "decision",
+      "label": "Claude hooks write the abs-interpreter wiring to settings.local.json, not the committed settings.json",
+      "maturity": "working",
+      "promotable": false,
+      "source_file": "memory/010-claude-hooks-write-the-abs-interpreter.md",
+      "statement": "Claude hooks write the abs-interpreter wiring to settings.local.json, not the committed settings.json",
+      "status": "active",
+      "superseded_in": 0,
+      "supersedes_out": 0,
+      "survival": 0,
+      "why": "the interpreter path is per-machine; settings.local.json is Claude Code's designated per-machine file and a self-contained .claude/.gitignore keeps it out of git \u2014 symmetric with the post-commit git hook, which already bakes the abs path into the never-committed .git/hooks/. This keeps the run-without-the-venv-on-PATH property while never committing a machine path."
     },
     {
       "confidence": "EXTRACTED",
@@ -8383,7 +8438,7 @@
       "source_range": [
         0,
         0,
-        589,
+        590,
         0
       ]
     },
@@ -8485,7 +8540,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "f471f9aca1380426170cafdbc2ae89e11220091f7394c69081ca2042f73dce89",
+      "content_hash": "6bef70e2d906c7e736a8aa4e4ef04de43dceb025efb3788ead5db40f251c1b9a",
       "family": "structure",
       "id": "module:src/yigraf/hooks.py",
       "kind": "module",
@@ -8495,7 +8550,7 @@
       "source_range": [
         0,
         0,
-        240,
+        265,
         0
       ]
     },
@@ -8725,7 +8780,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "df6c68ead3b176703b1007d9081d69b21528fc3537d9087174cda50126bd2a6d",
+      "content_hash": "1de6135af6cfc994ca06bd06d5eced89667d199f41172a59ca8bbef5129536c2",
       "family": "structure",
       "id": "module:tests/test_cchooks.py",
       "kind": "module",
@@ -8735,7 +8790,7 @@
       "source_range": [
         0,
         0,
-        134,
+        160,
         0
       ]
     },
@@ -9602,9 +9657,9 @@
       "signature": "def _hook_graph(root: Path):",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        525,
+        526,
         0,
-        531,
+        532,
         24
       ]
     },
@@ -9636,9 +9691,9 @@
       "signature": "def _post_tool_use(data: dict) -> dict | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        534,
+        535,
         0,
-        557,
+        558,
         101
       ]
     },
@@ -9755,9 +9810,9 @@
       "signature": "def _run_hook(handler) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        512,
+        513,
         0,
-        522,
+        523,
         28
       ]
     },
@@ -9772,9 +9827,9 @@
       "signature": "def _session_start(data: dict) -> dict | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        560,
+        561,
         0,
-        571,
+        572,
         102
       ]
     },
@@ -9891,9 +9946,9 @@
       "signature": "def hook_post_tool_use() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        574,
+        575,
         0,
-        577,
+        578,
         29
       ]
     },
@@ -9908,9 +9963,9 @@
       "signature": "def hook_session_start() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        580,
+        581,
         0,
-        583,
+        584,
         29
       ]
     },
@@ -9933,7 +9988,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "4162547adcd600a072d2f8a5e05f4760f1b61658ae22981e7a89b0f358433bd9",
+      "content_hash": "86ee9e23611f856e241bdfaa3d769b91e06e3032b0c599b5b26a0efc84f85222",
       "family": "structure",
       "id": "sym:src/yigraf/cli.py#install_claude_hooks_cmd",
       "kind": "function",
@@ -9944,8 +9999,8 @@
       "source_range": [
         493,
         0,
-        502,
-        55
+        503,
+        97
       ]
     },
     {
@@ -10010,9 +10065,9 @@
       "signature": "def main() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        586,
+        587,
         0,
-        588,
+        589,
         9
       ]
     },
@@ -10970,7 +11025,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "110cf8a9d741930038daafe68227bdb21ca2d2800843f77f1a552b2bf879f3d1",
+      "content_hash": "486f75135cee17c11c3c1e3570b8f830174e7a7617cc875691f84f5a084647bb",
       "family": "structure",
       "id": "sym:src/yigraf/hooks.py#ClaudeHookResult",
       "kind": "class",
@@ -10979,10 +11034,10 @@
       "signature": "class ClaudeHookResult:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        169,
+        177,
         0,
-        174,
-        23
+        183,
+        99
       ]
     },
     {
@@ -11004,6 +11059,23 @@
     },
     {
       "confidence": "EXTRACTED",
+      "content_hash": "72ec1aeec562e59b16e53d0b73714f248c8095f61bb27fbab54574be1f363adf",
+      "family": "structure",
+      "id": "sym:src/yigraf/hooks.py#_ensure_claude_gitignore",
+      "kind": "function",
+      "label": "_ensure_claude_gitignore",
+      "language": "python",
+      "signature": "def _ensure_claude_gitignore(claude: Path) -> Path:",
+      "source_file": "src/yigraf/hooks.py",
+      "source_range": [
+        186,
+        0,
+        193,
+        15
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
       "content_hash": "478a35599ac6d7bfcc959fe9d7e28fff2f2e2bdcfb155f5b7b94a8124a391169",
       "family": "structure",
       "id": "sym:src/yigraf/hooks.py#_ensure_hook",
@@ -11013,9 +11085,9 @@
       "signature": "def _ensure_hook(hooks: dict, event: str, matcher: str, command: str, verb: str) -> bool:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        177,
+        196,
         0,
-        188,
+        207,
         15
       ]
     },
@@ -11047,9 +11119,9 @@
       "signature": "def _write_agents_block(agents_path: Path) -> Path:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        229,
+        254,
         0,
-        239,
+        264,
         22
       ]
     },
@@ -11072,7 +11144,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "93a7507c388ed929cc1e72cc180de4c11c01c98a938f9390f24b012ebbeec5fe",
+      "content_hash": "2a281e77f465206f6c79cbcbe889751afa7a59ad72065bd39cda384ca66208dd",
       "family": "structure",
       "id": "sym:src/yigraf/hooks.py#install_claude_hooks",
       "kind": "function",
@@ -11081,10 +11153,10 @@
       "signature": "def install_claude_hooks(root: Path) -> ClaudeHookResult:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        191,
+        210,
         0,
-        226,
-        75
+        251,
+        58
       ]
     },
     {
@@ -14761,7 +14833,24 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "c40d5b47238f97ccd139dcb0fcd02d2d2274e57566aa484fe1670a03dbae5620",
+      "content_hash": "600350f9b2021fd8f38e98279eb1954130d2d66e1a9637f6ba6f0e76bbca7d97",
+      "family": "structure",
+      "id": "sym:tests/test_cchooks.py#test_install_gitignores_local_settings",
+      "kind": "function",
+      "label": "test_install_gitignores_local_settings",
+      "language": "python",
+      "signature": "def test_install_gitignores_local_settings(tmp_path: Path):",
+      "source_file": "tests/test_cchooks.py",
+      "source_range": [
+        112,
+        0,
+        117,
+        69
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "3266f6dfa6850aacc22278d7eed4498a1ad12fa89f275be7bb07a20549ac6667",
       "family": "structure",
       "id": "sym:tests/test_cchooks.py#test_install_is_idempotent",
       "kind": "function",
@@ -14770,32 +14859,49 @@
       "signature": "def test_install_is_idempotent(tmp_path: Path):",
       "source_file": "tests/test_cchooks.py",
       "source_range": [
-        110,
+        135,
         0,
-        118,
-        73
+        144,
+        94
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "ed6882c5ce9c8731f18391cf81f875c37f7a0e221ee4e39ef983b93335eb0ee3",
+      "content_hash": "b068e7a67726678b183b9738bb059757754b8e71908e7a94dc2b672923846d4d",
       "family": "structure",
-      "id": "sym:tests/test_cchooks.py#test_install_preserves_foreign_settings_and_hooks",
+      "id": "sym:tests/test_cchooks.py#test_install_leaves_committed_settings_untouched",
       "kind": "function",
-      "label": "test_install_preserves_foreign_settings_and_hooks",
+      "label": "test_install_leaves_committed_settings_untouched",
       "language": "python",
-      "signature": "def test_install_preserves_foreign_settings_and_hooks(tmp_path: Path):",
+      "signature": "def test_install_leaves_committed_settings_untouched(tmp_path: Path):",
       "source_file": "tests/test_cchooks.py",
       "source_range": [
-        121,
+        120,
         0,
-        133,
+        132,
+        74
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "f94120daba6389ee41deecc8cf9cda9238b67127be9f4cfb82e4ff9fe2d31244",
+      "family": "structure",
+      "id": "sym:tests/test_cchooks.py#test_install_preserves_foreign_local_settings_and_hooks",
+      "kind": "function",
+      "label": "test_install_preserves_foreign_local_settings_and_hooks",
+      "language": "python",
+      "signature": "def test_install_preserves_foreign_local_settings_and_hooks(tmp_path: Path):",
+      "source_file": "tests/test_cchooks.py",
+      "source_range": [
+        147,
+        0,
+        159,
         85
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "7e5bf439c26c4e9a519dc6fc09cfdcecfe91343a3e4cb22a1c7ca83eee10c439",
+      "content_hash": "99e17f153063cebddee09e69559777943a9dcefdcc8b8124c356ceb64ff2993e",
       "family": "structure",
       "id": "sym:tests/test_cchooks.py#test_install_writes_settings_skill_and_agents",
       "kind": "function",
@@ -14806,7 +14912,7 @@
       "source_range": [
         99,
         0,
-        107,
+        109,
         58
       ]
     },

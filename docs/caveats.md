@@ -78,12 +78,21 @@
 
 ## M5 — Claude Code hooks + skill
 
-- 🔴 **`install-claude-hooks` bakes an absolute interpreter path into the *committed*
-  `.claude/settings.json`.** `"/abs/path/.venv/bin/python" -m yigraf …` works on the author's machine
-  but **breaks for teammates / CI** with a different venv path, and the command silently no-ops
-  (fail-open) so the breakage is invisible. Fine for the single-dev dogfood. For shared repos this
-  should instead go in the gitignored `.claude/settings.local.json`, or use a PATH-portable command
-  (`yigraf hook …` or `uv run yigraf hook …`). **Fix before recommending to teams (M6/post-v0).**
+- 🟢 **Resolved (2026-06-28) — hooks now write to `.claude/settings.local.json`, never the committed
+  `settings.json`.** Originally `install-claude-hooks` baked `"/abs/path/.venv/bin/python" -m yigraf …`
+  into the *committed* `.claude/settings.json`, which **broke for teammates / CI** with a different venv
+  path while silently no-op'ing (fail-open), so the breakage was invisible. Now `install_claude_hooks`
+  writes the machine-specific wiring to **`settings.local.json`** (Claude Code's per-machine settings)
+  and lays down a self-contained **`.claude/.gitignore`** (`settings.local.json`) so the absolute path
+  never reaches a commit — symmetric with the git `post-commit` hook, which already bakes the abs path
+  into the *never-committed* `.git/hooks/`. The committed `settings.json` is never read or rewritten, so
+  a team can still keep shared Claude config there; the shareable `SKILL.md` + `AGENTS.md` block stay
+  committed, and a teammate just re-runs `yigraf install-claude-hooks` to wire their own interpreter.
+  The kept-the-abs-path-for-PATH-independence property is preserved (the command still runs without the
+  venv on `PATH`); it's just in the right, gitignored file now. *(M5 — fix; tests in `test_cchooks.py`)*
+  - Note: on a machine whose **global** gitignore already excludes `.claude` (the author's case), the
+    whole dir stays local regardless; the `.claude/.gitignore` is what protects repos/CI **without**
+    that global rule — i.e. exactly the team-portability case this caveat was about.
 - 🟡 **SessionStart fires on `startup|resume` too, not just `clear|compact`.** Every new session gets
   the active-plan injection, not only post-reset. Defensible as orientation, but it's more than R8's
   literal "survives /clear" scope and could feel noisy on a big plan. Narrow the matcher to
@@ -92,9 +101,11 @@
   re-parses, but the whole graph is still re-assembled + drift recomputed each edit — latency grows
   with repo size. Could instead load the committed `graph.json` and re-extract only the touched file.
   Measure in M6.
-- 🟡 **`additionalContext`-on-PostToolUse injection is verified from docs, not yet from a live run.**
-  The fetched contract says it reaches the model's next turn; confirm empirically in the M6 dogfood
-  session (the manual done-test).
+- 🟢 **Resolved (2026-06-28) — `additionalContext`-on-PostToolUse injection confirmed live.** In a
+  real Claude Code session in this repo, editing `src/yigraf/hooks.py` surfaced the governing
+  `int:hook-surfacing` + `task:yigraf-v0/5` (and a second edit surfaced the `implements` drift
+  warning) in the model's next turn — the exact `retrieval.context_for_locus` render. The docs
+  contract holds empirically, not just on paper.
 - 🟡 **Edited-file key is `tool_input.file_path`, but docs showed `.path`.** The hook reads both; if a
   future tool uses yet another key the locus won't resolve and the hook stays (correctly) silent.
 
@@ -187,6 +198,8 @@
   file size and with how many files an agent would otherwise grep+read, and undercounts the value of
   also returning intent/plan/drift. A fuller benchmark across several realistic queries is worth doing
   before quoting a headline number.
-- 🟢 **Live-session done-test still manual.** The hook entry points produce correct payloads on this
-  repo, but "Claude Code consumes `additionalContext` on PostToolUse in a live session" is confirmed
-  only from docs — verify interactively (open a session in this repo, edit `src/yigraf/drift.py`).
+- 🟢 **Resolved (2026-06-28) — live-session done-test passed.** Confirmed interactively in a real
+  Claude Code session in this repo: **SessionStart** re-injected the active plan + governing intents
+  at session open (the `yigraf hook session-start` render — the "memory survives /clear" mechanism),
+  and **PostToolUse** injected governing intent + drift on edits to a governed file (see the M5 entry
+  above). Both injection paths work end-to-end with a live model, not just from the docs contract.

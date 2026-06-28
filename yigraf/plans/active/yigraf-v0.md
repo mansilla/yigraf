@@ -38,7 +38,7 @@ edges:
     - anchor: 8a8da94d764d87cf24a36f543b43902ad894d0f6dd1f6c18a6f056adbf1963e1
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/retrieval.py#context_for_locus
-    - anchor: 93a7507c388ed929cc1e72cc180de4c11c01c98a938f9390f24b012ebbeec5fe
+    - anchor: 2a281e77f465206f6c79cbcbe889751afa7a59ad72065bd39cda384ca66208dd
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/hooks.py#install_claude_hooks
     tracks: int:hook-surfacing
