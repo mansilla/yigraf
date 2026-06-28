@@ -32,6 +32,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "ranking": {"alpha": 0.5, "beta": 0.3, "gamma": 0.2},  # match · proximity · relevance
         "hook_token_budget": 800,
         "query_token_budget": 4000,
+        # Structure render mode (A3 — source-vs-signature; see scripts/eval). signature_only =
+        # locator+signature (token-thrift); source_for_seeds = verbatim line-numbered source for the
+        # top `source_max_symbols` symbols (sufficiency — the agent treats it as already Read).
+        "render": "signature_only",   # signature_only | source_for_seeds
+        "source_max_symbols": 3,
+        "source_max_lines": 40,
     },
     # Relevance prior weights (graph-design §3). Tuned empirically later.
     #   w1·log(1+refs_in) + w2·recency(last_seen) + w3·maturity − w4·[superseded_in>0]
@@ -82,6 +88,12 @@ retrieval:
     gamma: 0.2
   hook_token_budget: 800       # token budget for hook-injected context
   query_token_budget: 4000     # token budget for `yigraf context` output
+  # Structure render mode (A3 — source-vs-signature, see scripts/eval). `signature_only` (default)
+  # prints locator+signature; `source_for_seeds` prints verbatim, line-numbered source for the top
+  # `source_max_symbols` ranked symbols (sufficiency over token-thrift — the agent stops re-Reading).
+  render: signature_only       # signature_only | source_for_seeds
+  source_max_symbols: 3        # source_for_seeds: top-ranked symbols rendered as source
+  source_max_lines: 40         # per-symbol source line cap (longer bodies truncated)
 
 # --- Relevance prior (docs/graph-design.md §3) ---
 relevance:                     # w1·log(1+refs_in) + w2·recency + w3·maturity − w4·[superseded_in>0]

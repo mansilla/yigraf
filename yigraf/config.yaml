@@ -10,6 +10,7 @@ ignore:                        # path prefixes skipped when indexing the repo
   - .venv/
   - node_modules/
   - origins/
+  - scripts/eval/runs/          # gitignored eval transcripts + working-tree snapshots (copies of .py)
 
 # --- Maturity (R2) ---
 maturity_k: 3                  # commits on the default branch un-superseded before a memory "settles"

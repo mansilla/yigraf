@@ -203,3 +203,72 @@
   at session open (the `yigraf hook session-start` render — the "memory survives /clear" mechanism),
   and **PostToolUse** injected governing intent + drift on edits to a governed file (see the M5 entry
   above). Both injection paths work end-to-end with a live model, not just from the docs contract.
+
+## A-series — CodeGraph imports (post-v0; see `docs/research/codegraph-analysis.md`)
+
+- 🟢 **`source_for_seeds` is shipped but default-OFF (`retrieval.render`).** A3 added a render knob:
+  `source_for_seeds` inlines verbatim, line-numbered source for the top `source_max_symbols` ranked
+  symbols (periphery stays signatures); default is `signature_only` (the v0 token-thrift render). It is
+  **not removed — just opt-in.** The default stays `signature_only` because the evidence doesn't yet
+  justify the flip: an n=1 A/B showed source bought **no** Read reduction (both arms 1 Read) while
+  costing ~50% more tokens, and the render-level comparison shows source renders far fewer nodes per
+  budget *and* amplifies ranking mis-picks (a wrong top-ranked symbol grabs the expensive source slot).
+  **Flip decision (2026-06-28): do NOT flip — `signature_only` stays the default.** Both gates were met
+  (the ranking fix landed — M4/M6 file/module-clutter suppression + the semantic seeder already on-by-
+  default when a backend is available; and the n≥4 source-vs-signature A/B was run via
+  `scripts/eval/render_ab.py`). The A/B (n=4 × 2 body-needing questions, both arms yigraf-on) found
+  source bought **zero** read/tool-call reduction (reads 1↔1, tool-calls 2↔2), was ~7% slower, tokens
+  flat. Root cause: the floor model **never called `yigraf context` (0/16 runs)** — it went straight to
+  `find`+`Read` — so the render knob, which only shapes `yigraf context` output, had no surface to act on.
+  Meta-finding: yigraf's legibility value rides the **push** channel (the PostToolUse hook auto-injects)
+  not the **pull** channel (agents don't reliably choose `yigraf context` for code questions — CodeGraph's
+  "low-salience wall"). `source_for_seeds` stays shipped-but-opt-in; its value in the *hook injection* path
+  (push, not pull) is a separate question this A/B didn't test.
+- 🟡 **A/B numbers: enforceable axis is n=4; structural/source numbers are still n=1.** The **enforceable**
+  case (`drift-reverify`) now runs at **n=4 → ENFORCED 4/4** (each run an independent `claude -p` subprocess,
+  judged separately and reported as a rate). Getting there exposed three harness confounds that each
+  produced a *false* verdict first — the yigraf **Skill** leaking `yigraf context` into both arms (fixed:
+  `_isolate` now moves aside `.claude/skills/`), the headless **edit being permission-blocked** so the hook
+  never fired (fixed: `--permission-mode bypassPermissions`), and **re-anchor poisoning** where the WITH
+  arm's own `yigraf link` reconciled the drift and silenced runs 1..N (fixed: per-run working-tree
+  snapshot/restore of `restore_paths`). The **structural** legibility deltas and the **source-vs-signature**
+  comparison are still n=1 — treat those as directional until an n≥4 standalone run.
+- 🟢 **Recoverable CLI conditions now exit 0 with guidance (A1).** `link`/`remember`/`note-constraint`/
+  `supersede`/`intent`/`plan` return exit-0 + a "did you mean"/how-to-fix message (not exit-1) for an
+  unresolved locator, near-dup, bad type, or already-exists — "errors teach abandonment." Implication
+  for scripting/CI: these verbs no longer signal failure via exit code on a recoverable miss (the
+  operation still doesn't happen — read the message). Genuine gates (`drift`, missing workspace) keep
+  non-zero exit. **Convention: new agent-facing verbs use `cli._guidance`, never `typer.Exit(1)`.**
+
+## Phase 3 — structure depth (inheritance edges, relative imports, ranking fix)
+
+- 🟢 **Inheritance edges (`inherits` relation), precise & cross-file.** `class C(Base)` → `C --inherits-->
+  sym:<base's file>#Base`, resolved differently per language: **Python/TS import-aware** (base name resolved
+  through `from … import` / ES-named-import bindings to the defining module), **Go package-aware** (a
+  simple-name embed resolves to a `type` in the *same directory* — Go packages span a dir; Go import-edge
+  resolution isn't built yet). Dotted/qualified bases (`mod.Base`, `pkg.Ext`), default/namespace imports,
+  and external bases are **skipped, not guessed** — an edge is added only when the base symbol exists (no
+  phantom, no false edge → no false drift; consistent with the explicit-only-linking policy). Dogfood: 14
+  real edges on yigraf itself (e.g. the whole `tags.py` extractor hierarchy).
+- 🔴→🟢 **Adding `inherits` to the projection needed a `CACHE_FORMAT` bump (2→3).** The new file-node field
+  is cached per file; without the bump, an unchanged file is served from a pre-inheritance cache entry and
+  silently misses its edges (hit live: only 1 of 14 edges appeared until the cache was cleared/bumped).
+  **Convention: any new field on a `FileProjection` node MUST bump `cache.CACHE_FORMAT`.**
+- 🟢 **Import edges now cover every language whose module system maps to files.** Python/TS + Go
+  (`go.mod` module prefix → package directory → edges to each file of the package) + the generic tags
+  langs (Rust/Java/C/C++/Ruby/PHP) + Kotlin/Scala (`import pkg.Class` → file by convention via
+  `resolve_segments`; wildcard/selector imports skipped). **C# and Swift are intentionally excluded** —
+  C# `using` names a *namespace* (spans files; a file declares any namespace) and Swift `import` names a
+  whole *module/framework*; neither maps to a file, so any edge would be invented. (Scala was promoted
+  from a `_vendored` instance to a `ScalaExtractor` subclass to host its import + heritage overrides.)
+- 🟢 **Python relative imports (#16) resolve to edges.** `_imports` keeps the leading dots (`.base`,
+  `..astnorm`, bare `from . import x`); resolution maps them to absolute modules against the importer's
+  package (src-layout aware). Over-relative specs (more dots than depth) yield no phantom.
+- 🟢 **file:/module: containers suppressed from the render** (the M4/M6 clutter). They still seed and bridge
+  traversal — only the output drops them — which frees the tight hook budget for symbols + governing
+  intent/drift. Observable on the dogfood hook: the drift lines now surface where containers used to crowd
+  them out. (Half of the `source_for_seeds` ranking-fix gate; see the A-series entry.)
+- 🟡 **Self-induced soft drift on `task:yigraf-v0/1 → build_graph`** from threading `file_inherits` through
+  `build_graph`. Left un-re-linked on purpose: re-anchoring mid-work writes to the WIP plan artifact, and
+  this is post-v0 structure-depth work, not the v0 task — relink (or a dedicated Phase-3 task) at a real
+  conclusion, not as churn.

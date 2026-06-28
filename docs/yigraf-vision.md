@@ -1,7 +1,10 @@
 # yigraf — Vision & Synthesis
 
-> A meta-tool for the workflow of users with AI coding agents.
-> `zip` (compression / token efficiency) + `graf` (graph).
+> **yigraf = "Why I Graph?"** — a tool **for AI coding agents, not for human beings.** It answers, for
+> the agent, the *why's* and *what-for's* of its current state — the questions an agent can't recover
+> from source alone and loses on every `/clear`. A human is the *principal* whose intent it carries;
+> the **agent is the operator and the audience.** Token efficiency is a *property* it delivers (a scoped
+> graph slice instead of re-read files), **not** the meaning of the name.
 > Built on lessons from **OpenSpec** (the plan/intent layer) and **Graphify** (the structure/retrieval layer).
 > See `docs/research/openspec-analysis.md` and `docs/research/graphify-analysis.md`.
 
@@ -31,7 +34,8 @@ and the agent stops re-deriving context it already had.
 
 ## 2. The five dimensions → where each tool already helps
 
-The user's five tracking targets, mapped to prior art and the gap yigraf must fill.
+The five dimensions of state an agent must track across a task, mapped to prior art and the gap yigraf
+must fill. (Each is a question the agent asks about its own work — yigraf exists to answer it.)
 
 ### ① Memory — concepts/ideas in the conversation and their relationships
 - OpenSpec: ✗ (intent artifacts survive, but not the reasoning trail).

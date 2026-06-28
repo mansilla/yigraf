@@ -1,9 +1,17 @@
 # yigraf
 
+> **yigraf = "Why I Graph?"** — a tool **for AI coding agents, not for human beings.** It answers, for
+> the agent, the *why's* and *what-for's* of its current state — the questions an agent can't recover
+> from source alone and loses on every `/clear`. Every surface (CLI output, hook injection, error
+> messages, docs) is designed to be *consumed by an agent* under an agent's constraints — a finite
+> context window and no scrollback. A human is the *principal* whose intent it carries; the **agent is
+> the operator and the audience**. See [`CLAUDE.md`](CLAUDE.md) for the design law.
+
 A **harness primitive** for AI coding agents: one connected graph over four node families —
-**structure** (code), **intent**, **plan**, and **memory** — that makes the right slice of an
-agent's work **legible** (scoped, token-cheap retrieval) and **enforceable** (an intent↔code *drift
-check* that fires when code and its governing intent diverge). It retrofits onto existing repos.
+**structure** (code → *what is this?*), **intent** (*what is it for?*), **plan** (*what's left?*), and
+**memory** (*why is it this way?*) — that makes the right slice of an agent's work **legible** (scoped,
+token-cheap retrieval) and **enforceable** (an intent↔code *drift check* that fires when code and its
+governing intent diverge). It retrofits onto existing repos.
 
 Design is in [`docs/DESIGN.md`](docs/DESIGN.md) (the authoritative decision log) and sequenced into
 milestones in [`docs/BUILD-PLAN.md`](docs/BUILD-PLAN.md). Python; Claude Code first.

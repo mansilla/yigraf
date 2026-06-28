@@ -14,6 +14,7 @@ import math
 import re
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import networkx as nx
 
@@ -265,25 +266,107 @@ def _verified_reconcile(graph: nx.DiGraph, drifted_edges: set[tuple[str, str]]) 
     return sorted(lines)
 
 
+def _capture_gaps(graph: nx.DiGraph, scope: set[str] | None = None) -> list[str]:
+    """Completed tasks that name no implementing symbol — the "work done, graph not told" signal.
+
+    yigraf's read path is *push* (hooks inject context) but its write path is *pull* (``link`` /
+    ``remember`` only run if the agent chooses to). An undisciplined agent finishing tasks without
+    ``yigraf link`` silently starves the graph of the very edges drift and retrieval rely on. This
+    makes that decay **legible** instead of silent: a ``done`` task with no ``implements`` edge is
+    surfaced so the agent can close the link. Advisory only, like the R9c reconcile — never a hard gate
+    (consistent with R8/R9c "surface, don't block"). ``scope`` (the retrieved hop-set) restricts it to
+    a query's neighborhood; ``None`` reports every gap (the SessionStart orientation dashboard).
+    """
+    lines: list[str] = []
+    for node_id, attrs in graph.nodes(data=True):
+        if attrs.get("family") != "plan" or attrs.get("kind") != "task" or attrs.get("state") != "done":
+            continue
+        if scope is not None and node_id not in scope:
+            continue
+        linked = any(a.get("relation") == "implements" for _, _, a in graph.out_edges(node_id, data=True))
+        if not linked:
+            lines.append(f"  ⚠ {node_id} is done but names no implementing symbol — "
+                         f"`yigraf link {node_id} sym:<path>#<name>`")
+    return sorted(lines)
+
+
+#: Structure kinds whose source is a meaningful slice (a whole file/module is not — skip those).
+_SOURCE_KINDS = frozenset({"function", "method", "class", "type"})
+
+#: Container kinds suppressed from the *render*: a bare ``file:``/``module:`` locator is noise that eats
+#: the token budget and crowds out symbols + governing intent/drift (caveats M4/M6; the ranking fix that
+#: gates ``source_for_seeds``). They still seed retrieval and bridge traversal — only the output drops them.
+_RENDER_SKIP_KINDS = frozenset({"file", "module"})
+
+
+def _source_block(graph: nx.DiGraph, node_id: str, root: Path, max_lines: int) -> str | None:
+    """A header + verbatim, line-numbered source slice for a structure symbol (A3), or ``None``.
+
+    The "sufficiency over token-thrift" render: the agent treats the returned source as already Read,
+    so it doesn't re-open the file (the CodeGraph finding — insufficient output triggers a fallback
+    Read that costs more end-to-end). Returns ``None`` for a non-sliceable node (file/module) or an
+    unreadable file, so the caller falls back to the signature line — never a hard failure.
+    """
+    attrs = graph.nodes[node_id]
+    if attrs.get("kind") not in _SOURCE_KINDS:
+        return None
+    src_file, rng = attrs.get("source_file"), attrs.get("source_range")
+    if not src_file or not rng or root is None:
+        return None
+    try:
+        lines = (Path(root) / src_file).read_text(encoding="utf-8", errors="surrogatepass").splitlines()
+    except OSError:
+        return None
+    start_row, _, end_row, _ = rng  # 0-based rows from tree-sitter node_range (base.node_range)
+    end_row = min(end_row, len(lines) - 1)
+    if not 0 <= start_row <= end_row:
+        return None
+    body = lines[start_row:end_row + 1]
+    truncated = max_lines and len(body) > max_lines
+    if truncated:
+        body = body[:max_lines]
+    width = len(str(start_row + len(body)))
+    numbered = [f"    {str(start_row + 1 + i).rjust(width)}\t{ln}" for i, ln in enumerate(body)]
+    if truncated:
+        numbered.append("    … (truncated — open the file for the rest)")
+    return f"  {node_id}  ({src_file}:{start_row + 1})\n" + "\n".join(numbered)
+
+
 def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[str],
-            reconcile_lines: list[str], budget_tokens: int) -> ContextResult:
+            reconcile_lines: list[str], budget_tokens: int, root: Path | None = None,
+            config: dict | None = None, capture_lines: list[str] | None = None) -> ContextResult:
+    capture_lines = capture_lines or []
     char_budget = budget_tokens * 3  # Graphify's ≈3:1 char:token estimate (retrieval-design §9)
-    reserved = "\n".join(drift_lines + reconcile_lines)
+    rcfg = (config or {}).get("retrieval", {})
+    # A3: top-ranked symbols render as verbatim source when the knob is on AND we know the repo root.
+    source_mode = rcfg.get("render", "signature_only") == "source_for_seeds" and root is not None
+    max_src, max_src_lines = rcfg.get("source_max_symbols", 3), rcfg.get("source_max_lines", 40)
+    reserved = "\n".join(drift_lines + reconcile_lines + capture_lines)
     out = [f'Context for "{query}":', ""]
     used = len(reserved)
     rendered = 0
+    src_emitted = 0
 
+    # Drop file:/module: containers before rendering — they only eat budget and bury intent/drift.
+    renderable = [n for n in ranked if graph.nodes[n].get("kind") not in _RENDER_SKIP_KINDS]
     by_family: dict[str, list[str]] = {fam: [] for fam in _FAMILY_ORDER}
     rendered_ids: list[str] = []
-    for node_id in ranked:
-        line = _node_line(graph, node_id)
+    for node_id in renderable:
+        fam = graph.nodes[node_id].get("family", "structure")
+        line = None
+        if source_mode and fam == "structure" and src_emitted < max_src:
+            line = _source_block(graph, node_id, root, max_src_lines)
+        used_source = line is not None
+        if line is None:
+            line = _node_line(graph, node_id)
         if used + len(line) > char_budget:
             break
-        fam = graph.nodes[node_id].get("family", "structure")
         by_family.setdefault(fam, []).append(line)
         rendered_ids.append(node_id)
         used += len(line) + 1
         rendered += 1
+        if used_source:
+            src_emitted += 1
 
     for fam in _FAMILY_ORDER:
         if by_family.get(fam):
@@ -299,14 +382,18 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
         out.append("⚠ Reconcile (R9c):")
         out.extend(reconcile_lines)
         out.append("")
+    if capture_lines:
+        out.append("⚠ Capture gaps:")
+        out.extend(capture_lines)
+        out.append("")
 
-    elided = len(ranked) - rendered
+    elided = len(renderable) - rendered
     if elided > 0:
         out.append(f"… {elided} more node(s) elided — narrow with `--family <f>` or a more specific query.")
 
     text = "\n".join(out).rstrip() + "\n"
     return ContextResult(text=text, token_estimate=len(text) // 3, nodes_rendered=rendered,
-                         nodes_total=len(ranked), rendered=rendered_ids)
+                         nodes_total=len(renderable), rendered=rendered_ids)
 
 
 def _node_line(graph: nx.DiGraph, node_id: str) -> str:
@@ -379,7 +466,7 @@ def _file_structure_nodes(graph: nx.DiGraph, pid: str) -> list[str]:
 
 
 def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict,
-                      budget_tokens: int | None = None) -> ContextResult | None:
+                      budget_tokens: int | None = None, root: Path | None = None) -> ContextResult | None:
     """Action-driven retrieval (retrieval-design §0): seed from a touched file, no NL query.
 
     Returns ``None`` — **silent** — unless the locus is actually governed (an ``implements``/
@@ -418,10 +505,12 @@ def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict,
 
     ranked = _rank(graph, hops, {}, config)  # action-driven: no NL match
     reconcile = _verified_reconcile(graph, drifted_edges)
-    return _render(graph, ranked, f"editing {file_relpath}", sorted(drift_lines), reconcile, budget)
+    return _render(graph, ranked, f"editing {file_relpath}", sorted(drift_lines), reconcile, budget,
+                   root=root, config=config)
 
 
-def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None = None) -> ContextResult | None:
+def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None = None,
+                    root: Path | None = None) -> ContextResult | None:
     """SessionStart re-injection (R8): the active plan + governing intents + any drift.
 
     Seeds from every intent and **active** plan node, traverses to the implementing code, and renders
@@ -450,7 +539,9 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
             drift_lines.append(_drift_line(item))
 
     reconcile = _verified_reconcile(graph, drifted_edges)
-    return _render(graph, ranked, "active plan & governing intents", sorted(drift_lines), reconcile, budget)
+    capture = _capture_gaps(graph)  # global: SessionStart is the orientation dashboard for graph health
+    return _render(graph, ranked, "active plan & governing intents", sorted(drift_lines), reconcile,
+                   budget, root=root, config=config, capture_lines=capture)
 
 
 def _merge_seeds(lex_match: dict[str, float], sem_match: dict[str, float], config: dict) -> list[str]:
@@ -476,7 +567,8 @@ def _combine_match(lex_match: dict[str, float], sem_match: dict[str, float],
 
 
 def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = None,
-            budget_tokens: int | None = None, semantic_match: dict[str, float] | None = None) -> ContextResult:
+            budget_tokens: int | None = None, semantic_match: dict[str, float] | None = None,
+            root: Path | None = None) -> ContextResult:
     """Run the full query pipeline over an already-built ``graph`` and render within budget.
 
     ``semantic_match`` (``{node_id: cosine}`` from :mod:`yigraf.embeddings`, scoped to memory+intent)
@@ -507,4 +599,6 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
             drift_lines.append(_drift_line(item))
 
     reconcile_lines = _verified_reconcile(graph, drifted_edges)
-    return _render(graph, ranked, query, sorted(drift_lines), reconcile_lines, budget)
+    capture_lines = _capture_gaps(graph, scope=in_scope)  # scoped to the query's neighborhood, like drift
+    return _render(graph, ranked, query, sorted(drift_lines), reconcile_lines, budget,
+                   root=root, config=config, capture_lines=capture_lines)

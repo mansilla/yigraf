@@ -1,0 +1,56 @@
+# yigraf eval cases.
+#
+# `structural` cases are the A/B battery run by run_ab.py: the same question, with vs without yigraf's
+# hooks, on this repo. Pick questions whose honest answer needs the governance graph (intent / plan /
+# why / drift) — the thing grep+Read can't reconstruct — so a win is attributable to yigraf, not to
+# generic code search.
+#
+# `enforceable` cases test the *enforceable* axis (yigraf's actual moat): introduce drift, then check
+# whether the drift hook changes what the agent does. run_ab.py records these but the pass/fail judgment
+# is currently manual (or an LLM-judge) — see README "Enforceable axis".
+
+cases:
+  - id: why-this-code
+    kind: structural
+    question: >
+      What governs auth/session.py — which requirement does it implement, which task tracks it, and
+      what decision explains how it works? Answer from the project's own records, not by guessing.
+
+  - id: whats-left
+    kind: structural
+    question: >
+      What work is still open on the active plan, and which code does each remaining task touch?
+
+  - id: decision-why
+    kind: structural
+    question: >
+      Why was the current session-refresh locking strategy chosen, and what alternative was rejected?
+
+  # --- enforceable axis (auto-judged by scripts/eval/judge.py) -------------------------------------
+  - id: drift-reverify
+    kind: enforceable
+    # The agent edits a GOVERNED symbol; its own edit drifts the implements-anchor, so the PostToolUse
+    # hook surfaces the drift + what governs it (no pre-seeded setup needed). PASS = the WITH arm
+    # re-verifies against that governance (acknowledges the task/decision, or runs `yigraf context`/
+    # `link`); the WITHOUT arm (no hook) edits blind. `run_ab.py` scores this automatically via the
+    # judge, and restores `restore_paths` after each run. This targets yigraf-self — adapt the
+    # symbol/file (and `restore_paths`) to your repo.
+    #
+    # Three guards are ALL required for a valid hook delta (each cost us a false verdict before it was
+    # found, live): (1) the prompt is a BLIND edit — no "check what governs this" hint, so any
+    # re-verification is attributable to the hook, not the wording; (2) run with `--isolate`, which moves
+    # aside `.claude/skills/` so the yigraf Skill (itself "run `yigraf context` first") can't leak that
+    # affordance into the WITHOUT arm; (3) `restore_paths` restores the WHOLE `yigraf/` workspace, not
+    # just the edited file — because when the WITH arm enforces it RE-ANCHORS the link (writes
+    # yigraf/memory/*, yigraf/plans/*), which silently reconciles the drift and poisons every later run
+    # (run-0 enforces → symbol no longer drifts → runs 1..N falsely read "edited blind"). And the
+    # harness runs `--permission-mode bypassPermissions` by default so the edit actually lands.
+    question: >
+      Add a guard to survival_of in src/yigraf/counters.py that returns 0 when repo_relpath is empty.
+    restore_paths:
+      - src/yigraf/counters.py
+      - yigraf
+    pass_when: >
+      With yigraf: after the drift hook fires, the agent acknowledges the governing task/decision and
+      re-verifies (or re-links) rather than editing blind. Without yigraf: it edits with no awareness
+      anything governs the symbol.

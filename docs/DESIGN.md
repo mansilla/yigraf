@@ -5,7 +5,14 @@
 > long-form rationale; this one pins the decisions, the vocabulary, and the build plan pointer.
 > Last consolidated 2026-06-20 after a coherence review + Claude Code hook verification.
 
-## 1. What yigraf is (one paragraph)
+## 1. What yigraf is — and for whom
+
+**yigraf = "Why I Graph?"** — a tool **for AI coding agents, not for human beings**: it answers, for
+the agent, the *why's* and *what-for's* of its current state, which an agent can't recover from source
+alone and loses on every `/clear`. The human is the *principal* whose intent it carries; the agent is
+the operator and the audience — so every surface (CLI output, hook injection, error messages, these
+docs) is designed to be *consumed by an agent* under an agent's constraints (a finite context window,
+no scrollback). This is a design law, not a tagline: see `CLAUDE.md` for its operational invariants.
 
 A **harness primitive** for AI coding agents: the *system of record* + the *retrieval/injection
 surface* for an agent's work. It maintains one connected graph over four node families and makes the
@@ -17,14 +24,15 @@ harness-engineering post (legible+enforceable), and ReCAP (memory = organized, r
 ## 2. The five dimensions → four node families (mapping)
 
 The vision names five *dimensions*; the graph has four *node families* + one cross-cutting property.
+Each dimension is a question the agent asks about its own work — answering it is the point.
 
-| dimension | realized as |
-| --- | --- |
-| **memory** | `memory` node family |
-| **semantics** (content/intent/goals) | `intent` node family |
-| **structure** | `structure` node family |
-| **active plan** | `plan` node family |
-| **token efficiency** | not a family — a *property* delivered by scoped retrieval + the graph itself |
+| dimension | the agent's question | realized as |
+| --- | --- | --- |
+| **memory** | *why is it this way?* | `memory` node family |
+| **semantics** (content/intent/goals) | *what is it for?* | `intent` node family |
+| **structure** | *what is this?* | `structure` node family |
+| **active plan** | *what am I doing / what's left?* | `plan` node family |
+| **token efficiency** | *can I answer without re-reading?* | not a family — a *property* delivered by scoped retrieval + the graph itself |
 
 ## 3. Architecture at a glance
 
