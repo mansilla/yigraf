@@ -123,10 +123,12 @@ whose drift is surfaced when code and the thing that governs it diverge. A few r
 useful — the hooks are a safety net, not a substitute.
 
 ## 0. Orient before you touch code (always)
-Run `yigraf context "<what you're about to work on>"`. It returns the governing requirement(s), the
-implementing symbol signatures (not source), the open tasks, the prior **decisions and their *why***,
-and any **drift** — a token-cheap map. If a spec already covers your change, refine it; don't
-duplicate. If a decision already settled the question, follow it (or `supersede` it on purpose).
+Run `yigraf context "<what you're about to work on>"`. **This is the one command you need to read the
+graph** — the governing requirement(s), the implementing symbols (signature by default, full source
+when configured), the open tasks, the prior **decisions and their *why***, and any **drift** all come
+back through it, as a token-cheap map. Don't reach for a separate query or drift tool. If a spec
+already covers your change, refine it; don't duplicate. If a decision already settled the question,
+follow it (or `supersede` it on purpose).
 
 ## 1. Link when a task is done (the seam)
 When you finish a task, name the symbols that implement it:
@@ -152,18 +154,19 @@ sees the decision and its rationale without reading the history.
   to track the intent.
 
 ## 4. Drift means re-verify
-`yigraf drift` lists soft drift (a linked symbol's body changed) and hard drift (it's gone), for both
-`implements` (task→code) and `concerns` (decision→code) links. A pure rename auto-re-anchors. To clear
-a real drift, re-verify the code still satisfies the spec/decision, then `yigraf link` (or re-`remember`
-/ `supersede` the decision) to re-anchor.
+You don't poll for drift — `yigraf context` and the edit hook surface it for you: soft drift (a linked
+symbol's body changed) or hard drift (it's gone), for both `implements` (task→code) and `concerns`
+(decision→code) links. A pure rename auto-re-anchors. When drift surfaces, re-verify the code still
+satisfies the spec/decision, then `yigraf link` (or re-`remember` / `supersede` the decision) to
+re-anchor. (`yigraf drift` exits non-zero on drift — that's the commit/CI gate, not something you poll.)
 """
 
 _AGENTS_BLOCK = f"""{_AGENTS_START}
 ## yigraf
 This repo uses **yigraf** (a graph over code, intent, plan, and the *why*). Before changing code, run
-`yigraf context "<topic>"` to see governing intents, prior decisions, and drift. After finishing a
-task, run `yigraf link task:<plan>/<n> sym:<path>#<name>`, and `yigraf remember` the non-obvious
-choices (with `--why` and `--concerns <sym>`). `yigraf drift` shows what needs re-verifying.
+`yigraf context "<topic>"` — the one read command: it surfaces governing intents, prior decisions, and
+any drift to re-verify. After finishing a task, run `yigraf link task:<plan>/<n> sym:<path>#<name>`, and
+`yigraf remember` the non-obvious choices (with `--why` and `--concerns <sym>`).
 {_AGENTS_END}"""
 
 #: Self-contained ignore so the per-machine hook wiring never reaches a commit (see install docstring).

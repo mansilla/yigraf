@@ -4,6 +4,8 @@ Exercises the same contracts test_extract.py pins for Python — node ids/kinds,
 hierarchy, intra-file call resolution, recorded imports — plus the drift anchor (astnorm) on Go, all
 via the suffix-dispatching ``extract_file`` so the registry is covered too.
 """
+import pytest
+
 from yigraf.extract import extract_file
 
 SAMPLE = '''package sample
@@ -286,3 +288,148 @@ def test_relative_import_edges_resolve_across_suffixes():
     assert graph.has_edge("file:app/a.ts", "file:app/util.ts")
     assert graph.has_edge("file:app/c.tsx", "file:app/util.ts")
     assert graph.number_of_edges() == 2  # bare "react" + unresolvable "../ext/lib" make no edge
+
+
+# ==================================================================================================
+# Inheritance edges (Go embedding · package-aware ; TS extends/implements · import-aware)
+# ==================================================================================================
+
+
+def test_go_struct_and_interface_embeds_are_recorded():
+    src = ("package p\n\n"
+           "type Derived struct {\n\tBase\n\t*Ptr\n\tpkg.Ext\n\tname string\n}\n\n"
+           "type RW interface {\n\tReader\n\tWrite()\n}\n")
+    inh = extract_file("pkg/m.go", src.encode()).nodes["file:pkg/m.go"]["inherits"]
+    assert ["sym:pkg/m.go#Derived", "", "Base"] in inh   # plain embed
+    assert ["sym:pkg/m.go#Derived", "", "Ptr"] in inh    # pointer embed
+    assert ["sym:pkg/m.go#RW", "", "Reader"] in inh       # interface embed
+    assert all(r[2] not in ("Ext", "name") for r in inh)  # qualified pkg.Ext + named field skipped
+
+
+def test_go_embedding_resolves_within_a_package_but_not_across_dirs():
+    import networkx as nx
+
+    from yigraf.languages.go import GoExtractor
+
+    graph = nx.DiGraph()
+    graph.add_node("sym:pkg/base.go#Base", kind="type", language="go", label="Base")
+    graph.add_node("sym:pkg/impl.go#Derived", kind="type", language="go", label="Derived")
+    graph.add_node("sym:other/base.go#Far", kind="type", language="go", label="Far")
+    file_sources = {"file:pkg/base.go": "pkg/base.go", "file:pkg/impl.go": "pkg/impl.go",
+                    "file:other/base.go": "other/base.go"}
+    file_inherits = {"file:pkg/impl.go": [["sym:pkg/impl.go#Derived", "", "Base"],
+                                          ["sym:pkg/impl.go#Derived", "", "Far"]]}  # Far is in another dir
+    GoExtractor().add_inheritance_edges(graph, file_inherits, file_sources, root=None)
+    assert graph.has_edge("sym:pkg/impl.go#Derived", "sym:pkg/base.go#Base")  # same package (dir)
+    assert graph["sym:pkg/impl.go#Derived"]["sym:pkg/base.go#Base"]["relation"] == "inherits"
+    assert not graph.has_edge("sym:pkg/impl.go#Derived", "sym:other/base.go#Far")  # different package
+
+
+def test_ts_extends_implements_recorded_with_import_bindings():
+    src = ('import { Base } from "./base";\n'
+           'import { Iface as I } from "./iface";\n'
+           'import Def from "./def";\n'
+           "export class C extends Base implements I, Other {}\n"
+           "export interface J extends A {}\n")
+    inh = extract_file("pkg/m.ts", src.encode()).nodes["file:pkg/m.ts"]["inherits"]
+    assert ["sym:pkg/m.ts#C", "./base", "Base"] in inh    # named import → its specifier
+    assert ["sym:pkg/m.ts#C", "./iface", "Iface"] in inh   # aliased → original name
+    assert ["sym:pkg/m.ts#C", "", "Other"] in inh         # unbound implements → same-file
+    assert ["sym:pkg/m.ts#J", "", "A"] in inh             # interface extends
+
+
+def test_ts_inheritance_resolves_across_a_relative_import():
+    import networkx as nx
+
+    from yigraf.languages.jsts import JsTsExtractor
+
+    graph = nx.DiGraph()
+    graph.add_node("sym:app/base.ts#Base", kind="class", language="typescript", label="Base")
+    graph.add_node("sym:app/impl.ts#C", kind="class", language="typescript", label="C")
+    file_sources = {"file:app/base.ts": "app/base.ts", "file:app/impl.ts": "app/impl.ts"}
+    file_inherits = {"file:app/impl.ts": [["sym:app/impl.ts#C", "./base", "Base"],
+                                          ["sym:app/impl.ts#C", "react", "Component"]]}  # bare → external
+    JsTsExtractor().add_inheritance_edges(graph, file_inherits, file_sources, root=None)
+    assert graph.has_edge("sym:app/impl.ts#C", "sym:app/base.ts#Base")
+    assert graph["sym:app/impl.ts#C"]["sym:app/base.ts#Base"]["relation"] == "inherits"
+    assert graph.number_of_edges() == 1  # bare "react" specifier makes no edge
+
+
+# --- tags-tier inheritance (task #3): governance substrate across the breadth languages -----------
+# Resolved by name (inherits is a structure edge, never drift) — same `len==1` rule the call resolver uses.
+
+@pytest.mark.parametrize("relpath,source,expected", [
+    ("p/M.java", "class C extends Base {}\n", ["sym:p/m.java#C", "", "Base"]),
+    ("p/M.cs", "class C : Base {}\n", ["sym:p/m.cs#C", "", "Base"]),
+    ("p/M.kt", "class C : Base() {}\n", ["sym:p/m.kt#C", "", "Base"]),
+    ("p/M.scala", "class C extends Base\n", ["sym:p/m.scala#C", "", "Base"]),
+    ("p/M.swift", "class C: Base {}\n", ["sym:p/m.swift#C", "", "Base"]),
+    ("p/m.cpp", "class C : public Base { };\n", ["sym:p/m.cpp#C", "", "Base"]),
+    ("p/m.rs", "struct S;\nimpl Base for S {}\n", ["sym:p/m.rs#S", "", "Base"]),
+    ("p/m.rb", "class C < Base\nend\n", ["sym:p/m.rb#C", "", "Base"]),
+    ("p/m.php", "<?php\nclass C extends Base {}\n", ["sym:p/m.php#C", "", "Base"]),
+])
+def test_tags_tier_records_inheritance_requests(relpath, source, expected):
+    proj = extract_file(relpath, source.encode())
+    assert expected in proj.nodes[f"file:{relpath.casefold()}"]["inherits"]
+
+
+def test_tags_tier_inheritance_resolves_by_unique_name():
+    from yigraf.languages.tags import JavaExtractor
+    import networkx as nx
+
+    graph = nx.DiGraph()
+    graph.add_node("sym:base.java#Base", kind="class", language="java", label="Base")
+    graph.add_node("sym:c.java#C", kind="class", language="java", label="C")
+    file_sources = {"file:base.java": "Base.java", "file:c.java": "C.java"}
+    file_inherits = {"file:c.java": [["sym:c.java#C", "", "Base"]]}
+    JavaExtractor().add_inheritance_edges(graph, file_inherits, file_sources, root=None)
+    assert graph["sym:c.java#C"]["sym:base.java#Base"]["relation"] == "inherits"
+
+
+def test_kotlin_records_and_resolves_imports():
+    import networkx as nx
+
+    from yigraf.languages.tags import KotlinExtractor
+
+    proj = extract_file("app/Main.kt", b"import com.foo.Bar\nimport com.baz.*\n\nfun main() {}\n")
+    assert proj.nodes["file:app/main.kt"]["imports"] == ["com.foo.Bar"]  # wildcard `com.baz.*` skipped
+    graph = nx.DiGraph()
+    file_sources = {"file:app/main.kt": "app/Main.kt", "file:com/foo/bar.kt": "com/foo/Bar.kt"}
+    KotlinExtractor().add_import_edges(graph, {"file:app/main.kt": ["com.foo.Bar"]}, file_sources, root=None)
+    assert graph.has_edge("file:app/main.kt", "file:com/foo/bar.kt")  # com.foo.Bar → com/foo/Bar.kt
+
+
+def test_scala_records_and_resolves_imports():
+    import networkx as nx
+
+    from yigraf.languages.tags import ScalaExtractor
+
+    proj = extract_file("app/Main.scala", b"import foo.bar.Baz\nimport foo.qux._\n")
+    assert proj.nodes["file:app/main.scala"]["imports"] == ["foo.bar.Baz"]  # wildcard `foo.qux._` skipped
+    graph = nx.DiGraph()
+    file_sources = {"file:app/main.scala": "app/Main.scala", "file:foo/bar/baz.scala": "foo/bar/Baz.scala"}
+    ScalaExtractor().add_import_edges(graph, {"file:app/main.scala": ["foo.bar.Baz"]}, file_sources, root=None)
+    assert graph.has_edge("file:app/main.scala", "file:foo/bar/baz.scala")
+
+
+def test_csharp_and_swift_record_no_imports():
+    # using-namespaces (C#) and module imports (Swift) don't map to files — intentionally no edges.
+    assert "imports" not in extract_file("M.cs", b"using System;\nclass C {}\n").nodes["file:m.cs"] \
+        or extract_file("M.cs", b"using System;\nclass C {}\n").nodes["file:m.cs"]["imports"] == []
+    assert extract_file("M.swift", b"import Foundation\nclass C {}\n").nodes["file:m.swift"].get("imports", []) == []
+
+
+def test_tags_tier_inheritance_drops_ambiguous_base():
+    from yigraf.languages.tags import JavaExtractor
+    import networkx as nx
+
+    graph = nx.DiGraph()  # two distinct `Base` types repo-wide → ambiguous → no edge (no false edge)
+    graph.add_node("sym:a/base.java#Base", kind="class", language="java", label="Base")
+    graph.add_node("sym:b/base.java#Base", kind="class", language="java", label="Base")
+    graph.add_node("sym:c.java#C", kind="class", language="java", label="C")
+    file_sources = {"file:a/base.java": "a/Base.java", "file:b/base.java": "b/Base.java",
+                    "file:c.java": "C.java"}
+    file_inherits = {"file:c.java": [["sym:c.java#C", "", "Base"]]}
+    JavaExtractor().add_inheritance_edges(graph, file_inherits, file_sources, root=None)
+    assert not any(d.get("relation") == "inherits" for _, _, d in graph.out_edges("sym:c.java#C", data=True))

@@ -91,7 +91,14 @@ class JsTsExtractor(LanguageExtractor):
                     continue  # `export { … }` / `export default <expr>` — no named local declaration
             _emit_decl(stmt, decl, pid, module_id, source, symbols)
         module_boundaries = {s.stmt.id: s.name for s in symbols if s.container == module_id}
-        return Discovery(symbols=symbols, module_boundaries=module_boundaries, imports=_imports(root))
+        bindings = _es_bindings(root)  # named-import bindings → import-aware base resolution
+        inherits = [
+            [s.id, *bindings.get(base, ("", base))]
+            for s in symbols if s.kind in ("class", "type")
+            for base in _heritage_bases(s.defn)
+        ]
+        return Discovery(symbols=symbols, module_boundaries=module_boundaries, imports=_imports(root),
+                         inherits=inherits or None)
 
     def call_edges(self, symbols, pid: str, symbol_ids: set[str]) -> list[tuple[str, str]]:
         found: set[tuple[str, str]] = set()
@@ -114,6 +121,29 @@ class JsTsExtractor(LanguageExtractor):
                 tgt_id = by_relpath.get(target) if target else None
                 if tgt_id is not None and tgt_id != file_id:
                     graph.add_edge(file_id, tgt_id, **edge("imports"))
+
+    def add_inheritance_edges(self, graph, file_inherits, file_sources, root) -> None:
+        """Resolve ``extends``/``implements`` (``inherits``) **import-aware**: a base bound by a named ES
+        import resolves through its relative specifier (``./base``) to the defining file; an unbound base
+        is looked up in the same file. Bare specifiers (node_modules) and default/namespace/qualified
+        bases were already dropped. Edge only when the base symbol exists (no phantom, no false edge)."""
+        by_relpath = {src: fid for fid, src in file_sources.items()}
+        relset = set(file_sources.values())
+        for file_id in sorted(file_inherits):
+            base_dir = PurePosixPath(file_sources.get(file_id, "")).parent
+            for subclass_id, spec, base_name in file_inherits[file_id]:
+                if spec == "":
+                    target_file = file_id  # unbound → same-file base
+                elif spec.startswith("."):
+                    tgt_rel = _resolve_relative_import(base_dir, spec, relset)
+                    target_file = by_relpath.get(tgt_rel) if tgt_rel else None
+                else:
+                    target_file = None  # bare specifier → external
+                if target_file is None:
+                    continue
+                base_id = f"sym:{target_file[len('file:'):]}#{base_name}"
+                if base_id in graph and base_id != subclass_id:
+                    graph.add_edge(subclass_id, base_id, **edge("inherits"))
 
 
 # --------------------------------------------------------------------------------------------------
@@ -211,6 +241,54 @@ def _resolve_call(call, pid: str, enclosing_class: str | None, symbol_ids: set[s
             candidate = f"sym:{pid}#{enclosing_class}.{prop.text.decode()}"
             return candidate if candidate in symbol_ids else None
     return None
+
+
+def _heritage_bases(decl) -> list[str]:
+    """Simple-name bases of a class (``extends`` + ``implements``) or interface (``extends``).
+
+    Skips qualified bases (``ns.Base`` → a ``member_expression``, not an identifier) and any non-name
+    heritage entry — precision over recall, like the other extractors. In an ``extends_clause`` the base
+    sits in value position (``identifier``); ``implements_clause`` / interface ``extends_type_clause`` use
+    type position (``type_identifier``)."""
+    names: list[str] = []
+    heritage = next((c for c in decl.children if c.type == "class_heritage"), None)
+    if heritage is not None:  # class
+        for clause in heritage.children:
+            if clause.type in ("extends_clause", "implements_clause"):
+                names += [c.text.decode() for c in clause.children
+                          if c.type in ("identifier", "type_identifier")]
+    else:  # interface
+        clause = next((c for c in decl.children if c.type == "extends_type_clause"), None)
+        if clause is not None:
+            names += [c.text.decode() for c in clause.children if c.type == "type_identifier"]
+    return names
+
+
+def _es_bindings(root) -> dict[str, tuple[str, str]]:
+    """``import { Base [as Local] } from "spec"`` → ``{local_name: (spec, original_name)}`` for base
+    resolution. Default (``import X from``) and namespace (``import * as ns``) imports are skipped —
+    they don't bind a name that maps to an exported *symbol* of that name."""
+    bindings: dict[str, tuple[str, str]] = {}
+    for child in root.children:
+        if child.type != "import_statement":
+            continue
+        source = child.child_by_field_name("source")
+        clause = next((c for c in child.children if c.type == "import_clause"), None)
+        if source is None or source.type != "string" or clause is None:
+            continue
+        spec = source.text.decode().strip("\"'`")
+        named = next((c for c in clause.children if c.type == "named_imports"), None)
+        if named is None:
+            continue  # default / namespace import — no name→symbol binding
+        for sp in named.children:
+            if sp.type != "import_specifier":
+                continue
+            ids = [c for c in sp.children if c.type == "identifier"]
+            if len(ids) == 1:  # `import { Base }`
+                bindings[ids[0].text.decode()] = (spec, ids[0].text.decode())
+            elif len(ids) >= 2:  # `import { Orig as Local }`
+                bindings[ids[1].text.decode()] = (spec, ids[0].text.decode())
+    return bindings
 
 
 def _imports(root) -> list[str]:

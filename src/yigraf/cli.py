@@ -5,11 +5,13 @@ M0 ships ``init`` only. Later milestones add the verbs the design names — ``in
 """
 from __future__ import annotations
 
+import difflib
 import json
 import os
 import re
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 import typer
 
@@ -24,6 +26,42 @@ from yigraf.hooks import install_claude_hooks, install_post_commit_hook
 from yigraf.scaffold import WORKSPACE_DIRNAME, init_workspace
 
 _TASK_ID = re.compile(r"^task:(.+)/(\d+)$")
+
+
+def _guidance(message: str) -> NoReturn:
+    """Decline a recoverable condition with agent-facing guidance, exiting 0 (never a hard error).
+
+    An unresolved locator, a near-duplicate, or a name that already exists is *not* a tool failure: a
+    non-zero exit trains an agent to stop calling the tool ("errors teach abandonment", the lesson
+    imported from CodeGraph). So we print how to fix it and exit 0 — the agent reads the guidance and
+    retries with a corrected argument. Genuine "stop" cases (no workspace, the CI ``drift`` gate) keep
+    their non-zero exit.
+    """
+    typer.echo(message)
+    raise typer.Exit(code=0)
+
+
+def _symbol_suggestion(graph, target: str) -> str:
+    """A 'did you mean' tail for an unresolved ``sym:`` locator, fuzzy-matched against the graph."""
+    candidates = [n for n in graph.nodes if str(n).startswith("sym:")]
+    close = difflib.get_close_matches(target, candidates, n=3, cutoff=0.6)
+    if close:
+        return " Did you mean: " + ", ".join(close) + "?"
+    name = target.split("#", 1)[-1]
+    same_name = sorted(c for c in candidates if c.split("#", 1)[-1] == name)
+    if same_name:
+        return " A symbol named that exists at: " + ", ".join(same_name[:3]) + "."
+    return f' Run `yigraf context "{name}"` to find its locator.'
+
+
+def _anchor_or_guide(repo: Path, config: dict, target: str) -> str:
+    """Stamp the astnorm anchor for ``target``; if it's unresolved, emit a 'did you mean' and exit 0."""
+    anchor = symbol_content_hash(repo, target, config)
+    if anchor is not None:
+        return anchor
+    graph, _ = build_graph(repo, config)
+    _guidance(f"Couldn't find {target} in the current source." + _symbol_suggestion(graph, target))
+
 
 app = typer.Typer(
     help="yigraf — one connected graph over code, intent, plan, and memory.",
@@ -145,6 +183,14 @@ def _find_plan_file(workspace: Path, plan_slug_cf: str) -> Path | None:
     return None
 
 
+def _known_plans(workspace: Path) -> list[str]:
+    """Plan slugs across active/ and completed/ — for a 'did you mean' on an unknown plan."""
+    out: list[str] = []
+    for sub in ("active", "completed"):
+        out += [p.stem for p in sorted((workspace / "plans" / sub).glob("*.md"))]
+    return out
+
+
 @app.command()
 def intent(
     slug: str = typer.Argument(..., help="Slug for the intent file (intents/<slug>.md)."),
@@ -159,8 +205,7 @@ def intent(
     workspace = _require_workspace(repo)
     dest = workspace / "intents" / f"{slug}.md"
     if dest.exists():
-        typer.echo(f"Intent already exists: {dest} — edit it directly.", err=True)
-        raise typer.Exit(code=1)
+        _guidance(f"Intent int:{slug.casefold()} already exists ({dest}). Edit it directly, or pick a new slug.")
     dest.write_text(
         artifacts.render_intent(slug, statement, scenario or [], design, type=type, status=status),
         encoding="utf-8",
@@ -180,8 +225,7 @@ def plan(
     workspace = _require_workspace(repo)
     dest = workspace / "plans" / "active" / f"{slug}.md"
     if dest.exists():
-        typer.echo(f"Plan already exists: {dest} — edit it directly.", err=True)
-        raise typer.Exit(code=1)
+        _guidance(f"Plan plan:{slug.casefold()} already exists ({dest}). Edit it directly, or pick a new slug.")
     dest.write_text(artifacts.render_plan(slug, title, task or []), encoding="utf-8")
     _rebuild(repo)
     typer.echo(f"Created plan plan:{slug.casefold()} with {len(task or [])} task(s) ({dest})")
@@ -197,31 +241,30 @@ def link(
     workspace = _require_workspace(repo)
     match = _TASK_ID.match(task_id)
     if match is None:
-        typer.echo(f"Not a task id: {task_id} (expected task:<plan>/<n>).", err=True)
-        raise typer.Exit(code=1)
+        _guidance(f"{task_id} isn't a task locator (expected task:<plan>/<n>, e.g. task:auth/1). "
+                  f'Find tasks with `yigraf context "<plan>"`.')
 
     plan_file = _find_plan_file(workspace, match.group(1).casefold())
     if plan_file is None:
-        typer.echo(f"No plan found for {task_id}.", err=True)
-        raise typer.Exit(code=1)
-    if not any(t.id == task_id for t in artifacts.read_plan(plan_file).tasks):
-        typer.echo(f"{task_id} is not a task in {plan_file.name}.", err=True)
-        raise typer.Exit(code=1)
+        known = _known_plans(workspace)
+        _guidance(f"No plan found for {task_id}." +
+                  (f" Known plans: {', '.join(known)}." if known else " Create one with `yigraf plan`."))
+    tasks = artifacts.read_plan(plan_file).tasks
+    if not any(t.id == task_id for t in tasks):
+        ids = ", ".join(t.id for t in tasks) or "(none)"
+        _guidance(f"{task_id} is not a task in {plan_file.name}. Tasks there: {ids}.")
 
     if target.startswith("sym:"):
         config = load_config(workspace / "config.yaml")
-        anchor = symbol_content_hash(repo, target, config)
-        if anchor is None:
-            typer.echo(f"Symbol not found in the current source: {target}", err=True)
-            raise typer.Exit(code=1)
+        anchor = _anchor_or_guide(repo, config, target)
         artifacts.add_edge_to_plan(plan_file, task_id, "implements", target, anchor=anchor)
         typer.echo(f"Linked {task_id} —implements→ {target} (anchored {anchor[:12]})")
     elif target.startswith("int:"):
         artifacts.add_edge_to_plan(plan_file, task_id, "tracks", target)
         typer.echo(f"Linked {task_id} —tracks→ {target}")
     else:
-        typer.echo("Target must be a symbol (sym:<path>#<name>) or an intent (int:<slug>).", err=True)
-        raise typer.Exit(code=1)
+        _guidance("Target must be a symbol (sym:<path>#<name>) → implements, or an intent "
+                  f"(int:<slug>) → tracks. Got: {target}")
 
     _rebuild(repo)
 
@@ -232,12 +275,8 @@ def _resolve_concerns(repo: Path, workspace: Path, syms: list[str]) -> list[memo
     concerns: list[memory.Concern] = []
     for sym in syms:
         if not sym.startswith("sym:"):
-            typer.echo(f"--concerns must be a symbol (sym:<path>#<name>), got: {sym}", err=True)
-            raise typer.Exit(code=1)
-        anchor = symbol_content_hash(repo, sym, config)
-        if anchor is None:
-            typer.echo(f"Symbol not found in the current source: {sym}", err=True)
-            raise typer.Exit(code=1)
+            _guidance(f"--concerns must be a symbol (sym:<path>#<name>), got: {sym}")
+        anchor = _anchor_or_guide(repo, config, sym)
         concerns.append(memory.Concern(sym=sym, anchor=anchor, anchor_algo=ANCHOR_ALGO))
     return concerns
 
@@ -256,13 +295,11 @@ def _dedup_guard(repo: Path, config: dict, statement: str, why: str,
     hit = embeddings.most_similar_memory(repo, graph, config, text, scope)
     threshold = config.get("embeddings", {}).get("dup_cosine", 0.9)
     if hit and hit[1] >= threshold:
-        typer.echo(
+        _guidance(
             f"This looks like a near-duplicate of {hit[0]} (cosine {hit[1]:.2f}). "
             f"If you're changing your mind, `yigraf supersede {hit[0]} \"<new>\"`; "
-            f"otherwise re-run with --new to capture it anyway.",
-            err=True,
+            f"otherwise re-run with --new to capture it anyway."
         )
-        raise typer.Exit(code=1)
 
 
 def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, why: str,
@@ -270,8 +307,7 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
                     supersedes: list[str], promotable: bool, force_new: bool = False) -> memory.Memory:
     """Write a new memory artifact, then rebuild graph.json. Shared by remember/supersede/note-constraint."""
     if type_ not in memory.MEMORY_TYPES:
-        typer.echo(f"--type must be one of {', '.join(memory.MEMORY_TYPES)} (got {type_}).", err=True)
-        raise typer.Exit(code=1)
+        _guidance(f"--type must be one of {', '.join(memory.MEMORY_TYPES)} (got {type_}).")
 
     concerns = _resolve_concerns(repo, workspace, concern_syms)
     # A supersede is a deliberate mind-change (it *should* resemble its predecessor) → skip the guard.
@@ -351,8 +387,8 @@ def supersede(
     """Record a mind-change: a new memory node with a supersedes edge to the old one (never edit-in-place)."""
     workspace = _require_workspace(repo)
     if memory.find_memory(repo, old_id) is None:
-        typer.echo(f"No memory node with id {old_id} to supersede.", err=True)
-        raise typer.Exit(code=1)
+        _guidance(f"No memory node with id {old_id} to supersede. "
+                  f'Find the decision you mean with `yigraf context "<topic>"`.')
     node = _capture_memory(repo, workspace, statement=statement, type_=type, why=why,
                            serves=serves or [], concern_syms=concerns or [], rejected=rejected,
                            supersedes=[old_id], promotable=False)
@@ -373,7 +409,7 @@ def context(
     _ranked_with_telemetry(repo, graph)  # recency/popularity overlay from the local sidecar (R1)
     semantic = embeddings.semantic_scores(repo, graph, config, query)  # {} ⇒ lexical-only (M8 / v0)
     result = retrieval.context(graph, query, config, family=family, budget_tokens=budget,
-                               semantic_match=semantic)
+                               semantic_match=semantic, root=repo)
     _record_injection(repo, graph, result)  # a surfacing is a soft usage signal (sidecar, not graph.json)
     typer.echo(result.text, nl=False)
     typer.echo(f"[~{result.token_estimate} tokens · {result.nodes_rendered}/{result.nodes_total} nodes shown]")
@@ -552,7 +588,7 @@ def _post_tool_use(data: dict) -> dict | None:
     if rel.suffix not in extension_map(available_extractors(config)):
         return None  # not a language yigraf indexes in this repo
     _ranked_with_telemetry(root, graph)  # local recency/popularity overlay (R1)
-    result = retrieval.context_for_locus(graph, rel.as_posix(), config)
+    result = retrieval.context_for_locus(graph, rel.as_posix(), config, root=root)
     if result is None:
         return None  # silent: nothing governs this locus and no drift
     _record_injection(root, graph, result)  # a surfaced decision/intent is a soft usage signal (sidecar)
@@ -566,7 +602,7 @@ def _session_start(data: dict) -> dict | None:
         return None
     graph, config = built
     _ranked_with_telemetry(root, graph)  # local recency/popularity overlay (R1)
-    result = retrieval.session_context(graph, config)
+    result = retrieval.session_context(graph, config, root=root)
     if result is None:
         return None
     _record_injection(root, graph, result)  # the re-injection is a soft usage signal (sidecar)
