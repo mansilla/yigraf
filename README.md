@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mansilla/yigraf/main/assets/logo.png" alt="yigraf" width="120" height="120">
+</p>
+
 # yigraf
 
 > **yigraf — "Why I Graph?"** A tool **for AI coding agents, not for humans.** It answers, *for the
