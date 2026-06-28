@@ -86,6 +86,37 @@ def test_file_node_records_sorted_imports():
     assert proj.nodes["file:pkg/m.py"]["imports"] == ["os", "yigraf.config"]
 
 
+def test_relative_imports_are_recorded_with_their_dots():
+    # #16: relative imports keep their leading dots so they resolve against the importer's package later.
+    src = b"from .b import g\nfrom ..c import h\nfrom . import d, e\n"
+    proj = extract_file("pkg/a.py", src, Parser(_PY_LANGUAGE))
+    assert set(proj.nodes["file:pkg/a.py"]["imports"]) == {".b", "..c", ".d", ".e"}
+
+
+def test_unbound_base_records_a_same_file_inheritance_request():
+    proj = _project()  # SAMPLE has `class C(Base)` and Base is not imported
+    assert proj.nodes["file:pkg/m.py"]["inherits"] == [["sym:pkg/m.py#C", "", "Base"]]
+
+
+def test_imported_base_records_its_module_spec():
+    src = b"from .base import Base\n\n\nclass C(Base):\n    pass\n"
+    proj = extract_file("pkg/a.py", src, Parser(_PY_LANGUAGE))
+    assert proj.nodes["file:pkg/a.py"]["inherits"] == [["sym:pkg/a.py#C", ".base", "Base"]]
+
+
+def test_aliased_imported_base_resolves_to_its_original_name():
+    src = b"from .base import Base as B\n\n\nclass C(B):\n    pass\n"
+    proj = extract_file("pkg/a.py", src, Parser(_PY_LANGUAGE))
+    assert proj.nodes["file:pkg/a.py"]["inherits"] == [["sym:pkg/a.py#C", ".base", "Base"]]
+
+
+def test_dotted_and_keyword_bases_are_skipped():
+    # `abc.ABC` is dotted, `metaclass=` is a keyword arg — neither is a simple-name base, so nothing recorded.
+    src = b"import abc\n\n\nclass C(abc.ABC, metaclass=abc.ABCMeta):\n    pass\n"
+    proj = extract_file("pkg/a.py", src, Parser(_PY_LANGUAGE))
+    assert "inherits" not in proj.nodes["file:pkg/a.py"]
+
+
 def test_path_is_casefolded_but_symbol_name_is_preserved():
     proj = extract_file("Pkg/Mod.py", b"class Foo:\n    pass\n", Parser(_PY_LANGUAGE))
     assert "file:pkg/mod.py" in proj.nodes

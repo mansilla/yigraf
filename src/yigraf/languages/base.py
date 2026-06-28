@@ -87,6 +87,10 @@ class Discovery:
     imports: list[str]  # sorted dotted/path import targets, recorded on the file node
     #: pre-resolved ``calls`` edges; when ``None`` the base falls back to :meth:`call_edges`
     calls: list[tuple[str, str]] | None = None
+    #: unresolved inheritance requests ``[subclass_id, module_spec, base_name]`` — module_spec ``""``
+    #: means same-file. Resolved cross-file (base name → its module → ``sym:<file>#<base>``) in
+    #: :meth:`add_inheritance_edges`, which is import-aware so a base imported from another module links.
+    inherits: list[list] | None = None
 
 
 # --------------------------------------------------------------------------------------------------
@@ -177,6 +181,10 @@ class LanguageExtractor:
                          file_sources: dict[str, str], root) -> None:
         """Resolve intra-repo import edges for this language (no-op by default)."""
 
+    def add_inheritance_edges(self, graph, file_inherits: dict[str, list[list]],
+                              file_sources: dict[str, str], root) -> None:
+        """Resolve intra-repo ``inherits`` (subclass → base symbol) edges for this language (no-op by default)."""
+
     # --- shared machinery -----------------------------------------------------
 
     def parser(self) -> Parser:
@@ -210,6 +218,8 @@ class LanguageExtractor:
         nodes[module_id] = struct_node("module", rel, rel, module_hash, node_range(root), language)
         nodes[file_id] = struct_node("file", rel, rel, module_hash, node_range(root), language)
         nodes[file_id]["imports"] = disc.imports
+        if disc.inherits:  # only when present, to keep inheritance-free file nodes clean
+            nodes[file_id]["inherits"] = disc.inherits
         edges.append([file_id, module_id, edge("contains")])
 
         symbol_ids = {s.id for s in disc.symbols}

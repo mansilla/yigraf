@@ -20,8 +20,10 @@ venv/
 # Not vendored or submoduled — kept out of yigraf's own repo. See origins/ on disk.
 origins/
 
+# --- Eval harness output (captured transcripts + per-arm settings; rebuildable) ---
+scripts/eval/runs/
+
 # --- Claude Code per-machine hook wiring ---
-# `yigraf install-claude-hooks` bakes an absolute interpreter path into settings.json, so it's
-# machine-specific — kept local (see docs/caveats.md M5). The shareable SKILL.md + AGENTS.md block
-# ARE committed.
-.claude/settings.json
+# `yigraf install-claude-hooks` writes the absolute interpreter path into .claude/settings.local.json
+# (per-machine), which .claude/.gitignore keeps out of git. The shareable SKILL.md + AGENTS.md block
+# (and a future shared .claude/settings.json) ARE committed. See docs/caveats.md M5.
