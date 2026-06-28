@@ -498,9 +498,10 @@ def install_claude_hooks_cmd(
     """Register the PostToolUse + SessionStart hooks + skill so Claude Code surfaces intent & drift."""
     _require_workspace(path)
     result = install_claude_hooks(path)
-    typer.echo(f"Wrote hooks → {result.settings_path}")
+    typer.echo(f"Wrote hooks → {result.settings_path} (per-machine, gitignored)")
     typer.echo(f"Wrote skill → {result.skill_path}")
     typer.echo(f"Updated     → {result.agents_path}")
+    typer.echo("Teammates: re-run this command on your clone to wire your own interpreter path.")
 
 
 # --- Claude Code hook entry points (invoked by the hooks above; read event JSON on stdin) ----------
