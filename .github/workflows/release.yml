@@ -1,0 +1,26 @@
+name: Release
+
+# Build + publish to PyPI on a published GitHub Release, via PyPI Trusted Publishing (OIDC) —
+# no API token stored anywhere. One-time setup on PyPI: project → Publishing → add a trusted
+# publisher (owner: mansilla, repo: yigraf, workflow: release.yml, environment: pypi).
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # OIDC token for trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Build sdist + wheel
+        run: uv build
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
