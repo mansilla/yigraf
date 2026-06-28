@@ -35,8 +35,8 @@ the **tags-query** tier (everything else — one generic extractor + per-languag
   and SQL schema-drift in `test_tags.py`.
 - **imports / inheritance** breadth is asserted in `tests/test_language_drift.py::test_capability_matrix`
   (both directions — a `—` cell is verified *absent*).
-- **calls** are intra-file, exact-or-drop (no cross-file call graph — that's CodeGraph's domain, not
-  yigraf's; see `docs/research/codegraph-analysis.md`).
+- **calls** are intra-file, exact-or-drop (no cross-file call graph by design — yigraf's focus is
+  governance, not whole-program flow analysis).
 
 **Notes:**
 1. PHP — the bundled tags query doesn't emit `@reference.call`, so intra-file calls aren't resolved yet
