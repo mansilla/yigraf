@@ -16,6 +16,9 @@ venv/
 # --- OS ---
 .DS_Store
 
+# --- Brand assets: re-include over a global `*.png` ignore (README / PyPI / social logo) ---
+!assets/*.png
+
 # --- Reference clones (studied alongside yigraf; each carries its own .git history) ---
 # Not vendored or submoduled — kept out of yigraf's own repo. See origins/ on disk.
 origins/
