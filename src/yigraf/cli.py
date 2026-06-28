@@ -10,12 +10,13 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
 from typing import NoReturn
 
 import typer
 
-from yigraf import __version__, artifacts, counters, embeddings, memory, retrieval
+from yigraf import __version__, artifacts, counters, embeddings, memory, retrieval, status
 from yigraf.astnorm import ANCHOR_ALGO
 from yigraf.config import load_config
 from yigraf.drift import compute_drift
@@ -413,6 +414,34 @@ def context(
     _record_injection(repo, graph, result)  # a surfacing is a soft usage signal (sidecar, not graph.json)
     typer.echo(result.text, nl=False)
     typer.echo(f"[~{result.token_estimate} tokens · {result.nodes_rendered}/{result.nodes_total} nodes shown]")
+
+
+@app.command("status")
+def status_cmd(
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+    as_json: bool = typer.Option(False, "--json", help="Emit the summary as JSON (for a host adapter)."),
+    ctx_used: int = typer.Option(None, "--ctx-used", help="Context tokens in use (host/adapter-supplied; optional)."),
+    ctx_limit: int = typer.Option(None, "--ctx-limit", help="Context window size in tokens (host/adapter-supplied; optional)."),
+    color: bool = typer.Option(None, "--color/--no-color", help="Force/disable ANSI color + glyphs (default: auto — on for a TTY)."),
+) -> None:
+    """Print a host-agnostic status line (graph scale, drift, freshness, semantic, context) for an ambient UI.
+
+    The agnostic backbone of the status surface (int:status-surface): a per-host adapter (e.g. a Claude
+    Code ``statusLine`` running ``yigraf status --color``) renders this; the human sees graph health
+    without spending the agent's context budget. ``--ctx-*`` are the one non-agnostic, host-fed datum.
+    """
+    workspace = _require_workspace(repo)
+    config = load_config(workspace / "config.yaml")
+    graph, _ = build_graph(repo, config)  # no telemetry overlay — keep graph byte-equal for freshness
+    summary = status.compute_status(graph, repo, config, ctx_used=ctx_used, ctx_limit=ctx_limit)
+    if as_json:
+        typer.echo(json.dumps(summary.as_dict()))
+        return
+    # Auto: color a TTY (honoring NO_COLOR); a statusline pipes stdout, so it passes --color explicitly.
+    use_color = color if color is not None else (sys.stdout.isatty() and not os.environ.get("NO_COLOR"))
+    icon = status.SPIN[int(time.time()) % len(status.SPIN)] if use_color else None
+    # color= keeps click from stripping ANSI on a non-TTY pipe — exactly the statusline's case.
+    typer.echo(summary.render_line(color=use_color, icon=icon), color=use_color)
 
 
 @app.command()
