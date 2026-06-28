@@ -104,18 +104,28 @@ def test_intent_verb_refuses_to_clobber(tmp_path: Path):
     root = _repo(tmp_path)
     _run(["intent", "x", "--repo", str(root), "-s", "SHALL x.", "--scenario", "Given a, When b, Then c."])
     result = runner.invoke(app, ["intent", "x", "--repo", str(root), "-s", "again", "--scenario", "g"])
-    assert result.exit_code == 1 and "already exists" in result.output
+    # Recoverable conditions return exit 0 + guidance, never a hard error (errors teach abandonment).
+    assert result.exit_code == 0 and "already exists" in result.output
 
 
 def test_link_rejects_an_unknown_symbol(tmp_path: Path):
     root = _repo(tmp_path)
     _run(["plan", "auth", "--repo", str(root), "-t", "Auth", "--task", "do it"])
     result = runner.invoke(app, ["link", "task:auth/1", "sym:auth/session.py#ghost", "--repo", str(root)])
-    assert result.exit_code == 1 and "not found" in result.output
+    assert result.exit_code == 0 and "Couldn't find" in result.output
+
+
+def test_link_suggests_the_closest_symbol_on_a_typo(tmp_path: Path):
+    """An unresolved locator that's a near-miss of a real one gets a 'did you mean' (closest-symbol)."""
+    root = _repo(tmp_path)
+    _run(["plan", "auth", "--repo", str(root), "-t", "Auth", "--task", "do it"])
+    result = runner.invoke(app, ["link", "task:auth/1", "sym:auth/session.py#refesh", "--repo", str(root)])
+    assert result.exit_code == 0
+    assert "Did you mean" in result.output and SYM in result.output
 
 
 def test_link_rejects_an_unknown_task(tmp_path: Path):
     root = _repo(tmp_path)
     _run(["plan", "auth", "--repo", str(root), "-t", "Auth", "--task", "do it"])
     result = runner.invoke(app, ["link", "task:auth/9", SYM, "--repo", str(root)])
-    assert result.exit_code == 1 and "not a task" in result.output
+    assert result.exit_code == 0 and "not a task" in result.output

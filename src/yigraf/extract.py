@@ -77,6 +77,7 @@ def build_graph(root: Path, config: dict) -> tuple[nx.DiGraph, BuildStats]:
     graph.graph["anchor_algo"] = ANCHOR_ALGO
     stats = BuildStats()
     file_imports: dict[str, list[str]] = {}  # file_id -> imported module/package targets
+    file_inherits: dict[str, list[list]] = {}  # file_id -> [subclass_id, module_spec, base_name] requests
     file_sources: dict[str, str] = {}  # file_id -> source_file relpath
 
     relpaths = _iter_source_files(root, ignore_dirs, set(ext_map))
@@ -98,6 +99,8 @@ def build_graph(root: Path, config: dict) -> tuple[nx.DiGraph, BuildStats]:
             if attrs.get("kind") == "file":
                 file_imports[node_id] = attrs.get("imports", [])
                 file_sources[node_id] = attrs["source_file"]
+                if attrs.get("inherits"):
+                    file_inherits[node_id] = attrs["inherits"]
         for src, dst, attrs in projection.edges:
             graph.add_edge(src, dst, **attrs)
 
@@ -108,6 +111,8 @@ def build_graph(root: Path, config: dict) -> tuple[nx.DiGraph, BuildStats]:
                         if PurePosixPath(src).suffix in exts}
         lang_imports = {fid: imp for fid, imp in file_imports.items() if fid in lang_sources}
         extractor.add_import_edges(graph, lang_imports, lang_sources, root)
+        lang_inherits = {fid: inh for fid, inh in file_inherits.items() if fid in lang_sources}
+        extractor.add_inheritance_edges(graph, lang_inherits, lang_sources, root)
 
     artifacts.project_into(graph, root)
     memory.project_into(graph, root)  # memory nodes + serves/concerns/supersedes edges (M7)
@@ -141,10 +146,19 @@ def symbol_content_hash(root: Path, symbol_id: str, config: dict) -> str | None:
 
 
 def _iter_source_files(root: Path, ignore_dirs: set[str], extensions: set[str]) -> list[str]:
-    """Sorted POSIX relpaths of files under ``root`` with a handled suffix, skipping ignored dirs."""
+    """Sorted POSIX relpaths of files under ``root`` with a handled suffix, skipping ignored dirs.
+
+    An ignore entry prunes a directory either by **bare name at any depth** (``origins``, ``.git``) or by
+    **exact repo-relative path prefix** (``scripts/eval/runs``) — matching the config's documented
+    "path prefixes" intent (a bare name is just the one-segment case).
+    """
     out: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in ignore_dirs)
+        reldir = Path(dirpath).relative_to(root).as_posix()
+        prefix = "" if reldir == "." else reldir + "/"
+        dirnames[:] = sorted(
+            d for d in dirnames if d not in ignore_dirs and (prefix + d) not in ignore_dirs
+        )
         for filename in sorted(filenames):
             if PurePosixPath(filename).suffix in extensions:
                 rel = (Path(dirpath) / filename).relative_to(root).as_posix()

@@ -31,7 +31,28 @@ class PythonExtractor(LanguageExtractor):
         # Top-level def/class statements mask their bodies in the module hash (methods are masked
         # one level down, via each class's own boundaries).
         module_boundaries = {s.stmt.id: s.name for s in symbols if s.container == module_id}
-        return Discovery(symbols=symbols, module_boundaries=module_boundaries, imports=_imports(root))
+        return Discovery(symbols=symbols, module_boundaries=module_boundaries, imports=_imports(root),
+                         inherits=_inherits(symbols, root) or None)
+
+    def add_inheritance_edges(self, graph, file_inherits: dict[str, list[list]],
+                              file_sources: dict[str, str], root) -> None:
+        """Resolve ``class C(Base)`` to ``C --inherits--> sym:<base's module>#Base`` (import-aware).
+
+        ``module_spec == ""`` means the base wasn't imported → look in the subclass's own file. Otherwise
+        the base name was bound by ``from <spec> import Base`` and ``spec`` resolves (absolute or relative,
+        via :func:`_resolve_import`) to the defining file. An edge is added only when that base *symbol*
+        actually exists — no phantom node, no edge to an unresolved/external base (precision over recall).
+        """
+        module_to_file = _module_path_map(file_sources)
+        for file_id in sorted(file_inherits):
+            importer = file_sources.get(file_id, "")
+            for subclass_id, spec, base_name in file_inherits[file_id]:
+                target_file = file_id if spec == "" else _resolve_import(spec, importer, module_to_file)
+                if target_file is None:
+                    continue
+                base_id = f"sym:{target_file[len('file:'):]}#{base_name}"
+                if base_id in graph and base_id != subclass_id:
+                    graph.add_edge(subclass_id, base_id, **edge("inherits"))
 
     def call_edges(self, symbols: list[Symbol], pid: str, symbol_ids: set[str]) -> list[tuple[str, str]]:
         return _call_edges(symbols, pid, symbol_ids)
@@ -40,8 +61,9 @@ class PythonExtractor(LanguageExtractor):
                          file_sources: dict[str, str], root) -> None:
         module_to_file = _module_path_map(file_sources)
         for file_id in sorted(file_imports):
+            importer = file_sources.get(file_id, "")
             for module in file_imports[file_id]:
-                target = module_to_file.get(module.casefold())
+                target = _resolve_import(module, importer, module_to_file)
                 if target is not None and target != file_id:
                     graph.add_edge(file_id, target, **edge("imports"))
 
@@ -156,7 +178,13 @@ def _resolve_call(call: Node, pid: str, enclosing_class: str | None, symbol_ids:
 
 
 def _imports(root: Node) -> list[str]:
-    """Dotted module names imported at file top level (sorted). Relative imports skipped in v0."""
+    """Module references imported at file top level (sorted).
+
+    Absolute imports are recorded as dotted names (``os``, ``pkg.mod``); **relative** imports keep their
+    leading dots (``.base``, ``..astnorm``, ``.sub``) so :func:`_resolve_relative` can later resolve them
+    against the *importing* file's package — the file node alone can't, since ``.`` means different
+    modules in different packages. (#16 — relative imports were skipped entirely in v0.)
+    """
     out: set[str] = set()
     for stmt in root.children:
         if stmt.type == "import_statement":
@@ -169,9 +197,37 @@ def _imports(root: Node) -> list[str]:
                         out.add(name.text.decode())
         elif stmt.type == "import_from_statement":
             module = stmt.child_by_field_name("module_name")
-            if module is not None and module.type == "dotted_name":
+            if module is None:
+                continue
+            if module.type == "dotted_name":
                 out.add(module.text.decode())
+            elif module.type == "relative_import":
+                out.update(_relative_import_specs(stmt, module))
     return sorted(out)
+
+
+def _relative_import_specs(stmt: Node, relative_node: Node) -> set[str]:
+    """Dot-prefixed specs for one ``from .… import …`` statement.
+
+    ``from .base import X`` / ``from ..pkg.mod import Y`` → the relative module carries its own name, so
+    the spec is the whole node text (``.base``, ``..pkg.mod``). ``from . import a, b`` has only dots for
+    the module, so each *imported name* is a sibling submodule of the current package → ``.a``, ``.b``.
+    """
+    text = relative_node.text.decode()  # ".", "..", ".base", "..pkg.mod"
+    dots = len(text) - len(text.lstrip("."))
+    if len(text) > dots:  # the relative module already names a submodule
+        return {text}
+    specs: set[str] = set()  # bare dots: targets are the imported names, joined onto the dots
+    for child in stmt.named_children:
+        if child is relative_node:
+            continue
+        if child.type == "dotted_name":
+            specs.add(text + child.text.decode())
+        elif child.type == "aliased_import":
+            name = child.child_by_field_name("name")
+            if name is not None and name.type == "dotted_name":
+                specs.add(text + name.text.decode())
+    return specs
 
 
 def _definition(stmt: Node) -> Node | None:
@@ -189,8 +245,108 @@ def _name(defn: Node) -> str | None:
 
 
 # --------------------------------------------------------------------------------------------------
+# Inheritance discovery (class bases → import-resolved cross-file)
+# --------------------------------------------------------------------------------------------------
+
+
+def _inherits(symbols: list[Symbol], root: Node) -> list[list]:
+    """Per-class inheritance requests ``[subclass_id, module_spec, base_name]`` (resolved cross-file later).
+
+    A base bound by ``from <M> import Base`` carries ``M`` as the spec (resolves to that module); an
+    unbound base gets ``""`` (look in the same file). Dotted bases (``mod.Base``) and keyword args
+    (``metaclass=``) are skipped — only simple-identifier bases resolve precisely (no-false-edge policy)."""
+    bindings = _from_bindings(root)
+    out: list[list] = []
+    for s in symbols:
+        if s.kind != "class":
+            continue
+        for base in _base_names(s.defn):
+            spec, name = bindings.get(base, ("", base))
+            out.append([s.id, spec, name])
+    return out
+
+
+def _base_names(class_defn: Node) -> list[str]:
+    """Simple-identifier base classes (skips dotted ``mod.Base`` and keyword args like ``metaclass=``)."""
+    supers = class_defn.child_by_field_name("superclasses")  # argument_list, or None for `class C:`
+    if supers is None:
+        return []
+    return [c.text.decode() for c in supers.named_children if c.type == "identifier"]
+
+
+def _from_bindings(root: Node) -> dict[str, tuple[str, str]]:
+    """``from <M> import N [as L]`` → ``{local_name: (module_spec, original_name)}`` for base resolution.
+
+    ``module_spec`` keeps relative dots (``.base``). Bare ``from . import sub`` binds a *submodule* (not a
+    class), so it's skipped; plain ``import pkg`` isn't captured either — both only yield dotted bases,
+    which :func:`_base_names` already drops."""
+    bindings: dict[str, tuple[str, str]] = {}
+    for stmt in root.children:
+        if stmt.type != "import_from_statement":
+            continue
+        module = stmt.child_by_field_name("module_name")
+        if module is None:
+            continue
+        if module.type == "dotted_name":
+            spec = module.text.decode()
+        elif module.type == "relative_import":
+            spec = module.text.decode()
+            if spec.lstrip(".") == "":  # bare dots → submodule import, not a class binding
+                continue
+        else:
+            continue
+        for child in stmt.named_children:
+            if child is module:
+                continue
+            if child.type == "dotted_name":
+                bindings[child.text.decode()] = (spec, child.text.decode())
+            elif child.type == "aliased_import":
+                name = child.child_by_field_name("name")
+                alias = child.child_by_field_name("alias")
+                if name is not None and alias is not None:
+                    bindings[alias.text.decode()] = (spec, name.text.decode())
+    return bindings
+
+
+# --------------------------------------------------------------------------------------------------
 # Import-edge resolution (Python module system)
 # --------------------------------------------------------------------------------------------------
+
+
+def _resolve_import(module: str, importer_relpath: str, module_to_file: dict[str, str]) -> str | None:
+    """The file id ``module`` resolves to — handling both absolute and relative specs.
+
+    Absolute: a direct lookup. Relative (``.base``): resolved to absolute module(s) against the importer's
+    package first (a dotted name can't be relative). First match in sorted order wins (determinism)."""
+    if not module.startswith("."):
+        return module_to_file.get(module.casefold())
+    for absolute in sorted(_resolve_relative(module, importer_relpath)):
+        target = module_to_file.get(absolute.casefold())
+        if target is not None:
+            return target
+    return None
+
+
+def _resolve_relative(spec: str, importer_relpath: str) -> set[str]:
+    """Absolute dotted module(s) a relative ``spec`` names, from the importer's path.
+
+    ``L`` leading dots drop ``L`` trailing components off the importer's own module (1 dot = the importer's
+    package, 2 = its parent, …), then the tail is appended. Resolved against every module candidate of the
+    importer (so ``src``-layout works), e.g. ``.base`` from ``src/yigraf/x.py`` → ``yigraf.base`` (and
+    ``src.yigraf.base``). Over-relative specs (more dots than the path is deep) yield nothing."""
+    level = len(spec) - len(spec.lstrip("."))
+    if level == 0:
+        return set()
+    tail = spec[level:]
+    out: set[str] = set()
+    for base in _module_candidates(importer_relpath):
+        parts = base.split(".")
+        if level > len(parts):
+            continue
+        abs_parts = parts[:-level] + (tail.split(".") if tail else [])
+        if abs_parts:
+            out.add(".".join(abs_parts))
+    return out
 
 
 def _module_path_map(file_sources: dict[str, str]) -> dict[str, str]:

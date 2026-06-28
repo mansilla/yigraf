@@ -92,14 +92,15 @@ def test_concerns_edge_is_anchored_to_the_symbol_hash(tmp_path: Path):
 def test_remember_rejects_an_unknown_type(tmp_path: Path):
     root = _repo(tmp_path)
     result = runner.invoke(app, ["remember", "x", "--type", "bogus", "--repo", str(root)])
-    assert result.exit_code == 1 and "--type must be one of" in result.output
+    # Recoverable conditions return exit 0 + guidance, never a hard error (errors teach abandonment).
+    assert result.exit_code == 0 and "--type must be one of" in result.output
 
 
 def test_remember_rejects_an_unknown_concerns_symbol(tmp_path: Path):
     root = _repo(tmp_path)
     result = runner.invoke(app, ["remember", "x", "--concerns", "sym:auth/session.py#ghost",
                                  "--repo", str(root)])
-    assert result.exit_code == 1 and "not found" in result.output
+    assert result.exit_code == 0 and "Couldn't find" in result.output
 
 
 def test_note_constraint_is_a_promotable_constraint(tmp_path: Path):
@@ -178,7 +179,7 @@ def test_active_decision_outranks_its_superseded_predecessor(tmp_path: Path):
 def test_supersede_rejects_an_unknown_old_id(tmp_path: Path):
     root = _repo(tmp_path)
     result = runner.invoke(app, ["supersede", "mem:999", "new claim", "--repo", str(root)])
-    assert result.exit_code == 1 and "No memory node" in result.output
+    assert result.exit_code == 0 and "No memory node" in result.output
 
 
 # --------------------------------------------------------------------------------------------------
