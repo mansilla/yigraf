@@ -716,6 +716,18 @@
     {
       "confidence": "EXTRACTED",
       "relation": "imports",
+      "source": "file:tests/test_language_drift.py",
+      "target": "file:src/yigraf/extract.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "file:tests/test_language_drift.py",
+      "target": "module:tests/test_language_drift.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
       "source": "file:tests/test_languages.py",
       "target": "file:src/yigraf/extract.py"
     },
@@ -3744,6 +3756,42 @@
       "relation": "contains",
       "source": "module:tests/test_init.py",
       "target": "sym:tests/test_init.py#test_workspace_gitignore_lists_runtime_dirs"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_language_drift.py",
+      "target": "sym:tests/test_language_drift.py#_changed"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_language_drift.py",
+      "target": "sym:tests/test_language_drift.py#_hashes"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_language_drift.py",
+      "target": "sym:tests/test_language_drift.py#test_capability_matrix"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_language_drift.py",
+      "target": "sym:tests/test_language_drift.py#test_drift_round_trip_per_language"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_language_drift.py",
+      "target": "sym:tests/test_language_drift.py#test_php_quote_flip_is_drift_not_cosmetic"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_language_drift.py",
+      "target": "sym:tests/test_language_drift.py#test_ruby_quote_flip_is_drift_not_cosmetic"
     },
     {
       "confidence": "EXTRACTED",
@@ -7852,6 +7900,30 @@
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
+      "source": "sym:tests/test_language_drift.py#test_drift_round_trip_per_language",
+      "target": "sym:tests/test_language_drift.py#_changed"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_language_drift.py#test_drift_round_trip_per_language",
+      "target": "sym:tests/test_language_drift.py#_hashes"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_language_drift.py#test_php_quote_flip_is_drift_not_cosmetic",
+      "target": "sym:tests/test_language_drift.py#_hashes"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_language_drift.py#test_ruby_quote_flip_is_drift_not_cosmetic",
+      "target": "sym:tests/test_language_drift.py#_hashes"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
       "source": "sym:tests/test_languages.py#test_body_change_flips_exactly_that_symbol",
       "target": "sym:tests/test_languages.py#_changed"
     },
@@ -8540,16 +8612,40 @@
       "target": "int:drift-detection"
     },
     {
+      "anchor": "07989db5694077c55600578713f2c4a7189ca5fb62989039149ddc020b407722",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "source": "task:language-drift-coverage/1",
+      "target": "sym:tests/test_language_drift.py#test_drift_round_trip_per_language"
+    },
+    {
       "confidence": "EXTRACTED",
       "relation": "tracks",
       "source": "task:language-drift-coverage/2",
       "target": "int:structure-index"
     },
     {
+      "anchor": "246089e93acd3bc40a36f55abe6e1075d559e409e1adf3d69ea9c76f9737d1b2",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "source": "task:language-drift-coverage/2",
+      "target": "sym:tests/test_language_drift.py#test_capability_matrix"
+    },
+    {
       "confidence": "EXTRACTED",
       "relation": "tracks",
       "source": "task:language-drift-coverage/3",
       "target": "int:drift-detection"
+    },
+    {
+      "anchor": "1a43cc443a17836460b43c9876ad7ea37a6d95fcb87f2f714d9ab1c75efc26a1",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "source": "task:language-drift-coverage/3",
+      "target": "sym:tests/test_language_drift.py#test_ruby_quote_flip_is_drift_not_cosmetic"
     },
     {
       "confidence": "EXTRACTED",
@@ -9935,6 +10031,26 @@
     },
     {
       "confidence": "EXTRACTED",
+      "content_hash": "021c11fbd25e00dee2751a9be3669474d5a04966e51025e620342a6d2590ca7a",
+      "family": "structure",
+      "id": "file:tests/test_language_drift.py",
+      "imports": [
+        "pytest",
+        "yigraf.extract"
+      ],
+      "kind": "file",
+      "label": "tests/test_language_drift.py",
+      "language": "python",
+      "source_file": "tests/test_language_drift.py",
+      "source_range": [
+        0,
+        0,
+        128,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
       "content_hash": "1f18343e73d2db9c54387a261a97003ff95c1dd6066796490c2db03d38786f92",
       "family": "structure",
       "id": "file:tests/test_languages.py",
@@ -10157,7 +10273,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 7,
+      "survival": 8,
       "why": "the two drift-bearing relations differ only in source family + dangling-attr name; folding them into _DRIFT_RELATIONS means rename re-anchoring, the SHA cache, and soft/hard detection are written once"
     },
     {
@@ -10174,7 +10290,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 7,
+      "survival": 8,
       "why": "memory-model \u00a75 option A: cheapest, deterministic, EXTRACTED confidence, mirrors the v0 implements pattern we already trust; add distillation (option B) only once links prove valuable"
     },
     {
@@ -10191,7 +10307,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 7,
+      "survival": 8,
       "why": "only memory carries supersedes edges, so stamping superseded_in:0 on every structure node would bloat graph.json; retrieval reads the counter with a 0 default"
     },
     {
@@ -10208,7 +10324,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 6,
+      "survival": 7,
       "why": "we embed tens-to-thousands of short statements, not the codebase, so N is tiny; a query is one matmul (exact, sub-ms). FAISS/hnswlib add a heavy native dep that buys nothing until N is very large"
     },
     {
@@ -10225,7 +10341,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 6,
+      "survival": 7,
       "why": "no host exposes an embedding endpoint to a hook, so embeddings are yigraf's own responsibility; making them required would break the zero-config promise \u2014 absent backend degrades to the v0 lexical seeder"
     },
     {
@@ -10242,7 +10358,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 4,
+      "survival": 5,
       "why": "DESIGN R1/R2/R3 scope v0 to local state so graph.json stays fully recomputable (no query-time writes, trivial merges, CI-reproducible); the accumulated/shared/merge-reconciled counter model (Model G) needs a cloud service + API for teams to share artifacts, which is v1 Enterprise paid-plan work"
     },
     {
@@ -10259,7 +10375,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 4,
+      "survival": 5,
       "why": "R2 wants maturity branch-cadence-independent and identical on every clone/CI; deriving it from git history (intro commit .. HEAD) makes it recomputable and merge-safe, so no per-session survival counter is stored or reconciled"
     },
     {
@@ -10276,7 +10392,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 4,
+      "survival": 5,
       "why": "R3: history must stay auditable, so churn (superseded_in>0 \u2227 refs_in=0) is moved out of the active glob rather than removed; usage is machine-local sidecar state, not authoritative, so GC must not depend on it"
     },
     {
@@ -10286,14 +10402,14 @@
       "id": "mem:009",
       "kind": "decision",
       "label": "maturity survival is derived in a flat, HEAD-cached handful of git calls (not per-node) \u2014 preserving R2 semantics",
-      "maturity": "working",
+      "maturity": "settled",
       "promotable": false,
       "source_file": "memory/009-maturity-survival-is-derived-in-a.md",
       "statement": "maturity survival is derived in a flat, HEAD-cached handful of git calls (not per-node) \u2014 preserving R2 semantics",
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 2,
+      "survival": 3,
       "why": "the per-node fan-out (~2N git calls, on the hot PostToolUse path) was a \ud83d\udd34 perf caveat; _survival_map batches all paths into 2 calls (one topo-order log for commit order + one batched --diff-filter=A --name-status for intros) and the result is memoized by HEAD in the structure cache, since an edit never moves HEAD \u2014 so the hook path is 1 rev-parse and 0 walks. Survival stays byte-identical so graph.json is still recomputable"
     },
     {
@@ -10310,7 +10426,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 0,
+      "survival": 1,
       "why": "the interpreter path is per-machine; settings.local.json is Claude Code's designated per-machine file and a self-contained .claude/.gitignore keeps it out of git \u2014 symmetric with the post-commit git hook, which already bakes the abs path into the never-committed .git/hooks/. This keeps the run-without-the-venv-on-PATH property while never committing a machine path."
     },
     {
@@ -11047,6 +11163,22 @@
         0,
         0,
         47,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "021c11fbd25e00dee2751a9be3669474d5a04966e51025e620342a6d2590ca7a",
+      "family": "structure",
+      "id": "module:tests/test_language_drift.py",
+      "kind": "module",
+      "label": "tests/test_language_drift.py",
+      "language": "python",
+      "source_file": "tests/test_language_drift.py",
+      "source_range": [
+        0,
+        0,
+        128,
         0
       ]
     },
@@ -20600,6 +20732,108 @@
     },
     {
       "confidence": "EXTRACTED",
+      "content_hash": "196fe82f06ad8fab88ae70c0700d5807f50d9f24cc5e394391c273e57d33c7a1",
+      "family": "structure",
+      "id": "sym:tests/test_language_drift.py#_changed",
+      "kind": "function",
+      "label": "_changed",
+      "language": "python",
+      "signature": "def _changed(before: dict, after: dict) -> set[str]:",
+      "source_file": "tests/test_language_drift.py",
+      "source_range": [
+        23,
+        0,
+        24,
+        81
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "149dca13c79017dd629e23d8f5bb8ee7f61631e96b88a06b6114ba2814775981",
+      "family": "structure",
+      "id": "sym:tests/test_language_drift.py#_hashes",
+      "kind": "function",
+      "label": "_hashes",
+      "language": "python",
+      "signature": "def _hashes(relpath: str, src: str) -> dict[str, str]:",
+      "source_file": "tests/test_language_drift.py",
+      "source_range": [
+        19,
+        0,
+        20,
+        95
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "246089e93acd3bc40a36f55abe6e1075d559e409e1adf3d69ea9c76f9737d1b2",
+      "family": "structure",
+      "id": "sym:tests/test_language_drift.py#test_capability_matrix",
+      "kind": "function",
+      "label": "test_capability_matrix",
+      "language": "python",
+      "signature": "def test_capability_matrix(lang, ext, src, has_imports, has_inheritance):",
+      "source_file": "tests/test_language_drift.py",
+      "source_range": [
+        120,
+        0,
+        127,
+        104
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "07989db5694077c55600578713f2c4a7189ca5fb62989039149ddc020b407722",
+      "family": "structure",
+      "id": "sym:tests/test_language_drift.py#test_drift_round_trip_per_language",
+      "kind": "function",
+      "label": "test_drift_round_trip_per_language",
+      "language": "python",
+      "signature": "def test_drift_round_trip_per_language(lang, path, src, sym, body, comment, rename, new_sym):",
+      "source_file": "tests/test_language_drift.py",
+      "source_range": [
+        57,
+        0,
+        75,
+        81
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "5f749c095bd6c4d07cd827cdb6987db2e5739609159298393c87d31d29fed9f1",
+      "family": "structure",
+      "id": "sym:tests/test_language_drift.py#test_php_quote_flip_is_drift_not_cosmetic",
+      "kind": "function",
+      "label": "test_php_quote_flip_is_drift_not_cosmetic",
+      "language": "python",
+      "signature": "def test_php_quote_flip_is_drift_not_cosmetic():",
+      "source_file": "tests/test_language_drift.py",
+      "source_range": [
+        89,
+        0,
+        92,
+        47
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "1a43cc443a17836460b43c9876ad7ea37a6d95fcb87f2f714d9ab1c75efc26a1",
+      "family": "structure",
+      "id": "sym:tests/test_language_drift.py#test_ruby_quote_flip_is_drift_not_cosmetic",
+      "kind": "function",
+      "label": "test_ruby_quote_flip_is_drift_not_cosmetic",
+      "language": "python",
+      "signature": "def test_ruby_quote_flip_is_drift_not_cosmetic():",
+      "source_file": "tests/test_language_drift.py",
+      "source_range": [
+        83,
+        0,
+        86,
+        45
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
       "content_hash": "4f6ccca478af1940e273ad50f8e6dceaa68b79bba5ba8724266c0d412d39269a",
       "family": "structure",
       "id": "sym:tests/test_languages.py#_changed",
@@ -22303,27 +22537,27 @@
       "family": "plan",
       "id": "task:language-drift-coverage/1",
       "kind": "task",
-      "label": "Parametrized drift round-trip tests (body-edit\u2192soft drift, comment/reformat\u2192no drift, rename\u2192re-anchor) for representative Tier B/C languages: Rust, Java, Ruby, PHP, Kotlin, C++",
+      "label": "Parametrized drift round-trips (body\u2192soft drift, comment\u2192no drift, rename\u2192re-anchor) \u2014 done for ALL 16 langs (11 in test_language_drift.py: Rust/Java/Ruby/PHP/Kotlin/C++/C/C#/Scala/Swift/Bash; Go/TS in test_languages, Python in test_extract, SQL schema-drift in test_tags)",
       "order": 1,
-      "state": "todo"
+      "state": "done"
     },
     {
       "confidence": "EXTRACTED",
       "family": "plan",
       "id": "task:language-drift-coverage/2",
       "kind": "task",
-      "label": "Tested capability matrix per language (structure/signature/imports/inheritance/calls/drift-verified), asserted by a test and surfaced in docs (replaces the '16 languages' ambiguity)",
+      "label": "Tested capability matrix (symbols/calls/imports/inheritance/drift) asserted by test_capability_matrix (imports+inheritance both directions) + surfaced in docs/language-support.md",
       "order": 2,
-      "state": "todo"
+      "state": "done"
     },
     {
       "confidence": "EXTRACTED",
       "family": "plan",
       "id": "task:language-drift-coverage/3",
       "kind": "task",
-      "label": "Decide Ruby/PHP astnorm quote handling (normalize vs keep semantically-distinct) and pin the choice with a test",
+      "label": "Ruby/PHP astnorm quote handling DECIDED: keep semantically-distinct (not normalized \u2014 `'` literal vs `\"` interpolating differ), pinned by test_{ruby,php}_quote_flip_is_drift_not_cosmetic",
       "order": 3,
-      "state": "todo"
+      "state": "done"
     },
     {
       "confidence": "EXTRACTED",
