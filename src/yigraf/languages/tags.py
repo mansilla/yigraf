@@ -43,13 +43,17 @@ _KIND_MAP = {
     "view": "view",    # SQL
 }
 
+#: Symbol kinds a base/supertype name can resolve to (the targets of an ``inherits`` edge).
+_TYPE_KINDS = frozenset({"class", "interface", "type", "struct", "trait", "protocol", "enum"})
+
 
 class TagExtractor(LanguageExtractor):
     """A :class:`LanguageExtractor` driven by a grammar's ``TAGS_QUERY`` (configured per language)."""
 
     def __init__(self, name: str, extensions: tuple[str, ...], language_label: str,
                  grammar: Callable[[], Language], tags_query: Callable[[], str],
-                 astnorm_spec: AstnormSpec) -> None:
+                 astnorm_spec: AstnormSpec,
+                 inherits_fn: Callable[[Node, bytes], list[tuple[str, str]]] | None = None) -> None:
         super().__init__()
         self.name = name
         self.extensions = extensions
@@ -57,6 +61,7 @@ class TagExtractor(LanguageExtractor):
         self.astnorm_spec = astnorm_spec
         self._grammar_loader = grammar
         self._query_loader = tags_query
+        self._inherits_fn = inherits_fn  # (root, source) → [(subclass_name, base_name)]; None ⇒ none
         self._lang: Language | None = None
         self._compiled: Query | None = None
 
@@ -122,7 +127,18 @@ class TagExtractor(LanguageExtractor):
 
         calls = _resolve_calls(raw_calls, entries, logical, sym_id_of)
         imports = self._import_specs(root, source)
-        return Discovery(symbols=symbols, module_boundaries=module_boundaries, imports=imports, calls=calls)
+        # Inheritance: (subclass_name, base_name) pairs from the per-language heritage walk. Resolve the
+        # *subclass* to its symbol here (we have the defs); the *base* is resolved cross-file, by name, in
+        # add_inheritance_edges. module_spec is "" — the tags tier resolves inheritance by name (like calls),
+        # not import-aware, which is fine because inherits is a structure edge and never drives drift.
+        inherits: list[list] = []
+        for sub_name, base_name in self._extra_inherits(root, source):
+            e = name_to_entry.get(sub_name)
+            sid = sym_id_of.get(e["node"].id) if e is not None else None
+            if sid is not None and base_name:
+                inherits.append([sid, "", base_name])
+        return Discovery(symbols=symbols, module_boundaries=module_boundaries, imports=imports,
+                         calls=calls, inherits=inherits or None)
 
     # --- enrichment hooks (overridable by per-language subclasses) -------------
 
@@ -143,6 +159,36 @@ class TagExtractor(LanguageExtractor):
     def _extra_call_refs(self, root: Node, source: bytes) -> list[tuple[Node, str]]:
         """Extra ``(call_node, callee_name)`` pairs for grammars whose tags lack ``@reference.call``."""
         return []
+
+    def _extra_inherits(self, root: Node, source: bytes) -> list[tuple[str, str]]:
+        """``(subclass_name, base_name)`` pairs from this language's heritage syntax (default: the
+        configured ``inherits_fn``, else none). Subclasses override for grammar-specific heritage."""
+        return self._inherits_fn(root, source) if self._inherits_fn is not None else []
+
+    def add_inheritance_edges(self, graph, file_inherits: dict[str, list[list]],
+                              file_sources: dict[str, str], root) -> None:
+        """Resolve ``inherits`` (subclass → base) edges **by name** (the tags tier has no import
+        resolution): the base name matches a type-like symbol of the same language — same file first, else
+        a repo-wide *unique* match. Ambiguous (>1) or absent ⇒ dropped, never guessed (the ``len==1`` rule
+        the call resolver already uses). An inherits edge is a structure edge — it never drives drift — so
+        name resolution is the right precision/coverage trade for breadth across the tags-tier languages."""
+        by_file: dict[str, dict[str, list[str]]] = {}  # file_id -> {simple name -> [type sym id]}
+        global_names: dict[str, list[str]] = {}        # simple name -> [type sym id] (this language)
+        for nid in sorted(graph.nodes):
+            a = graph.nodes[nid]
+            if a.get("language") == self.language_label and a.get("kind") in _TYPE_KINDS:
+                name = a["label"].rsplit(".", 1)[-1]  # simple name from the (possibly nested) qualname
+                fid = f"file:{nid[len('sym:'):].rsplit('#', 1)[0]}"
+                by_file.setdefault(fid, {}).setdefault(name, []).append(nid)
+                global_names.setdefault(name, []).append(nid)
+        for file_id in sorted(file_inherits):
+            local = by_file.get(file_id, {})
+            for subclass_id, _spec, base_name in file_inherits[file_id]:
+                cands = local.get(base_name) or []
+                if len(cands) != 1:
+                    cands = global_names.get(base_name) or []
+                if len(cands) == 1 and cands[0] != subclass_id:
+                    graph.add_edge(subclass_id, cands[0], **edge("inherits"))
 
     def _import_specs(self, root: Node, source: bytes) -> list[str]:
         """Raw import specifiers recorded on the file node (resolved by :meth:`_resolve_import`)."""
@@ -259,6 +305,142 @@ def _signature(node: Node, source: bytes, body_field: str) -> str | None:
 
 
 # --------------------------------------------------------------------------------------------------
+# Heritage (inheritance) walks — per-language (subclass_name, base_name) pairs, resolved by name later
+# --------------------------------------------------------------------------------------------------
+
+_NAME_LEAVES = frozenset({"identifier", "type_identifier", "simple_identifier", "constant", "name"})
+
+
+def _decl_name(node: Node, field: str = "name") -> str | None:
+    """A declaration's own name: the ``field`` child if present, else the first identifier-ish child
+    (covers grammars like Swift/Kotlin where the name isn't behind a ``name:`` field)."""
+    nm = node.child_by_field_name(field)
+    if nm is not None:
+        return nm.text.decode() or None
+    for c in node.children:
+        if c.type in _NAME_LEAVES:
+            return c.text.decode() or None
+    return None
+
+
+def _base_name_from_type(node: Node) -> str | None:
+    """The simple base name from a type-reference node: drops generics/ctor-args and any qualifier so
+    ``com.foo.Base<T>`` / ``Base()`` / ``public Base`` all reduce to ``Base`` (resolution is by simple name)."""
+    txt = node.text.decode().split("<", 1)[0].split("(", 1)[0].split("{", 1)[0]
+    last = txt.replace("::", ".").rsplit(".", 1)[-1].split()
+    return last[-1] if last else None
+
+
+def _collect_shallow(node: Node, types: frozenset[str], out: list[Node]) -> list[Node]:
+    """Shallowest descendants whose type is in ``types`` — don't descend into a match (so a generic
+    ``Base<Other>`` yields ``Base``, never the type-arg ``Other``)."""
+    for c in node.children:
+        if c.type in types:
+            out.append(c)
+        else:
+            _collect_shallow(c, types, out)
+    return out
+
+
+def _heritage_walk(root: Node, decl_types: frozenset[str], heritage_types: frozenset[str],
+                   base_types: frozenset[str], name_field: str = "name") -> list[tuple[str, str]]:
+    """Generic ``(subclass, base)`` walk: for each declaration of ``decl_types``, take its name and the
+    base names sitting in its ``heritage_types`` clause(s). Covers most C-family/OO grammars."""
+    out: list[tuple[str, str]] = []
+
+    def visit(node: Node) -> None:
+        if node.type in decl_types:
+            sub = _decl_name(node, name_field)
+            if sub:
+                for child in node.children:
+                    if child.type in heritage_types:
+                        for d in _collect_shallow(child, base_types, []):
+                            base = _base_name_from_type(d)
+                            if base:
+                                out.append((sub, base))
+        for c in node.children:
+            visit(c)
+
+    visit(root)
+    return out
+
+
+_JAVA_BASES = frozenset({"type_identifier", "scoped_type_identifier", "generic_type"})
+
+
+def _java_inherits(root: Node) -> list[tuple[str, str]]:
+    return _heritage_walk(root, frozenset({"class_declaration", "interface_declaration",
+                                           "enum_declaration", "record_declaration"}),
+                          frozenset({"superclass", "super_interfaces", "extends_interfaces"}), _JAVA_BASES)
+
+
+def _csharp_inherits(root: Node, source: bytes) -> list[tuple[str, str]]:
+    return _heritage_walk(root, frozenset({"class_declaration", "interface_declaration",
+                                           "struct_declaration", "record_declaration"}),
+                          frozenset({"base_list"}), frozenset({"identifier", "qualified_name", "generic_name"}))
+
+
+def _cpp_inherits(root: Node) -> list[tuple[str, str]]:
+    return _heritage_walk(root, frozenset({"class_specifier", "struct_specifier"}),
+                          frozenset({"base_class_clause"}),
+                          frozenset({"type_identifier", "qualified_identifier", "template_type"}))
+
+
+def _php_inherits(root: Node) -> list[tuple[str, str]]:
+    return _heritage_walk(root, frozenset({"class_declaration", "interface_declaration",
+                                           "enum_declaration", "trait_declaration"}),
+                          frozenset({"base_clause", "class_interface_clause"}),
+                          frozenset({"name", "qualified_name"}))
+
+
+def _scala_inherits(root: Node, source: bytes) -> list[tuple[str, str]]:
+    return _heritage_walk(root, frozenset({"class_definition", "trait_definition", "object_definition"}),
+                          frozenset({"extends_clause"}),
+                          frozenset({"type_identifier", "generic_type", "stable_type_identifier"}))
+
+
+def _swift_inherits(root: Node) -> list[tuple[str, str]]:
+    return _heritage_walk(root, frozenset({"class_declaration", "protocol_declaration"}),
+                          frozenset({"inheritance_specifier"}), frozenset({"user_type", "type_identifier"}))
+
+
+def _ruby_inherits(root: Node) -> list[tuple[str, str]]:
+    return _heritage_walk(root, frozenset({"class"}), frozenset({"superclass"}),
+                          frozenset({"constant", "scope_resolution"}))
+
+
+def _kotlin_inherits(root: Node) -> list[tuple[str, str]]:
+    return _heritage_walk(root, frozenset({"class_declaration", "object_declaration"}),
+                          frozenset({"delegation_specifiers"}),
+                          frozenset({"user_type", "constructor_invocation"}))
+
+
+def _rust_inherits(root: Node) -> list[tuple[str, str]]:
+    """Rust's ``inherits``: ``impl Trait for S`` → (S, Trait), and ``trait A: B`` supertrait bounds."""
+    out: list[tuple[str, str]] = []
+
+    def visit(node: Node) -> None:
+        if node.type == "impl_item":
+            trait, typ = node.child_by_field_name("trait"), node.child_by_field_name("type")
+            if trait is not None and typ is not None:
+                sub, base = _base_name_from_type(typ), _base_name_from_type(trait)
+                if sub and base:
+                    out.append((sub, base))
+        elif node.type == "trait_item":
+            nm, bounds = node.child_by_field_name("name"), node.child_by_field_name("bounds")
+            if nm is not None and bounds is not None:
+                for d in _collect_shallow(bounds, _JAVA_BASES, []):
+                    base = _base_name_from_type(d)
+                    if base:
+                        out.append((nm.text.decode(), base))
+        for c in node.children:
+            visit(c)
+
+    visit(root)
+    return out
+
+
+# --------------------------------------------------------------------------------------------------
 # Per-language configuration → the generic extractor instances
 # --------------------------------------------------------------------------------------------------
 
@@ -339,11 +521,17 @@ class RustExtractor(TagExtractor):
     def _resolve_import(self, spec, base_dir, relset):
         return resolve_relative(base_dir, spec, relset, (".rs",))
 
+    def _extra_inherits(self, root, source):
+        return _rust_inherits(root)
+
 
 class JavaExtractor(TagExtractor):
     def __init__(self) -> None:
         super().__init__("java", (".java",), "java", _grammar("java", "language"),
                          _tags_query("java"), _SPEC_CXX_COMMENT)
+
+    def _extra_inherits(self, root, source):
+        return _java_inherits(root)
 
     def _import_specs(self, root, source):
         out = set()
@@ -406,6 +594,9 @@ class CppExtractor(_CFamilyExtractor):
         super().__init__("cpp", (".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx"), "cpp",
                          _grammar("cpp", "language"), _tags_query("cpp"), _SPEC_C_COMMENT)
 
+    def _extra_inherits(self, root, source):
+        return _cpp_inherits(root)
+
 
 class RubyExtractor(TagExtractor):
     def __init__(self) -> None:
@@ -427,11 +618,17 @@ class RubyExtractor(TagExtractor):
     def _resolve_import(self, spec, base_dir, relset):
         return resolve_relative(base_dir, spec, relset, (".rb",))
 
+    def _extra_inherits(self, root, source):
+        return _ruby_inherits(root)
+
 
 class PhpExtractor(TagExtractor):
     def __init__(self) -> None:
         super().__init__("php", (".php",), "php", _grammar("php", "language_php", "language"),
                          _tags_query("php"), _SPEC_C_COMMENT)
+
+    def _extra_inherits(self, root, source):
+        return _php_inherits(root)
 
     def _import_specs(self, root, source):
         out = set()
@@ -511,8 +708,9 @@ _SQL_TAGS = """
 
 
 def _vendored(name: str, exts: tuple[str, ...], module: str, lang_attrs: tuple[str, ...],
-              query: str) -> TagExtractor:
-    return TagExtractor(name, exts, name, _grammar(module, *lang_attrs), lambda: query, _SPEC_VENDORED_COMMENT)
+              query: str, inherits_fn=None) -> TagExtractor:
+    return TagExtractor(name, exts, name, _grammar(module, *lang_attrs), lambda: query,
+                        _SPEC_VENDORED_COMMENT, inherits_fn=inherits_fn)
 
 
 def _member_callee(call: Node, id_types: frozenset[str]) -> str | None:
@@ -553,6 +751,21 @@ class KotlinExtractor(_CallExprMixin):
         super().__init__("kotlin", (".kt", ".kts"), "kotlin", _grammar("kotlin", "language"),
                          lambda: _KOTLIN_TAGS, _SPEC_VENDORED_COMMENT)
 
+    def _extra_inherits(self, root, source):
+        return _kotlin_inherits(root)
+
+    def _import_specs(self, root, source):
+        out = set()
+        for child in root.children:  # `import com.foo.Bar` → resolvable; `import com.foo.*` (package) → skip
+            if child.type == "import" and not any(c.type == "*" for c in child.children):
+                qi = next((c for c in child.children if c.type == "qualified_identifier"), None)
+                if qi is not None:
+                    out.add(qi.text.decode())
+        return sorted(out)
+
+    def _resolve_import(self, spec, base_dir, relset):
+        return resolve_segments(spec.split("."), relset, (".kt", ".kts"))
+
 
 class SwiftExtractor(_CallExprMixin):
     _ID_TYPES = frozenset({"simple_identifier"})
@@ -561,13 +774,39 @@ class SwiftExtractor(_CallExprMixin):
         super().__init__("swift", (".swift",), "swift", _grammar("swift", "language"),
                          lambda: _SWIFT_TAGS, _SPEC_VENDORED_COMMENT)
 
+    def _extra_inherits(self, root, source):
+        return _swift_inherits(root)
+
+
+class ScalaExtractor(TagExtractor):
+    def __init__(self) -> None:
+        super().__init__("scala", (".scala", ".sc"), "scala", _grammar("scala", "language"),
+                         lambda: _SCALA_TAGS, _SPEC_VENDORED_COMMENT, inherits_fn=_scala_inherits)
+
+    def _import_specs(self, root, source):
+        out = set()
+        for child in root.children:  # `import foo.bar.Baz`; skip `import foo._` / `import foo.{A, B}` (package/selector)
+            if child.type == "import_declaration" and not any(
+                    c.type in ("namespace_wildcard", "import_selectors") for c in child.children):
+                segs = [c.text.decode() for c in child.children if c.type == "identifier"]
+                if segs:
+                    out.add(".".join(segs))
+        return sorted(out)
+
+    def _resolve_import(self, spec, base_dir, relset):
+        return resolve_segments(spec.split("."), relset, (".scala", ".sc"))
+
 
 #: Extractors using a yigraf-vendored tags query (the grammar ships none usable). Kotlin/Swift add
 #: call edges via a hook (their call_expression has no function field for the query to key on).
+#: Import edges: Kotlin/Scala map ``import pkg.Class`` → a file by convention (resolved). **C# and Swift
+#: are intentionally omitted** — their module systems don't map to files: C# ``using`` names a *namespace*
+#: (spans many files; a file declares any namespace), and Swift ``import`` names a whole *module/framework*
+#: (intra-module files need no import). Resolving either to a file would only invent false edges.
 VENDORED_EXTRACTORS: tuple[TagExtractor, ...] = (
-    _vendored("c_sharp", (".cs",), "c_sharp", ("language",), _CSHARP_TAGS),
+    _vendored("c_sharp", (".cs",), "c_sharp", ("language",), _CSHARP_TAGS, inherits_fn=_csharp_inherits),
     KotlinExtractor(),
-    _vendored("scala", (".scala", ".sc"), "scala", ("language",), _SCALA_TAGS),
+    ScalaExtractor(),
     SwiftExtractor(),
     _vendored("bash", (".sh", ".bash"), "bash", ("language",), _BASH_TAGS),
     _vendored("sql", (".sql",), "sql", ("language",), _SQL_TAGS),

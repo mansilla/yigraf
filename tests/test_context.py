@@ -37,6 +37,35 @@ def _ctx(root: Path, query: str, **kw):
     return retrieval.context(graph, query, default_config(), **kw)
 
 
+def test_signature_only_is_the_default_render(tmp_path: Path):
+    """Default render is locator+signature — the body is NOT inlined even with a root (token-thrift)."""
+    root = _repo(tmp_path)
+    graph, _ = build_graph(root, default_config())
+    result = retrieval.context(graph, "refresh", default_config(), root=root)
+    assert "return token" not in result.text  # the body stays in the file
+
+
+def test_source_for_seeds_renders_verbatim_line_numbered_source(tmp_path: Path):
+    """A3: with the knob on, the top-ranked symbol's body is inlined, line-numbered (sufficiency)."""
+    root = _repo(tmp_path)
+    cfg = default_config()
+    cfg["retrieval"]["render"] = "source_for_seeds"
+    graph, _ = build_graph(root, cfg)
+    result = retrieval.context(graph, "refresh", cfg, root=root)
+    assert "\tdef refresh(token):" in result.text  # line-numbered source line (a tab a signature lacks)
+    assert "return token" in result.text           # the body the signature render omits
+
+
+def test_source_for_seeds_falls_back_to_signature_without_a_root(tmp_path: Path):
+    """No root ⇒ can't read files ⇒ graceful fall back to the signature render (never a hard failure)."""
+    root = _repo(tmp_path)
+    cfg = default_config()
+    cfg["retrieval"]["render"] = "source_for_seeds"
+    graph, _ = build_graph(root, cfg)
+    result = retrieval.context(graph, "refresh", cfg)  # root omitted
+    assert "return token" not in result.text
+
+
 def test_terms_splits_identifiers_and_paths():
     assert retrieval.terms("auth/session.py#validateToken") == [
         "auth", "session", "py", "validate", "token"]
@@ -90,7 +119,63 @@ def test_tight_budget_truncates_and_notes_elision(tmp_path: Path):
     assert "elided" in result.text
 
 
+def test_file_and_module_containers_are_suppressed_from_render(tmp_path: Path):
+    # file:/module: nodes seed + bridge traversal but are render noise (they eat budget and bury intent
+    # /drift). The ranking fix suppresses them from output while keeping the real symbol.
+    result = _ctx(_repo(tmp_path), "refresh")
+    assert "sym:auth/session.py#refresh" in result.text   # the real symbol still shows
+    assert "file:auth/session.py" not in result.text      # its file container is gone
+    assert "module:auth/session.py" not in result.text    # and its module container
+
+
 def test_context_cli_runs_and_reports_token_count(tmp_path: Path):
     result = runner.invoke(app, ["context", "session expiry", "--repo", str(_repo(tmp_path))])
     assert result.exit_code == 0, result.output
     assert "tokens" in result.output and "def refresh(token):" in result.output
+
+
+# --- Capture-gap legibility (the push/pull asymmetry made visible) --------------------------------
+
+def _done_unlinked_task(root: Path) -> None:
+    """Add a plan whose single task is marked done but linked to no implementing symbol."""
+    assert runner.invoke(app, ["plan", "cleanup", "--repo", str(root), "-t", "Cleanup",
+                               "--task", "remove dead code"]).exit_code == 0
+    plan_file = root / "yigraf" / "plans" / "active" / "cleanup.md"
+    plan_file.write_text(plan_file.read_text().replace("- [ ] {#1}", "- [x] {#1}"))
+
+
+def _session(root: Path):
+    graph, _ = build_graph(root, default_config())
+    return retrieval.session_context(graph, default_config(), root=root)
+
+
+def test_done_task_without_link_surfaces_capture_gap_at_session_start(tmp_path: Path):
+    """A completed task with no implements edge is the 'work done, graph not told' decay signal."""
+    root = _repo(tmp_path)
+    _done_unlinked_task(root)
+    text = _session(root).text
+    assert "Capture gaps" in text
+    assert "task:cleanup/1 is done but names no implementing symbol" in text
+
+
+def test_linking_the_done_task_closes_the_capture_gap(tmp_path: Path):
+    root = _repo(tmp_path)
+    _done_unlinked_task(root)
+    assert runner.invoke(app, ["link", "task:cleanup/1", SYM, "--repo", str(root)]).exit_code == 0
+    assert "task:cleanup/1 is done" not in _session(root).text
+
+
+def test_done_task_that_is_linked_is_not_a_gap(tmp_path: Path):
+    """The auth task in the base repo is linked, so even when done it must not surface as a gap."""
+    root = _repo(tmp_path)
+    plan_file = root / "yigraf" / "plans" / "active" / "auth.md"
+    plan_file.write_text(plan_file.read_text().replace("- [ ] {#1}", "- [x] {#1}"))  # done AND linked
+    assert "is done but names no implementing symbol" not in _session(root).text
+
+
+def test_capture_gap_is_scoped_to_the_query_in_context(tmp_path: Path):
+    """`context` reports a gap only inside the query's neighborhood (like drift), not globally."""
+    root = _repo(tmp_path)
+    _done_unlinked_task(root)
+    assert "task:cleanup/1 is done" in _ctx(root, "cleanup").text          # in scope → surfaced
+    assert "task:cleanup/1 is done" not in _ctx(root, "session expiry").text  # unrelated → silent

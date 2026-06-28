@@ -22,7 +22,13 @@ if TYPE_CHECKING:
 
 #: Bumped when the on-disk cache layout changes incompatibly (separate from the astnorm algo).
 #: 2: structure nodes gained a ``signature`` field (M4).
-CACHE_FORMAT = 2
+#: 3: file nodes gained an ``inherits`` field (import-aware inheritance edges) — a stale cache would
+#:    otherwise serve pre-inheritance projections for files that haven't changed since the upgrade.
+#: 4: the tags-tier extractors began populating ``inherits`` too (inheritance across the breadth
+#:    languages), so a format-3 cache of e.g. a Java file lacks its inheritance — invalidate it.
+#: 5: Kotlin/Scala began recording ``imports`` on the file node (import edges) — a format-4 cache of
+#:    those files has an empty imports list.
+CACHE_FORMAT = 5
 
 
 def file_sha(data: bytes) -> str:

@@ -122,7 +122,8 @@ def test_dedup_guard_blocks_a_near_duplicate_then_new_forces(tmp_path: Path):
     # A near-paraphrase concerning the same symbol → the guard refuses and points at the original.
     dup = runner.invoke(app, ["remember", "refreshing a session relies on optimistic locks",
                               "--why", "hot path", "--concerns", sym, "--repo", str(root)])
-    assert dup.exit_code == 1 and "near-duplicate" in dup.output
+    # Advisory refusal returns exit 0 + guidance (errors teach abandonment) — it declined, didn't fail.
+    assert dup.exit_code == 0 and "near-duplicate" in dup.output
     # --new bypasses the advisory guard.
     forced = runner.invoke(app, ["remember", "refreshing a session relies on optimistic locks",
                                  "--why", "hot path", "--concerns", sym, "--new", "--repo", str(root)])

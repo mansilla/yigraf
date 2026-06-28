@@ -2,7 +2,7 @@
 edges:
   task:yigraf-v0/1:
     implements:
-    - anchor: 48d63dbb52cd99595dcddec244aa6b04a69306d135b8831af639cd8920d2ad25
+    - anchor: 9ecd1eb082cd37061f3a8dde68ebb1a5a1ab7ce4d35f9090f96c175919a49631
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/extract.py#build_graph
     - anchor: bc5b1b0af4cbc9e1b99f4837ee704931625ab7e3e01f0f34a0a043bfbe3486a5
@@ -29,16 +29,16 @@ edges:
     tracks: int:drift-detection
   task:yigraf-v0/4:
     implements:
-    - anchor: bfd78227bf75a7c05485f844617cfe2cb98600b37e893e30f032e04f63367243
+    - anchor: 2c27400fb9b425aac63c59f20b304b4cd6406e24055d2131391f4bf3caa6af27
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/retrieval.py#context
     tracks: int:token-cheap-context
   task:yigraf-v0/5:
     implements:
-    - anchor: 8a8da94d764d87cf24a36f543b43902ad894d0f6dd1f6c18a6f056adbf1963e1
+    - anchor: b3232318c4d1bc867a56349efef6921a892ed9177c67fda541bfa48495207c3c
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/retrieval.py#context_for_locus
-    - anchor: 93a7507c388ed929cc1e72cc180de4c11c01c98a938f9390f24b012ebbeec5fe
+    - anchor: 2a281e77f465206f6c79cbcbe889751afa7a59ad72065bd39cda384ca66208dd
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/hooks.py#install_claude_hooks
     tracks: int:hook-surfacing

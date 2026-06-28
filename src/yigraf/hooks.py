@@ -123,10 +123,12 @@ whose drift is surfaced when code and the thing that governs it diverge. A few r
 useful — the hooks are a safety net, not a substitute.
 
 ## 0. Orient before you touch code (always)
-Run `yigraf context "<what you're about to work on>"`. It returns the governing requirement(s), the
-implementing symbol signatures (not source), the open tasks, the prior **decisions and their *why***,
-and any **drift** — a token-cheap map. If a spec already covers your change, refine it; don't
-duplicate. If a decision already settled the question, follow it (or `supersede` it on purpose).
+Run `yigraf context "<what you're about to work on>"`. **This is the one command you need to read the
+graph** — the governing requirement(s), the implementing symbols (signature by default, full source
+when configured), the open tasks, the prior **decisions and their *why***, and any **drift** all come
+back through it, as a token-cheap map. Don't reach for a separate query or drift tool. If a spec
+already covers your change, refine it; don't duplicate. If a decision already settled the question,
+follow it (or `supersede` it on purpose).
 
 ## 1. Link when a task is done (the seam)
 When you finish a task, name the symbols that implement it:
@@ -152,19 +154,28 @@ sees the decision and its rationale without reading the history.
   to track the intent.
 
 ## 4. Drift means re-verify
-`yigraf drift` lists soft drift (a linked symbol's body changed) and hard drift (it's gone), for both
-`implements` (task→code) and `concerns` (decision→code) links. A pure rename auto-re-anchors. To clear
-a real drift, re-verify the code still satisfies the spec/decision, then `yigraf link` (or re-`remember`
-/ `supersede` the decision) to re-anchor.
+You don't poll for drift — `yigraf context` and the edit hook surface it for you: soft drift (a linked
+symbol's body changed) or hard drift (it's gone), for both `implements` (task→code) and `concerns`
+(decision→code) links. A pure rename auto-re-anchors. When drift surfaces, re-verify the code still
+satisfies the spec/decision, then `yigraf link` (or re-`remember` / `supersede` the decision) to
+re-anchor. (`yigraf drift` exits non-zero on drift — that's the commit/CI gate, not something you poll.)
 """
 
 _AGENTS_BLOCK = f"""{_AGENTS_START}
 ## yigraf
 This repo uses **yigraf** (a graph over code, intent, plan, and the *why*). Before changing code, run
-`yigraf context "<topic>"` to see governing intents, prior decisions, and drift. After finishing a
-task, run `yigraf link task:<plan>/<n> sym:<path>#<name>`, and `yigraf remember` the non-obvious
-choices (with `--why` and `--concerns <sym>`). `yigraf drift` shows what needs re-verifying.
+`yigraf context "<topic>"` — the one read command: it surfaces governing intents, prior decisions, and
+any drift to re-verify. After finishing a task, run `yigraf link task:<plan>/<n> sym:<path>#<name>`, and
+`yigraf remember` the non-obvious choices (with `--why` and `--concerns <sym>`).
 {_AGENTS_END}"""
+
+#: Self-contained ignore so the per-machine hook wiring never reaches a commit (see install docstring).
+_CLAUDE_GITIGNORE = """\
+# Machine-local Claude Code settings written by `yigraf install-claude-hooks`. The hook commands bake
+# in this clone's absolute interpreter path, so they're per-machine — kept out of git. A teammate
+# inherits the committed SKILL.md + AGENTS.md block and just re-runs `yigraf install-claude-hooks`.
+settings.local.json
+"""
 
 
 @dataclass
@@ -173,6 +184,17 @@ class ClaudeHookResult:
     skill_path: Path
     agents_path: Path
     hooks_changed: bool
+    gitignore_path: Path | None = None  # .claude/.gitignore keeping settings.local.json out of git
+
+
+def _ensure_claude_gitignore(claude: Path) -> Path:
+    """Ensure ``.claude/.gitignore`` ignores ``settings.local.json`` (idempotent, non-clobbering)."""
+    path = claude / ".gitignore"
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    if "settings.local.json" not in {ln.strip() for ln in existing.splitlines()}:
+        prefix = existing.rstrip() + "\n\n" if existing.strip() else ""
+        path.write_text(prefix + _CLAUDE_GITIGNORE, encoding="utf-8")
+    return path
 
 
 def _ensure_hook(hooks: dict, event: str, matcher: str, command: str, verb: str) -> bool:
@@ -190,16 +212,20 @@ def _ensure_hook(hooks: dict, event: str, matcher: str, command: str, verb: str)
 
 
 def install_claude_hooks(root: Path) -> ClaudeHookResult:
-    """Register the PostToolUse + SessionStart hooks in .claude/settings.json and lay down the skill.
+    """Register the PostToolUse + SessionStart hooks in .claude/settings.local.json + lay the skill.
 
-    Idempotent and non-clobbering: merges into an existing ``settings.json``, only touching the two
-    yigraf hook entries (keyed by their ``hook <verb>`` command), and maintains a marked block in
-    ``AGENTS.md``. Commands bake in the absolute interpreter (``python -m yigraf``) so they run
-    regardless of ``PATH``; the hook reads the repo root from the event's ``cwd``.
+    The hook commands bake in this clone's **absolute interpreter** so they run regardless of ``PATH``
+    — which makes them machine-specific, so they go in **``settings.local.json``** (Claude Code's
+    per-machine settings), never the committed ``settings.json``. A self-contained ``.claude/.gitignore``
+    keeps that file out of git; the shareable ``SKILL.md`` + ``AGENTS.md`` block ARE committed, so a
+    teammate inherits the skill and just re-runs this command to wire their own paths. Idempotent and
+    non-clobbering: merges into any existing *local* settings, only touching the two yigraf hook entries
+    (keyed by their ``hook <verb>`` command), and never reads or rewrites the committed ``settings.json``.
+    The hook reads the repo root from the event's ``cwd``.
     """
     root = Path(root).resolve()
     claude = root / ".claude"
-    settings_path = claude / "settings.json"
+    settings_path = claude / "settings.local.json"
 
     settings: dict = {}
     if settings_path.exists():
@@ -217,6 +243,7 @@ def install_claude_hooks(root: Path) -> ClaudeHookResult:
 
     claude.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    gitignore_path = _ensure_claude_gitignore(claude)
 
     skill_path = claude / "skills" / "yigraf" / "SKILL.md"
     skill_path.parent.mkdir(parents=True, exist_ok=True)
@@ -224,7 +251,8 @@ def install_claude_hooks(root: Path) -> ClaudeHookResult:
 
     agents_path = _write_agents_block(root / "AGENTS.md")
     return ClaudeHookResult(settings_path=settings_path, skill_path=skill_path,
-                            agents_path=agents_path, hooks_changed=changed)
+                            agents_path=agents_path, hooks_changed=changed,
+                            gitignore_path=gitignore_path)
 
 
 def _write_agents_block(agents_path: Path) -> Path:

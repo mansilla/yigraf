@@ -40,6 +40,103 @@ def test_intra_repo_import_resolves_to_an_edge(tmp_path: Path):
     assert graph["file:src/pkg/a.py"]["file:src/pkg/b.py"]["relation"] == "imports"
 
 
+def _make_pkg(root: Path) -> Path:
+    """A two-level src-layout package (src/pkg + src/pkg/sub) for relative-import tests."""
+    init_workspace(root)
+    sub = root / "src" / "pkg" / "sub"
+    sub.mkdir(parents=True)
+    (root / "src" / "pkg" / "__init__.py").write_text("")
+    (sub / "__init__.py").write_text("")
+    (root / "src" / "pkg" / "b.py").write_text("def g():\n    return 1\n")
+    return root / "src" / "pkg"
+
+
+def test_sibling_relative_import_resolves(tmp_path: Path):
+    pkg = _make_pkg(tmp_path)
+    (pkg / "a.py").write_text("from .b import g\n\n\ndef f():\n    return g()\n")  # #16: `.b`
+    graph, _ = build_graph(tmp_path, default_config())
+    assert graph.has_edge("file:src/pkg/a.py", "file:src/pkg/b.py")
+
+
+def test_parent_relative_import_resolves(tmp_path: Path):
+    pkg = _make_pkg(tmp_path)
+    (pkg / "sub" / "a.py").write_text("from ..b import g\n")  # #16: `..b` from src/pkg/sub → src/pkg/b
+    graph, _ = build_graph(tmp_path, default_config())
+    assert graph.has_edge("file:src/pkg/sub/a.py", "file:src/pkg/b.py")
+
+
+def test_bare_relative_import_resolves_submodule(tmp_path: Path):
+    pkg = _make_pkg(tmp_path)
+    (pkg / "a.py").write_text("from . import b\n")  # #16: `from . import b` → sibling module b
+    graph, _ = build_graph(tmp_path, default_config())
+    assert graph.has_edge("file:src/pkg/a.py", "file:src/pkg/b.py")
+
+
+def test_over_relative_import_makes_no_edge(tmp_path: Path):
+    pkg = _make_pkg(tmp_path)
+    (pkg / "a.py").write_text("from ....way.too.deep import g\n")  # more dots than depth → no phantom
+    graph, _ = build_graph(tmp_path, default_config())
+    assert not any(d == "file:src/pkg/b.py" for _, d in graph.out_edges("file:src/pkg/a.py"))
+
+
+def test_ignore_supports_path_prefixes_not_just_dir_names(tmp_path: Path):
+    # The config documents "path prefixes" — a multi-segment ignore must prune (not just bare dir names).
+    init_workspace(tmp_path)
+    (tmp_path / "keep.py").write_text("def a():\n    return 1\n")
+    gen = tmp_path / "scripts" / "eval" / "runs"
+    gen.mkdir(parents=True)
+    (gen / "snap.py").write_text("def b():\n    return 2\n")
+    cfg = default_config()
+    cfg["ignore"] = list(cfg.get("ignore", [])) + ["scripts/eval/runs/"]
+    graph, _ = build_graph(tmp_path, cfg)
+    assert "sym:keep.py#a" in graph
+    assert not any("scripts/eval/runs" in n for n in graph)  # path-prefix pruned the snapshot copy
+
+
+def test_go_import_edges_resolve_via_go_mod(tmp_path: Path):
+    # task #5: a Go import is a package path; the go.mod module prefix maps it to a directory, and the
+    # import edges go to every file of that package. `fmt` (external) makes no edge.
+    init_workspace(tmp_path)
+    (tmp_path / "go.mod").write_text("module myrepo\n\ngo 1.21\n")
+    (tmp_path / "util").mkdir()
+    (tmp_path / "util" / "u.go").write_text("package util\n\nfunc Help() int { return 1 }\n")
+    (tmp_path / "main.go").write_text('package main\n\nimport (\n\t"fmt"\n\t"myrepo/util"\n)\n\n'
+                                      "func main() { fmt.Println(util.Help()) }\n")
+    graph, _ = build_graph(tmp_path, default_config())
+    assert graph.has_edge("file:main.go", "file:util/u.go")
+    assert graph["file:main.go"]["file:util/u.go"]["relation"] == "imports"
+    assert not any(d == "file:main.go" for _, d in graph.out_edges("file:main.go"))  # no self/external edge
+
+
+def test_inheritance_edge_resolves_same_file(tmp_path: Path):
+    init_workspace(tmp_path)
+    (tmp_path / "m.py").write_text("class Base:\n    pass\n\n\nclass C(Base):\n    pass\n")
+    graph, _ = build_graph(tmp_path, default_config())
+    assert graph.has_edge("sym:m.py#C", "sym:m.py#Base")
+    assert graph["sym:m.py#C"]["sym:m.py#Base"]["relation"] == "inherits"
+
+
+def test_inheritance_edge_resolves_across_relative_import(tmp_path: Path):
+    init_workspace(tmp_path)
+    pkg = tmp_path / "src" / "pkg"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("")
+    (pkg / "base.py").write_text("class Base:\n    pass\n")
+    (pkg / "impl.py").write_text("from .base import Base\n\n\nclass C(Base):\n    pass\n")
+    graph, _ = build_graph(tmp_path, default_config())
+    assert graph.has_edge("sym:src/pkg/impl.py#C", "sym:src/pkg/base.py#Base")
+    assert graph["sym:src/pkg/impl.py#C"]["sym:src/pkg/base.py#Base"]["relation"] == "inherits"
+
+
+def test_external_base_makes_no_inheritance_edge_or_phantom(tmp_path: Path):
+    init_workspace(tmp_path)
+    (tmp_path / "m.py").write_text("from typing import Protocol\n\n\nclass C(Protocol):\n    pass\n")
+    graph, _ = build_graph(tmp_path, default_config())
+    assert not graph.has_node("sym:typing#Protocol")  # external base → no phantom node
+    assert all(d.get("relation") != "inherits"
+               for _, _, d in graph.out_edges("sym:m.py#C", data=True))
+
+
 def test_external_import_makes_no_edge_or_phantom_node(tmp_path: Path):
     init_workspace(tmp_path)
     (tmp_path / "x.py").write_text("import os\n")
