@@ -73,12 +73,12 @@ decisions; after a task, `link` the symbols and `remember` the non-obvious choic
 - **Run / test:** `uv sync`, then `uv run pytest` (fast, no network). `uv run yigraf --help`.
 - **Optional semantic recall:** `uv pip install -e '.[embeddings]'` (local `bge-small`). Absent ⇒
   retrieval degrades to the lexical seeder; never a hard dependency.
-- **Authority:** `docs/DESIGN.md` is the single source of truth (Decision Log R1–R11). Where a detail
-  doc conflicts with it, DESIGN wins. Vision/thesis: `docs/yigraf-vision.md`. Sequenced build +
-  done-tests: `docs/BUILD-PLAN.md`. Sharp edges: `docs/caveats.md`.
+- **Docs:** the public references are [`README.md`](README.md) (overview, install, how-it-works) and
+  [`docs/language-support.md`](docs/language-support.md) (the tested capability matrix). The internal
+  design corpus (decision log, milestone notes, research) was removed from the repo; that history lives
+  in git, and the authoritative *current* state is the code, the tests, and this file.
 - **Layout:** package under `src/yigraf/` (src-layout is deliberate — `yigraf init` creates a data dir
-  named `yigraf/` at a repo root, and the two must not collide). `origins/` holds reference clones
-  (OpenSpec, Graphify) studied during design — gitignored, not part of the package.
+  named `yigraf/` at a repo root, and the two must not collide).
 - **Status:** v0 spine (M0–M6) + memory milestone (M7–M9) complete and self-hosted. Counters are
   local + recomputable (v0); the shared/committed counter model is v1/Enterprise (cloud) work.
 
