@@ -52,8 +52,8 @@ queryable graph and re-surfaces the relevant piece exactly when the agent needs 
 ## Quickstart
 
 ```bash
-# 1. install (see Installation for per-platform setup)
-uv tool install git+https://github.com/mansilla/yigraf.git
+# 1. install (now on PyPI)
+pip install yigraf
 
 # 2. in your repo: create the workspace and index the code
 cd your-repo
@@ -73,42 +73,41 @@ yigraf drift                             # report any intent↔code drift
 
 ## Installation
 
-yigraf installs from source (not yet on PyPI). It needs **Python ≥ 3.11**; the tree-sitter grammars are
-bundled, so there's nothing else to set up. Installing as an isolated tool (uv or pipx) is recommended.
+yigraf is on **PyPI**. It needs **Python ≥ 3.11**; the tree-sitter grammars are bundled, so there's
+nothing else to set up. For a CLI you use across repos, an isolated install (pipx or `uv tool`) is nicest.
 
 **Any platform — pick one:**
 
 ```bash
-uv tool install git+https://github.com/mansilla/yigraf.git          # uv
-pipx install "git+https://github.com/mansilla/yigraf.git"           # pipx
+pip install yigraf                 # into the current environment
+pipx install yigraf                # isolated CLI (recommended)
+uv tool install yigraf             # isolated CLI, via uv
 
 # with semantic recall (numpy + sentence-transformers):
-uv tool install "yigraf[embeddings] @ git+https://github.com/mansilla/yigraf.git"
+pip install "yigraf[embeddings]"
 ```
 
 ### macOS
 
 ```bash
-brew install uv          # or: brew install pipx ; and Python 3.11+ via `brew install python@3.12`
-uv tool install git+https://github.com/mansilla/yigraf.git
+brew install python@3.12 pipx     # Python 3.11+ and pipx
+pipx install yigraf
 ```
 
 ### Linux
 
 ```bash
 # Debian/Ubuntu — ensure Python 3.11+ and git
-sudo apt-get update && sudo apt-get install -y python3 python3-venv git
-curl -LsSf https://astral.sh/uv/install.sh | sh        # install uv (or: pipx via your package manager)
-uv tool install git+https://github.com/mansilla/yigraf.git
+sudo apt-get update && sudo apt-get install -y python3 python3-pip pipx git
+pipx install yigraf
 ```
 
 ### Windows
 
 ```powershell
-winget install astral-sh.uv          # install uv
+winget install Python.Python.3.12    # Python 3.11+
 winget install Git.Git               # drift anchoring uses git; install Git for Windows
-# (Python 3.11+ via `winget install Python.Python.3.12` if you don't have it)
-uv tool install git+https://github.com/mansilla/yigraf.git
+pip install yigraf                   # or: pipx install yigraf
 ```
 
 ### From source (development)
