@@ -581,6 +581,13 @@ def install_claude_hooks_cmd(
     typer.echo(f"Wrote hooks → {result.settings_path} (per-machine, gitignored)")
     typer.echo(f"Wrote skill → {result.skill_path}")
     typer.echo(f"Updated     → {result.agents_path}")
+    _STATUSLINE_NOTE = {
+        "set": "Statusline → wired to `yigraf status --color` (the [Yigraf] graph-health bar).",
+        "refreshed": "Statusline → refreshed yigraf command to this clone's interpreter.",
+        "kept-foreign": "Statusline → left your existing statusLine intact (run `yigraf status --color` to see the bar).",
+        "unchanged": "Statusline → already wired to yigraf.",
+    }
+    typer.echo(_STATUSLINE_NOTE[result.statusline])
     typer.echo("Teammates: re-run this command on your clone to wire your own interpreter path.")
 
 
@@ -661,6 +668,7 @@ def install_cmd(
         if h == "claude":
             r = install_claude_hooks(path)
             typer.echo(f"  hooks → {r.settings_path}  ·  skill → {r.skill_path}  ·  AGENTS → {r.agents_path}")
+            typer.echo(f"  statusline → {r.statusline} ([Yigraf] graph-health bar)")
         elif h == "codex":
             r = install_codex_hooks(path)
             typer.echo(f"  hooks → {r.hooks_path}  ·  AGENTS → {r.agents_path}")
