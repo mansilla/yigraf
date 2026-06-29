@@ -39,10 +39,14 @@ _CONTAINER_KINDS = frozenset({"file", "module"})
 # byte-identical to the un-styled render so pipes, --json, and tests are unaffected.
 _RESET = "\x1b[0m"
 
-#: A "spinning empty symbol": four quadrant arcs that read as a rotating hollow ring across refreshes.
-SPIN = "◜◝◞◟"
-#: The static hollow-ring brand glyph (when not animating).
-BRAND = "◌"
+#: The spinning **Y** of ``[Yigraf]``: the capital Y rotated through 0°/90°/180°/270° (fork pointing
+#: up / right / down / left), so successive statusline refreshes read as the Y turning on its axis.
+SPIN = "Y≻⅄≺"
+#: The static Y (when not animating) — head of the ``[Yigraf]`` brand.
+BRAND = "Y"
+#: "igraf" in Mathematical-Monospace (U+1D68A block): a geeky, fixed-width "terminal font" tail that
+#: trails the spinning Y. Pretty-render only — the plain render stays the byte-stable ASCII "yigraf".
+_IGRAF = "𝚒𝚐𝚛𝚊𝚏"
 
 
 def _c(text: str, code: str) -> str:
@@ -96,10 +100,11 @@ class StatusSummary:
 
     def _pretty(self, icon: str | None) -> str:
         """Styled render: bold numbers, dim labels, shape-coded drift/freshness, a context gauge."""
-        brand = icon if icon is not None else BRAND
+        spin_y = icon if icon is not None else BRAND  # the rotating (or static) head of [Yigraf]
+        brand = _c(f"[{spin_y}{_IGRAF}]", "1;36")  # spinning Y + monospace "igraf", bracketed
         kv = lambda n, label: _c(str(n), "1") + _c(f" {label}", "2")  # bold number · dim label
         segs = [
-            _c(brand, "1;36") + " " + kv(self.symbols, "sym"),
+            brand + " " + kv(self.symbols, "sym"),
             kv(self.intents, "int"),
             _c(str(self.tasks_total), "1") + _c(" task", "2")
             + (_c(f"/{self.tasks_open}", "33") + _c(" open", "2") if self.tasks_open else ""),
