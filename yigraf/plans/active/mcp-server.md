@@ -33,4 +33,4 @@ id: plan:mcp-server
 # MCP server
 
 ## Tasks
-- [ ] {#1} yigraf mcp: in-process FastMCP stdio server exposing context+status as tools (the universal pull channel); optional [mcp] extra; per-host config docs
+- [x] {#1} yigraf mcp: in-process FastMCP stdio server exposing context+status as tools (the universal pull channel); optional [mcp] extra; per-host config docs

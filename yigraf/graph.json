@@ -1265,6 +1265,20 @@
     },
     {
       "confidence": "EXTRACTED",
+      "relation": "serves",
+      "source": "mem:022",
+      "target": "int:status-surface"
+    },
+    {
+      "anchor": "9d2a6cee6aead1ccba4442141eb6da243b16c8e6638868157d04ee646443dde9",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:022",
+      "target": "sym:src/yigraf/status.py#StatusSummary._pretty"
+    },
+    {
+      "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:scripts/eval/judge.py",
       "target": "sym:scripts/eval/judge.py#EnforcementScore"
@@ -10850,7 +10864,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "d0a8f464e03f997c025646824409c7497cca8795fde82f7fc5324d46bceb014f",
+      "content_hash": "722bff809df3cf987f2ddf340c826217093b1b1d8ea46212c2c68571f7923f09",
       "family": "structure",
       "id": "file:src/yigraf/status.py",
       "imports": [
@@ -10870,7 +10884,7 @@
       "source_range": [
         0,
         0,
-        189,
+        194,
         0
       ]
     },
@@ -11985,6 +11999,23 @@
       "why": "the user shouldn't have to know which install-X command matches their host. Markers (.claude/.codex/.agents in repo, or ~/.claude / ~/.codex / ~/.gemini on the machine) are a zero-config signal of which hosts are present; wiring ALL detected ones is more useful than guessing a single 'the' host on a multi-tool machine. MCP is the universal floor, so any unrecognized/other host degrades to printing the MCP config \u2014 consistent with 'MCP is the bet'. detect_hosts takes an injectable home for deterministic tests."
     },
     {
+      "alternatives": "Changing _plain to [Yigraf] too \u2014 breaks byte-stability and the startswith('yigraf ') test contract; or small-caps \u026a\u0262\u0280\u1d00\ua730 \u2014 kept Math-Monospace \ud835\ude92\ud835\ude90\ud835\ude9b\ud835\ude8a\ud835\ude8f as the geekier terminal-font look (fallback if a terminal lacks the U+1D68A block)",
+      "confidence": "EXTRACTED",
+      "family": "memory",
+      "id": "mem:022",
+      "kind": "decision",
+      "label": "The pretty statusline brand is a spinning [Yigraf]: the Y rotates through 0/90/180/270 (Y\u227b\u2144\u227a) with 'igraf' in Mathematical-Monospace; the plain render stays ASCII 'yigraf'",
+      "maturity": "working",
+      "promotable": false,
+      "source_file": "memory/022-the-pretty-statusline-brand-is-a.md",
+      "statement": "The pretty statusline brand is a spinning [Yigraf]: the Y rotates through 0/90/180/270 (Y\u227b\u2144\u227a) with 'igraf' in Mathematical-Monospace; the plain render stays ASCII 'yigraf'",
+      "status": "active",
+      "superseded_in": 0,
+      "supersedes_out": 0,
+      "survival": 0,
+      "why": "Design law #2: the styled render is a human-facing TTY flourish, but _plain is the byte-stable channel pipes/--json/tests/agent-injection depend on (test asserts startswith 'yigraf '), so the brand animation lives only in _pretty and SPIN[0]='Y' keeps the color test green"
+    },
+    {
       "confidence": "EXTRACTED",
       "content_hash": "57a2337e3f2942a8bc0c57b8e3215c379ce9e8020c07b931cdd86a8beca6f413",
       "family": "structure",
@@ -12434,7 +12465,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "d0a8f464e03f997c025646824409c7497cca8795fde82f7fc5324d46bceb014f",
+      "content_hash": "722bff809df3cf987f2ddf340c826217093b1b1d8ea46212c2c68571f7923f09",
       "family": "structure",
       "id": "module:src/yigraf/status.py",
       "kind": "module",
@@ -12444,7 +12475,7 @@
       "source_range": [
         0,
         0,
-        189,
+        194,
         0
       ]
     },
@@ -19901,9 +19932,9 @@
       "signature": "class StatusSummary:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        52,
+        56,
         0,
-        125,
+        130,
         27
       ]
     },
@@ -19918,9 +19949,9 @@
       "signature": "def _ctx_gauge(self) -> str:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        116,
-        4,
         121,
+        4,
+        126,
         89
       ]
     },
@@ -19935,15 +19966,15 @@
       "signature": "def _plain(self, brand: str) -> str:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        86,
+        90,
         4,
-        94,
+        98,
         33
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "baccd574c2cd28b93cffa9249242681af50388b298d7454184a784872ab6a5fd",
+      "content_hash": "9d2a6cee6aead1ccba4442141eb6da243b16c8e6638868157d04ee646443dde9",
       "family": "structure",
       "id": "sym:src/yigraf/status.py#StatusSummary._pretty",
       "kind": "method",
@@ -19952,9 +19983,9 @@
       "signature": "def _pretty(self, icon: str | None) -> str:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        96,
+        100,
         4,
-        114,
+        119,
         41
       ]
     },
@@ -19969,9 +20000,9 @@
       "signature": "def as_dict(self) -> dict:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        123,
+        128,
         4,
-        125,
+        130,
         27
       ]
     },
@@ -19986,9 +20017,9 @@
       "signature": "def ctx_pct(self) -> int | None:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        70,
+        74,
         4,
-        75,
+        79,
         19
       ]
     },
@@ -20003,9 +20034,9 @@
       "signature": "def render_line(self, *, color: bool = False, icon: str | None = None) -> str:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        77,
+        81,
         4,
-        84,
+        88,
         77
       ]
     },
@@ -20020,9 +20051,9 @@
       "signature": "def _c(text: str, code: str) -> str:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        47,
+        51,
         0,
-        49,
+        53,
         40
       ]
     },
@@ -20037,9 +20068,9 @@
       "signature": "def _freshness(root: Path, graph: nx.DiGraph) -> str:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        128,
+        133,
         0,
-        143,
+        148,
         81
       ]
     },
@@ -20054,9 +20085,9 @@
       "signature": "def compute_status(graph: nx.DiGraph, root: Path, config: dict, *, ctx_used: int | None = None, ctx_limit: int | None = None) -> StatusSummary:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        146,
+        151,
         0,
-        188,
+        193,
         5
       ]
     },
@@ -25330,7 +25361,7 @@
       "kind": "task",
       "label": "yigraf mcp: in-process FastMCP stdio server exposing context+status as tools (the universal pull channel); optional [mcp] extra; per-host config docs",
       "order": 1,
-      "state": "todo"
+      "state": "done"
     },
     {
       "confidence": "EXTRACTED",
@@ -25366,7 +25397,7 @@
       "kind": "task",
       "label": "Codex hooks (install-codex-hooks, reuse handlers, apply_patch path parse) + Antigravity rule installer (install-antigravity) + generalized _edited_file",
       "order": 1,
-      "state": "todo"
+      "state": "done"
     },
     {
       "confidence": "EXTRACTED",
@@ -25420,7 +25451,7 @@
       "kind": "task",
       "label": "Host-agnostic status summary: StatusSummary value object + 'yigraf status' command (line/json) + per-host statusline adapter",
       "order": 1,
-      "state": "todo"
+      "state": "done"
     },
     {
       "confidence": "EXTRACTED",
@@ -25429,7 +25460,7 @@
       "kind": "task",
       "label": "structure index + astnorm content hash",
       "order": 1,
-      "state": "todo"
+      "state": "done"
     },
     {
       "confidence": "EXTRACTED",
@@ -25438,7 +25469,7 @@
       "kind": "task",
       "label": "intent/plan artifacts + enforceable linking",
       "order": 2,
-      "state": "todo"
+      "state": "done"
     },
     {
       "confidence": "EXTRACTED",
@@ -25447,7 +25478,7 @@
       "kind": "task",
       "label": "drift detection + rename re-anchor",
       "order": 3,
-      "state": "todo"
+      "state": "done"
     },
     {
       "confidence": "EXTRACTED",
@@ -25456,7 +25487,7 @@
       "kind": "task",
       "label": "token-cheap retrieval (context)",
       "order": 4,
-      "state": "todo"
+      "state": "done"
     },
     {
       "confidence": "EXTRACTED",
@@ -25465,7 +25496,7 @@
       "kind": "task",
       "label": "Claude Code hooks + skill",
       "order": 5,
-      "state": "todo"
+      "state": "done"
     }
   ]
 }

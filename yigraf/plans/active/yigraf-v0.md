@@ -48,8 +48,8 @@ id: plan:yigraf-v0
 # yigraf v0 spine
 
 ## Tasks
-- [ ] {#1} structure index + astnorm content hash
-- [ ] {#2} intent/plan artifacts + enforceable linking
-- [ ] {#3} drift detection + rename re-anchor
-- [ ] {#4} token-cheap retrieval (context)
-- [ ] {#5} Claude Code hooks + skill
+- [x] {#1} structure index + astnorm content hash
+- [x] {#2} intent/plan artifacts + enforceable linking
+- [x] {#3} drift detection + rename re-anchor
+- [x] {#4} token-cheap retrieval (context)
+- [x] {#5} Claude Code hooks + skill

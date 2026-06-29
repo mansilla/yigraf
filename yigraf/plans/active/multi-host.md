@@ -24,4 +24,4 @@ id: plan:multi-host
 # Multi-host integration
 
 ## Tasks
-- [ ] {#1} Codex hooks (install-codex-hooks, reuse handlers, apply_patch path parse) + Antigravity rule installer (install-antigravity) + generalized _edited_file
+- [x] {#1} Codex hooks (install-codex-hooks, reuse handlers, apply_patch path parse) + Antigravity rule installer (install-antigravity) + generalized _edited_file

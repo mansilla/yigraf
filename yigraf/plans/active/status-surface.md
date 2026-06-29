@@ -18,4 +18,4 @@ id: plan:status-surface
 # Status surface
 
 ## Tasks
-- [ ] {#1} Host-agnostic status summary: StatusSummary value object + 'yigraf status' command (line/json) + per-host statusline adapter
+- [x] {#1} Host-agnostic status summary: StatusSummary value object + 'yigraf status' command (line/json) + per-host statusline adapter
