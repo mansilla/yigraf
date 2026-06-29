@@ -23,8 +23,8 @@ from yigraf.drift import compute_drift
 from yigraf.extract import build_graph, symbol_content_hash
 from yigraf.graph import from_node_link, write_graph
 from yigraf.languages import available_extractors, extension_map
-from yigraf.hooks import (install_antigravity, install_claude_hooks, install_codex_hooks,
-                          install_post_commit_hook)
+from yigraf.hooks import (detect_hosts, install_antigravity, install_claude_hooks,
+                          install_codex_hooks, install_post_commit_hook)
 from yigraf.scaffold import WORKSPACE_DIRNAME, init_workspace
 
 _TASK_ID = re.compile(r"^task:(.+)/(\d+)$")
@@ -616,10 +616,60 @@ def install_antigravity_cmd(
     typer.echo(f"Updated    → {result.agents_path}")
     typer.echo("\nNow add the yigraf MCP server in Antigravity (Agent panel → MCP Servers → raw config),")
     typer.echo("in ~/.gemini/antigravity/mcp_config.json (or ~/.gemini/config/mcp_config.json):")
-    typer.echo(json.dumps({"mcpServers": {"yigraf": {
-        "command": sys.executable, "args": ["-m", "yigraf", "mcp", "--repo", str(Path(path).resolve())]}}},
-        indent=2))
+    _print_mcp_config(path)
+
+
+def _print_mcp_config(repo: Path) -> None:
+    """Print the ``mcpServers`` entry for ``yigraf mcp`` — the universal pull setup any MCP host accepts."""
+    cfg = {"mcpServers": {"yigraf": {
+        "command": sys.executable,
+        "args": ["-m", "yigraf", "mcp", "--repo", str(Path(repo).resolve())]}}}
+    typer.echo(json.dumps(cfg, indent=2))
     typer.echo("(needs the optional [mcp] extra: `uv pip install -e '.[mcp]'`)")
+
+
+@app.command(name="install")
+def install_cmd(
+    path: Path = typer.Argument(Path("."), help="Repo root to wire up."),
+    host: str = typer.Option("auto", "--host",
+                             help="auto | claude | codex | antigravity | mcp (default: auto-detect)."),
+) -> None:
+    """Detect the agent host and wire yigraf's best channel — push hooks where available, else MCP.
+
+    ``auto`` detects Claude Code / Codex / Antigravity by their config markers and wires each; if none of
+    the three is found (or ``--host`` names an unsupported host like ``mcp``/``cursor``), it falls back to
+    the universal MCP server, which works with any MCP host. One command, the right channel.
+    """
+    _require_workspace(path)
+    choice = host.lower()
+    if choice == "auto":
+        targets = detect_hosts(path)
+        typer.echo(f"Detected host(s): {', '.join(targets)}" if targets
+                   else "No supported host detected (Claude Code / Codex / Antigravity).")
+    elif choice in ("claude", "codex", "antigravity"):
+        targets = [choice]
+    else:  # "mcp" or any unrecognized host name → universal fallback
+        targets = []
+
+    if not targets:
+        typer.echo("→ Using the universal MCP server (works with any MCP host).\n")
+        _print_mcp_config(path)
+        return
+
+    for h in targets:
+        typer.echo(f"\n== {h} ==")
+        if h == "claude":
+            r = install_claude_hooks(path)
+            typer.echo(f"  hooks → {r.settings_path}  ·  skill → {r.skill_path}  ·  AGENTS → {r.agents_path}")
+        elif h == "codex":
+            r = install_codex_hooks(path)
+            typer.echo(f"  hooks → {r.hooks_path}  ·  AGENTS → {r.agents_path}")
+            typer.echo("  (Codex loads project `.codex/` hooks only for a *trusted* project.)")
+        elif h == "antigravity":
+            r = install_antigravity(path)
+            typer.echo(f"  rule → {r.rule_path}  ·  AGENTS → {r.agents_path}")
+            typer.echo("  add the yigraf MCP server via Antigravity's MCP editor:")
+            _print_mcp_config(path)
 
 
 # --- Claude Code hook entry points (invoked by the hooks above; read event JSON on stdin) ----------

@@ -15,6 +15,19 @@ where a host supports them.**
 Push is the stronger channel (it surfaces governing intent/drift without the agent having to ask), but
 not every host offers it — see the per-host notes. The MCP server (`docs/mcp.md`) carries the rest.
 
+## One command: `yigraf install`
+
+```bash
+yigraf install                       # auto-detect the host(s) and wire the right channel for each
+yigraf install --host codex          # or target one explicitly: claude | codex | antigravity | mcp
+```
+
+`auto` detects Claude Code / Codex / Antigravity by their config markers (a repo-local `.claude`/`.codex`/
+`.agents`, or `~/.claude` / `~/.codex` / `~/.gemini` on the machine) and runs each one's installer. If
+**none** of the three is found — or you pass an unsupported `--host` (e.g. `mcp`, `cursor`) — it falls
+back to the universal **MCP** server config, which any MCP host accepts. The per-host installers below
+are still available directly.
+
 ## Codex CLI — a near-free push complement
 
 Codex's hook system mirrors Claude Code's: same stdin fields (`tool_name`, `tool_input`, `cwd`) and the
