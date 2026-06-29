@@ -147,6 +147,18 @@ def test_deleting_concerned_code_is_hard_concerns_drift(tmp_path: Path):
     assert [i.kind for i in items] == ["hard"] and items[0].locator == SYM
 
 
+def test_superseded_memory_does_not_drift_on_concerned_code_change(tmp_path: Path):
+    root = _repo(tmp_path)
+    _remember(root, "refresh keeps the token immutable", concerns=[SYM])
+    _run(["supersede", "mem:001", "refresh may rotate the token",
+          "--concerns", SYM, "--repo", str(root)])
+    (root / SRC).write_text("def refresh(token):\n    return token + 1\n")  # body changed
+    graph, _ = build_graph(root, default_config())
+    sources = {i.task_id for i in compute_drift(graph) if i.relation == "concerns"}
+    # The active successor still drifts; the superseded predecessor is historical and stays silent.
+    assert "mem:002" in sources and "mem:001" not in sources
+
+
 # --------------------------------------------------------------------------------------------------
 # supersede → counters + ranking
 # --------------------------------------------------------------------------------------------------

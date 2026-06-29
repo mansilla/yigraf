@@ -966,7 +966,7 @@
       "target": "int:memory-family"
     },
     {
-      "anchor": "f8b633dccc7ce4d90d66190c6bb9399cd383b1795ad2d792e0e3f0d6b54eb9a3",
+      "anchor": "2a16bd439cd34517e13f849f1be8bb3c15acb6355dc488a9598a9d238ced7de0",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "concerns",
@@ -1108,7 +1108,7 @@
       "target": "int:hook-surfacing"
     },
     {
-      "anchor": "21ae4a812ee5f36f11307520f41f1ef3bde656927eacae88e00ad497bf8d1a61",
+      "anchor": "a0082b257d2b55cfac1230bdf0dd375e0ccf1f189baeca1acdd8f3f0558483f1",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "concerns",
@@ -1290,6 +1290,34 @@
       "relation": "concerns",
       "source": "mem:023",
       "target": "sym:src/yigraf/hooks.py#_ensure_statusline"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "serves",
+      "source": "mem:024",
+      "target": "int:status-surface"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "supersedes",
+      "source": "mem:024",
+      "target": "mem:023"
+    },
+    {
+      "anchor": "59982f9b71548591d00f6c6e9bd2461aefeac1ef6be8fd45e6dff3caf742cf33",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:024",
+      "target": "sym:src/yigraf/hooks.py#_ensure_statusline"
+    },
+    {
+      "anchor": "273b929aad7552e4970fc24d88c2a7629ccb3d3e80f79e606a2b0bbbc744cfcf",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:024",
+      "target": "sym:src/yigraf/hooks.py#_write_statusline_adapter"
     },
     {
       "confidence": "EXTRACTED",
@@ -2208,6 +2236,12 @@
       "relation": "contains",
       "source": "module:src/yigraf/hooks.py",
       "target": "sym:src/yigraf/hooks.py#_write_agents_block"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/hooks.py",
+      "target": "sym:src/yigraf/hooks.py#_write_statusline_adapter"
     },
     {
       "confidence": "EXTRACTED",
@@ -3467,6 +3501,12 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:tests/test_cchooks.py",
+      "target": "sym:tests/test_cchooks.py#test_install_gitignores_the_adapter"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_cchooks.py",
       "target": "sym:tests/test_cchooks.py#test_install_is_idempotent"
     },
     {
@@ -3497,7 +3537,19 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:tests/test_cchooks.py",
-      "target": "sym:tests/test_cchooks.py#test_install_wires_the_statusline"
+      "target": "sym:tests/test_cchooks.py#test_install_upgrades_the_old_plain_statusline"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_cchooks.py",
+      "target": "sym:tests/test_cchooks.py#test_install_wires_the_statusline_to_the_adapter"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_cchooks.py",
+      "target": "sym:tests/test_cchooks.py#test_install_writes_an_executable_jq_optional_adapter"
     },
     {
       "confidence": "EXTRACTED",
@@ -4674,6 +4726,12 @@
       "relation": "contains",
       "source": "module:tests/test_memory.py",
       "target": "sym:tests/test_memory.py#test_supersede_rejects_an_unknown_old_id"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_memory.py",
+      "target": "sym:tests/test_memory.py#test_superseded_memory_does_not_drift_on_concerned_code_change"
     },
     {
       "confidence": "EXTRACTED",
@@ -6144,6 +6202,12 @@
       "relation": "calls",
       "source": "sym:src/yigraf/hooks.py#install_claude_hooks",
       "target": "sym:src/yigraf/hooks.py#_write_agents_block"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/hooks.py#install_claude_hooks",
+      "target": "sym:src/yigraf/hooks.py#_write_statusline_adapter"
     },
     {
       "confidence": "EXTRACTED",
@@ -9268,6 +9332,24 @@
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_superseded_memory_does_not_drift_on_concerned_code_change",
+      "target": "sym:tests/test_memory.py#_remember"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_superseded_memory_does_not_drift_on_concerned_code_change",
+      "target": "sym:tests/test_memory.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_memory.py#test_superseded_memory_does_not_drift_on_concerned_code_change",
+      "target": "sym:tests/test_memory.py#_run"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
       "source": "sym:tests/test_multihost.py#test_codex_apply_patch_event_surfaces_governing_context",
       "target": "sym:tests/test_multihost.py#_governed_repo"
     },
@@ -9932,7 +10014,7 @@
       "target": "sym:src/yigraf/cli.py#_edited_file"
     },
     {
-      "anchor": "1673de87b330e62149a3e644119f445c2cfee2045cca1068fdd6c00119f9b141",
+      "anchor": "b3e54ae22d1d7e230817f2a2434e0688642891d765859aa983afb39c961412aa",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "implements",
@@ -10042,12 +10124,20 @@
       "target": "sym:src/yigraf/cli.py#status_cmd"
     },
     {
-      "anchor": "75830fd993be4186a548fa13670acf7cdf57058c7019cc0d825505e873be67a8",
+      "anchor": "59982f9b71548591d00f6c6e9bd2461aefeac1ef6be8fd45e6dff3caf742cf33",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "implements",
       "source": "task:status-surface/1",
       "target": "sym:src/yigraf/hooks.py#_ensure_statusline"
+    },
+    {
+      "anchor": "273b929aad7552e4970fc24d88c2a7629ccb3d3e80f79e606a2b0bbbc744cfcf",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "source": "task:status-surface/1",
+      "target": "sym:src/yigraf/hooks.py#_write_statusline_adapter"
     },
     {
       "anchor": "5b2f9126fa156a78a65df7c0dd0b2d2f2960fa65a2dd2a25bb52fb061fb0ea67",
@@ -10116,7 +10206,7 @@
       "target": "int:drift-detection"
     },
     {
-      "anchor": "f8b633dccc7ce4d90d66190c6bb9399cd383b1795ad2d792e0e3f0d6b54eb9a3",
+      "anchor": "2a16bd439cd34517e13f849f1be8bb3c15acb6355dc488a9598a9d238ced7de0",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "implements",
@@ -10152,7 +10242,7 @@
       "target": "int:hook-surfacing"
     },
     {
-      "anchor": "21ae4a812ee5f36f11307520f41f1ef3bde656927eacae88e00ad497bf8d1a61",
+      "anchor": "a0082b257d2b55cfac1230bdf0dd375e0ccf1f189baeca1acdd8f3f0558483f1",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "implements",
@@ -10410,7 +10500,7 @@
       "source_range": [
         0,
         0,
-        796,
+        797,
         0
       ]
     },
@@ -10477,7 +10567,7 @@
       "source_range": [
         0,
         0,
-        113,
+        117,
         0
       ]
     },
@@ -10556,7 +10646,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "4065a3302d086262c5e9526451d6ee25cc327f0dcb941e9ec31dbcd522695714",
+      "content_hash": "e42fe5f97f837c8aea02c3eba0adec571087c8c03abe6df016c6cf12787c6bc7",
       "family": "structure",
       "id": "file:src/yigraf/hooks.py",
       "imports": [
@@ -10574,7 +10664,7 @@
       "source_range": [
         0,
         0,
-        449,
+        502,
         0
       ]
     },
@@ -11028,7 +11118,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "8de492d4019709cd1e5b873599999740b346309198e93c28e872acd0eafd0530",
+      "content_hash": "1eeb43a49e4f26b9907ce9e3937c9cbcf2be97f8a53ee936d4eea3edf55c5be9",
       "family": "structure",
       "id": "file:tests/test_cchooks.py",
       "imports": [
@@ -11046,7 +11136,7 @@
       "source_range": [
         0,
         0,
-        190,
+        221,
         0
       ]
     },
@@ -11411,7 +11501,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "4c9e65e200822a1d581cb5fad8a64e879bd8949f0315e1bc9b7efba77009a8d1",
+      "content_hash": "c79e389bab3fe8336eaa7a6cb54567bcd720fa6ae0d30b459a1eff713f718faa",
       "family": "structure",
       "id": "file:tests/test_memory.py",
       "imports": [
@@ -11431,7 +11521,7 @@
       "source_range": [
         0,
         0,
-        218,
+        230,
         0
       ]
     },
@@ -11707,7 +11797,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 25,
+      "survival": 26,
       "why": "the two drift-bearing relations differ only in source family + dangling-attr name; folding them into _DRIFT_RELATIONS means rename re-anchoring, the SHA cache, and soft/hard detection are written once"
     },
     {
@@ -11724,7 +11814,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 25,
+      "survival": 26,
       "why": "memory-model \u00a75 option A: cheapest, deterministic, EXTRACTED confidence, mirrors the v0 implements pattern we already trust; add distillation (option B) only once links prove valuable"
     },
     {
@@ -11741,7 +11831,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 25,
+      "survival": 26,
       "why": "only memory carries supersedes edges, so stamping superseded_in:0 on every structure node would bloat graph.json; retrieval reads the counter with a 0 default"
     },
     {
@@ -11758,7 +11848,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 24,
+      "survival": 25,
       "why": "we embed tens-to-thousands of short statements, not the codebase, so N is tiny; a query is one matmul (exact, sub-ms). FAISS/hnswlib add a heavy native dep that buys nothing until N is very large"
     },
     {
@@ -11775,7 +11865,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 24,
+      "survival": 25,
       "why": "no host exposes an embedding endpoint to a hook, so embeddings are yigraf's own responsibility; making them required would break the zero-config promise \u2014 absent backend degrades to the v0 lexical seeder"
     },
     {
@@ -11792,7 +11882,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 22,
+      "survival": 23,
       "why": "DESIGN R1/R2/R3 scope v0 to local state so graph.json stays fully recomputable (no query-time writes, trivial merges, CI-reproducible); the accumulated/shared/merge-reconciled counter model (Model G) needs a cloud service + API for teams to share artifacts, which is v1 Enterprise paid-plan work"
     },
     {
@@ -11809,7 +11899,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 22,
+      "survival": 23,
       "why": "R2 wants maturity branch-cadence-independent and identical on every clone/CI; deriving it from git history (intro commit .. HEAD) makes it recomputable and merge-safe, so no per-session survival counter is stored or reconciled"
     },
     {
@@ -11826,7 +11916,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 22,
+      "survival": 23,
       "why": "R3: history must stay auditable, so churn (superseded_in>0 \u2227 refs_in=0) is moved out of the active glob rather than removed; usage is machine-local sidecar state, not authoritative, so GC must not depend on it"
     },
     {
@@ -11843,7 +11933,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 20,
+      "survival": 21,
       "why": "the per-node fan-out (~2N git calls, on the hot PostToolUse path) was a \ud83d\udd34 perf caveat; _survival_map batches all paths into 2 calls (one topo-order log for commit order + one batched --diff-filter=A --name-status for intros) and the result is memoized by HEAD in the structure cache, since an edit never moves HEAD \u2014 so the hook path is 1 rev-parse and 0 walks. Survival stays byte-identical so graph.json is still recomputable"
     },
     {
@@ -11860,7 +11950,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 18,
+      "survival": 19,
       "why": "the interpreter path is per-machine; settings.local.json is Claude Code's designated per-machine file and a self-contained .claude/.gitignore keeps it out of git \u2014 symmetric with the post-commit git hook, which already bakes the abs path into the never-committed .git/hooks/. This keeps the run-without-the-venv-on-PATH property while never committing a machine path."
     },
     {
@@ -11877,7 +11967,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 17,
+      "survival": 18,
       "why": "yigraf's read path is push (hooks inject) but its write path is pull (link/remember are opt-in), so an undisciplined agent silently starves the graph; making the decay legible in context+SessionStart lets the agent self-correct, while staying advisory (like R9c reconcile) honors fail-open/silence-as-feature"
     },
     {
@@ -11894,7 +11984,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 11,
+      "survival": 12,
       "why": "the status surface targets the human principal, but the PostToolUse injection spends the AGENT's context/token budget \u2014 folding vanity stats there would violate design-law #2/#4 (output is for the agent's context; silence is a feature). A statusline is a separate UI region that costs the agent zero tokens, so it informs the user without taxing the agent's attention."
     },
     {
@@ -11911,7 +12001,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 11,
+      "survival": 12,
       "why": "no host hands a CLI its context-window usage (mirrors mem:005 for embeddings), so reading it can't live in the host-agnostic core without coupling yigraf to one host's transcript format. Making it an optional injected param keeps compute_status pure and lets a per-host adapter fill it; a host that can't supply it just omits the ctx segment and the rest still renders."
     },
     {
@@ -11928,7 +12018,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 11,
+      "survival": 12,
       "why": "write_graph is deterministic (sort_keys=True), so a byte-equal canonical projection is an exact freshness signal with nothing written anywhere. Stamping the build-HEAD into graph.json would make every query/edit dirty git and write volatile state into the committed projection \u2014 violating R6/mem:006 (files are truth; graph.json is a recomputable projection)."
     },
     {
@@ -11945,7 +12035,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 11,
+      "survival": 12,
       "why": ""
     },
     {
@@ -11962,7 +12052,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 6,
+      "survival": 7,
       "why": "verified host research: the Antigravity IDE has NO lifecycle-hook/context-injection system (Google staff confirmed), while every target host speaks MCP. A push-hook-per-host strategy would leave Antigravity with nothing; MCP is the one channel they all share, so it's the portable floor. Push hooks remain the stronger per-host channel where they exist (Claude Code, Codex)."
     },
     {
@@ -11979,7 +12069,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 6,
+      "survival": 7,
       "why": "an MCP server is long-lived for the session, so holding the structure graph and the bge-small model warm means the 2nd+ context call skips the cold build/model-load; a subprocess-proxy would re-pay that ~1-2s every call. Cost: ~10 lines of context orchestration duplicated from cli.context (acceptable for an adapter)."
     },
     {
@@ -11996,7 +12086,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 5,
+      "survival": 6,
       "why": "writes are rare and already rebuild the graph, so the per-call process cost is negligible \u2014 and shelling out reuses the CLI's dedup guard, anchoring, and exit-0 'did you mean' guidance verbatim, so the MCP write path can't drift from the CLI's. Reads stay in-process for warmth (mem:017). _run_cli returns stdout (the agent-facing text) and folds in stderr only on failure, so model-load progress never pollutes a result."
     },
     {
@@ -12013,7 +12103,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 4,
+      "survival": 5,
       "why": "Codex's hook contract mirrors Claude Code's (same tool_name/tool_input/cwd in, hookSpecificOutput.additionalContext out), so generalizing _edited_file to also parse apply_patch's '*** Update File:' line is the only new logic \u2014 the handlers and output envelope are shared. The exact edit-tool name + hooks.json schema are version-sensitive, so PostToolUse stays best-effort and silent on a mismatch (R8 fail-open); SessionStart is the reliable win. Codex paths are repo-relative, so they're anchored to root before resolving."
     },
     {
@@ -12030,7 +12120,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 4,
+      "survival": 5,
       "why": "verified: the Antigravity IDE has no lifecycle-hook/context-injection system, so there is no push channel to wire \u2014 MCP (pull) + an always-on rule that instructs the agent to call the MCP tools is the substitute. The global mcp_config.json path is version-specific (~/.gemini/antigravity/ vs ~/.gemini/config/), so auto-writing it risks the wrong location; printing the snippet for the in-app MCP editor is safer and is an outward/global change the user should apply deliberately."
     },
     {
@@ -12047,7 +12137,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 1,
+      "survival": 2,
       "why": "the user shouldn't have to know which install-X command matches their host. Markers (.claude/.codex/.agents in repo, or ~/.claude / ~/.codex / ~/.gemini on the machine) are a zero-config signal of which hosts are present; wiring ALL detected ones is more useful than guessing a single 'the' host on a multi-tool machine. MCP is the universal floor, so any unrecognized/other host degrades to printing the MCP config \u2014 consistent with 'MCP is the bet'. detect_hosts takes an injectable home for deterministic tests."
     },
     {
@@ -12064,7 +12154,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 0,
+      "survival": 1,
       "why": "Design law #2: the styled render is a human-facing TTY flourish, but _plain is the byte-stable channel pipes/--json/tests/agent-injection depend on (test asserts startswith 'yigraf '), so the brand animation lives only in _pretty and SPIN[0]='Y' keeps the color test green"
     },
     {
@@ -12079,10 +12169,27 @@
       "source_file": "memory/023-install-claude-hooks-now-also-wires.md",
       "statement": "install-claude-hooks now also wires Claude Code's statusLine to 'yigraf status --color' so the [Yigraf] graph-health bar is always visible, not opt-in",
       "status": "active",
-      "superseded_in": 0,
+      "superseded_in": 1,
       "supersedes_out": 0,
       "survival": 0,
       "why": "the hooks speak into the agent's context, but the [Yigraf] brand + graph health is the human's ambient surface and was previously never wired by any install path, so a README install never saw it; wiring it on install makes it always-on. Non-clobbering: a foreign statusLine is kept (kept-foreign), only an absent or yigraf-owned one is set/refreshed \u2014 same abs-interpreter-in-settings.local.json approach as the hooks (mem:010)"
+    },
+    {
+      "alternatives": "A bash+jq HARD dependency \u2014 breaks the bar where jq is absent; or a Python 'yigraf statusline' command reading the transcript in-core \u2014 would violate mem:013 (the agnostic core never reads a transcript); the adapter is the host-specific layer where that parse belongs",
+      "confidence": "EXTRACTED",
+      "family": "memory",
+      "id": "mem:024",
+      "kind": "decision",
+      "label": "install-claude-hooks writes a jq-optional bash adapter (.claude/yigraf-statusline.sh) and points Claude Code's statusLine at it, so every user gets the [Yigraf] bar \u2014 plus the ctx gauge when jq is present, and the bar alone when it isn't",
+      "maturity": "working",
+      "promotable": false,
+      "source_file": "memory/024-install-claude-hooks-writes-a-jq.md",
+      "statement": "install-claude-hooks writes a jq-optional bash adapter (.claude/yigraf-statusline.sh) and points Claude Code's statusLine at it, so every user gets the [Yigraf] bar \u2014 plus the ctx gauge when jq is present, and the bar alone when it isn't",
+      "status": "active",
+      "superseded_in": 0,
+      "supersedes_out": 1,
+      "survival": 0,
+      "why": "shipping the adapter (not just 'yigraf status --color') means the context-window gauge is available to everyone, not only on a machine with a hand-written adapter. jq is made optional so a missing jq degrades to the bar-without-gauge instead of breaking the statusline (fail-open). The script bakes this clone's interpreter path (like the hooks) so it's gitignored and per-machine; ownership is recognized by 'yigraf-statusline' OR the old 'yigraf status' string so an upgrade refreshes in place; a foreign statusLine is still kept"
     },
     {
       "confidence": "EXTRACTED",
@@ -12240,7 +12347,7 @@
       "source_range": [
         0,
         0,
-        796,
+        797,
         0
       ]
     },
@@ -12288,7 +12395,7 @@
       "source_range": [
         0,
         0,
-        113,
+        117,
         0
       ]
     },
@@ -12342,7 +12449,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "4065a3302d086262c5e9526451d6ee25cc327f0dcb941e9ec31dbcd522695714",
+      "content_hash": "e42fe5f97f837c8aea02c3eba0adec571087c8c03abe6df016c6cf12787c6bc7",
       "family": "structure",
       "id": "module:src/yigraf/hooks.py",
       "kind": "module",
@@ -12352,7 +12459,7 @@
       "source_range": [
         0,
         0,
-        449,
+        502,
         0
       ]
     },
@@ -12614,7 +12721,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "8de492d4019709cd1e5b873599999740b346309198e93c28e872acd0eafd0530",
+      "content_hash": "1eeb43a49e4f26b9907ce9e3937c9cbcf2be97f8a53ee936d4eea3edf55c5be9",
       "family": "structure",
       "id": "module:tests/test_cchooks.py",
       "kind": "module",
@@ -12624,7 +12731,7 @@
       "source_range": [
         0,
         0,
-        190,
+        221,
         0
       ]
     },
@@ -12886,7 +12993,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "4c9e65e200822a1d581cb5fad8a64e879bd8949f0315e1bc9b7efba77009a8d1",
+      "content_hash": "c79e389bab3fe8336eaa7a6cb54567bcd720fa6ae0d30b459a1eff713f718faa",
       "family": "structure",
       "id": "module:tests/test_memory.py",
       "kind": "module",
@@ -12896,7 +13003,7 @@
       "source_range": [
         0,
         0,
-        218,
+        230,
         0
       ]
     },
@@ -14119,9 +14226,9 @@
       "signature": "def _edited_file(data: dict) -> str | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        719,
+        720,
         0,
-        737,
+        738,
         15
       ]
     },
@@ -14170,9 +14277,9 @@
       "signature": "def _hook_graph(root: Path):",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        702,
+        703,
         0,
-        708,
+        709,
         24
       ]
     },
@@ -14221,9 +14328,9 @@
       "signature": "def _post_tool_use(data: dict) -> dict | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        740,
+        741,
         0,
-        764,
+        765,
         101
       ]
     },
@@ -14238,9 +14345,9 @@
       "signature": "def _print_mcp_config(repo: Path) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        628,
+        629,
         0,
-        634,
+        635,
         80
       ]
     },
@@ -14357,9 +14464,9 @@
       "signature": "def _run_hook(handler) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        689,
+        690,
         0,
-        699,
+        700,
         28
       ]
     },
@@ -14374,9 +14481,9 @@
       "signature": "def _session_start(data: dict) -> dict | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        767,
+        768,
         0,
-        778,
+        779,
         102
       ]
     },
@@ -14510,9 +14617,9 @@
       "signature": "def hook_post_tool_use() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        781,
+        782,
         0,
-        784,
+        785,
         29
       ]
     },
@@ -14527,9 +14634,9 @@
       "signature": "def hook_session_start() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        787,
+        788,
         0,
-        790,
+        791,
         29
       ]
     },
@@ -14561,15 +14668,15 @@
       "signature": "def install_antigravity_cmd( path: Path = typer.Argument(Path(\".\"), help=\"Repo root to wire up for the Antigravity IDE.\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        610,
+        611,
         0,
-        625,
+        626,
         27
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "f74a856d59c01d299b81c974938222d302a18510dc5adf1cd25d382338c83d1f",
+      "content_hash": "178ffde743b0737341b9b5c2e6dfb240ae51cbb4974c94b1fa3bdf2e15d70932",
       "family": "structure",
       "id": "sym:src/yigraf/cli.py#install_claude_hooks_cmd",
       "kind": "function",
@@ -14580,13 +14687,13 @@
       "source_range": [
         573,
         0,
-        590,
+        591,
         97
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "1673de87b330e62149a3e644119f445c2cfee2045cca1068fdd6c00119f9b141",
+      "content_hash": "b3e54ae22d1d7e230817f2a2434e0688642891d765859aa983afb39c961412aa",
       "family": "structure",
       "id": "sym:src/yigraf/cli.py#install_cmd",
       "kind": "function",
@@ -14595,9 +14702,9 @@
       "signature": "def install_cmd( path: Path = typer.Argument(Path(\".\"), help=\"Repo root to wire up.\"), host: str = typer.Option(\"auto\", \"--host\", help=\"auto | claude | codex | antigravity | mcp (default: auto-detect).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        637,
+        638,
         0,
-        679,
+        680,
         35
       ]
     },
@@ -14612,9 +14719,9 @@
       "signature": "def install_codex_hooks_cmd( path: Path = typer.Argument(Path(\".\"), help=\"Repo root to wire up for Codex CLI.\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        593,
+        594,
         0,
-        607,
+        608,
         97
       ]
     },
@@ -14680,9 +14787,9 @@
       "signature": "def main() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        793,
+        794,
         0,
-        795,
+        796,
         9
       ]
     },
@@ -15147,7 +15254,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "f8b633dccc7ce4d90d66190c6bb9399cd383b1795ad2d792e0e3f0d6b54eb9a3",
+      "content_hash": "2a16bd439cd34517e13f849f1be8bb3c15acb6355dc488a9598a9d238ced7de0",
       "family": "structure",
       "id": "sym:src/yigraf/drift.py#compute_drift",
       "kind": "function",
@@ -15158,7 +15265,7 @@
       "source_range": [
         82,
         0,
-        112,
+        116,
         16
       ]
     },
@@ -15683,15 +15790,15 @@
       "signature": "class AntigravityResult:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        390,
+        443,
         0,
-        394,
+        447,
         103
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "afaea36f383b1088690f6a942b27d26de01258ad0c69af4f29163f9f9735ebe2",
+      "content_hash": "3c46eaa1be864ae21e91241892de594d4c857f9b294e423fa8d2eaea0ca204f2",
       "family": "structure",
       "id": "sym:src/yigraf/hooks.py#ClaudeHookResult",
       "kind": "class",
@@ -15700,10 +15807,10 @@
       "signature": "class ClaudeHookResult:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        180,
+        214,
         0,
-        187,
-        87
+        222,
+        101
       ]
     },
     {
@@ -15717,9 +15824,9 @@
       "signature": "class CodexHookResult:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        316,
+        369,
         0,
-        321,
+        374,
         38
       ]
     },
@@ -15742,7 +15849,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "72ec1aeec562e59b16e53d0b73714f248c8095f61bb27fbab54574be1f363adf",
+      "content_hash": "119eda628741c892fe0e97d77991d0349844478472d1ba71249d62fe8f9d4556",
       "family": "structure",
       "id": "sym:src/yigraf/hooks.py#_ensure_claude_gitignore",
       "kind": "function",
@@ -15751,9 +15858,9 @@
       "signature": "def _ensure_claude_gitignore(claude: Path) -> Path:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        190,
+        225,
         0,
-        197,
+        235,
         15
       ]
     },
@@ -15768,9 +15875,9 @@
       "signature": "def _ensure_gitignore(directory: Path, ignore_line: str, comment: str) -> Path:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        293,
+        346,
         0,
-        300,
+        353,
         15
       ]
     },
@@ -15785,15 +15892,15 @@
       "signature": "def _ensure_hook(hooks: dict, event: str, matcher: str, command: str, verb: str) -> bool:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        200,
+        246,
         0,
-        211,
+        257,
         15
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "75830fd993be4186a548fa13670acf7cdf57058c7019cc0d825505e873be67a8",
+      "content_hash": "59982f9b71548591d00f6c6e9bd2461aefeac1ef6be8fd45e6dff3caf742cf33",
       "family": "structure",
       "id": "sym:src/yigraf/hooks.py#_ensure_statusline",
       "kind": "function",
@@ -15802,10 +15909,10 @@
       "signature": "def _ensure_statusline(settings: dict, command: str) -> str:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        214,
+        260,
         0,
-        231,
-        46
+        281,
+        16
       ]
     },
     {
@@ -15836,10 +15943,27 @@
       "signature": "def _write_agents_block(agents_path: Path) -> Path:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        280,
+        333,
         0,
-        290,
+        343,
         22
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "273b929aad7552e4970fc24d88c2a7629ccb3d3e80f79e606a2b0bbbc744cfcf",
+      "family": "structure",
+      "id": "sym:src/yigraf/hooks.py#_write_statusline_adapter",
+      "kind": "function",
+      "label": "_write_statusline_adapter",
+      "language": "python",
+      "signature": "def _write_statusline_adapter(claude: Path, python: str) -> Path:",
+      "source_file": "src/yigraf/hooks.py",
+      "source_range": [
+        238,
+        0,
+        243,
+        15
       ]
     },
     {
@@ -15853,9 +15977,9 @@
       "signature": "def detect_hosts(root: Path, home: Path | None = None) -> list[str]:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        433,
+        486,
         0,
-        448,
+        501,
         16
       ]
     },
@@ -15887,15 +16011,15 @@
       "signature": "def install_antigravity(root: Path) -> AntigravityResult:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        397,
+        450,
         0,
-        412,
+        465,
         99
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "21ae4a812ee5f36f11307520f41f1ef3bde656927eacae88e00ad497bf8d1a61",
+      "content_hash": "a0082b257d2b55cfac1230bdf0dd375e0ccf1f189baeca1acdd8f3f0558483f1",
       "family": "structure",
       "id": "sym:src/yigraf/hooks.py#install_claude_hooks",
       "kind": "function",
@@ -15904,10 +16028,10 @@
       "signature": "def install_claude_hooks(root: Path) -> ClaudeHookResult:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        234,
+        284,
         0,
-        277,
-        81
+        330,
+        54
       ]
     },
     {
@@ -15921,9 +16045,9 @@
       "signature": "def install_codex_hooks(root: Path) -> CodexHookResult:",
       "source_file": "src/yigraf/hooks.py",
       "source_range": [
-        324,
+        377,
         0,
-        360,
+        413,
         80
       ]
     },
@@ -20927,6 +21051,23 @@
     },
     {
       "confidence": "EXTRACTED",
+      "content_hash": "2d27a5a2cdc9320c69288b8012be60ee86442f7d5ecdb922092efac62827eb17",
+      "family": "structure",
+      "id": "sym:tests/test_cchooks.py#test_install_gitignores_the_adapter",
+      "kind": "function",
+      "label": "test_install_gitignores_the_adapter",
+      "language": "python",
+      "signature": "def test_install_gitignores_the_adapter(tmp_path: Path):",
+      "source_file": "tests/test_cchooks.py",
+      "source_range": [
+        169,
+        0,
+        173,
+        70
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
       "content_hash": "3266f6dfa6850aacc22278d7eed4498a1ad12fa89f275be7bb07a20549ac6667",
       "family": "structure",
       "id": "sym:tests/test_cchooks.py#test_install_is_idempotent",
@@ -20953,9 +21094,9 @@
       "signature": "def test_install_keeps_a_foreign_statusline(tmp_path: Path):",
       "source_file": "tests/test_cchooks.py",
       "source_range": [
-        164,
+        195,
         0,
-        174,
+        205,
         43
       ]
     },
@@ -20987,9 +21128,9 @@
       "signature": "def test_install_preserves_foreign_local_settings_and_hooks(tmp_path: Path):",
       "source_file": "tests/test_cchooks.py",
       "source_range": [
-        177,
+        208,
         0,
-        189,
+        220,
         85
       ]
     },
@@ -21004,27 +21145,61 @@
       "signature": "def test_install_statusline_is_idempotent(tmp_path: Path):",
       "source_file": "tests/test_cchooks.py",
       "source_range": [
-        157,
+        176,
         0,
-        161,
+        180,
         86
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "a5b3bf3bef47217bbdac0a8c61c4e267d6910de8cb1a0cf01189a0acb2823aeb",
+      "content_hash": "3976bfd4a1984fe4f6377b0702ae3800b4926e0f472e6c737044bcc8871db7d1",
       "family": "structure",
-      "id": "sym:tests/test_cchooks.py#test_install_wires_the_statusline",
+      "id": "sym:tests/test_cchooks.py#test_install_upgrades_the_old_plain_statusline",
       "kind": "function",
-      "label": "test_install_wires_the_statusline",
+      "label": "test_install_upgrades_the_old_plain_statusline",
       "language": "python",
-      "signature": "def test_install_wires_the_statusline(tmp_path: Path):",
+      "signature": "def test_install_upgrades_the_old_plain_statusline(tmp_path: Path):",
+      "source_file": "tests/test_cchooks.py",
+      "source_range": [
+        183,
+        0,
+        192,
+        106
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "08d70e452ce11778d79d73921104767df242ca8d985fd3d86fcc60b91b36e005",
+      "family": "structure",
+      "id": "sym:tests/test_cchooks.py#test_install_wires_the_statusline_to_the_adapter",
+      "kind": "function",
+      "label": "test_install_wires_the_statusline_to_the_adapter",
+      "language": "python",
+      "signature": "def test_install_wires_the_statusline_to_the_adapter(tmp_path: Path):",
       "source_file": "tests/test_cchooks.py",
       "source_range": [
         147,
         0,
         154,
-        79
+        78
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "e916214ca114ce80672a4d71ef38d9a8a2afaca9f8c4f67b437a86380a7030cd",
+      "family": "structure",
+      "id": "sym:tests/test_cchooks.py#test_install_writes_an_executable_jq_optional_adapter",
+      "kind": "function",
+      "label": "test_install_writes_an_executable_jq_optional_adapter",
+      "language": "python",
+      "signature": "def test_install_writes_an_executable_jq_optional_adapter(tmp_path: Path):",
+      "source_file": "tests/test_cchooks.py",
+      "source_range": [
+        157,
+        0,
+        166,
+        85
       ]
     },
     {
@@ -24132,9 +24307,9 @@
       "signature": "def test_active_decision_outranks_its_superseded_predecessor(tmp_path: Path):",
       "source_file": "tests/test_memory.py",
       "source_range": [
-        166,
+        178,
         0,
-        175,
+        187,
         40
       ]
     },
@@ -24183,9 +24358,9 @@
       "signature": "def test_context_renders_the_decision_with_its_why(tmp_path: Path):",
       "source_file": "tests/test_memory.py",
       "source_range": [
-        189,
+        201,
         0,
-        197,
+        209,
         52
       ]
     },
@@ -24234,9 +24409,9 @@
       "signature": "def test_memory_artifact_round_trips(tmp_path: Path):",
       "source_file": "tests/test_memory.py",
       "source_range": [
-        200,
+        212,
         0,
-        208,
+        220,
         76
       ]
     },
@@ -24251,9 +24426,9 @@
       "signature": "def test_next_seq_increments_across_captures(tmp_path: Path):",
       "source_file": "tests/test_memory.py",
       "source_range": [
-        211,
+        223,
         0,
-        217,
+        229,
         37
       ]
     },
@@ -24336,9 +24511,9 @@
       "signature": "def test_supersede_links_and_marks_the_predecessor_stale(tmp_path: Path):",
       "source_file": "tests/test_memory.py",
       "source_range": [
-        154,
+        166,
         0,
-        163,
+        175,
         51
       ]
     },
@@ -24353,10 +24528,27 @@
       "signature": "def test_supersede_rejects_an_unknown_old_id(tmp_path: Path):",
       "source_file": "tests/test_memory.py",
       "source_range": [
-        178,
+        190,
         0,
-        181,
+        193,
         70
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "45a5cfbf17c92d2c0c530600d8d785c623794f9cb056ce7f0763eea73cd897b0",
+      "family": "structure",
+      "id": "sym:tests/test_memory.py#test_superseded_memory_does_not_drift_on_concerned_code_change",
+      "kind": "function",
+      "label": "test_superseded_memory_does_not_drift_on_concerned_code_change",
+      "language": "python",
+      "signature": "def test_superseded_memory_does_not_drift_on_concerned_code_change(tmp_path: Path):",
+      "source_file": "tests/test_memory.py",
+      "source_range": [
+        149,
+        0,
+        158,
+        60
       ]
     },
     {

@@ -145,14 +145,33 @@ def test_install_is_idempotent(tmp_path: Path):
     assert (tmp_path / ".claude" / ".gitignore").read_text().count("settings.local.json") == 1
 
 
-def test_install_wires_the_statusline(tmp_path: Path):
+def test_install_wires_the_statusline_to_the_adapter(tmp_path: Path):
     init_workspace(tmp_path)
     result = install_claude_hooks(tmp_path)
     # The human-facing [Yigraf] bar must be wired on a fresh install — that's what makes it "always seen".
     assert result.statusline == "set"
     settings = json.loads(result.settings_path.read_text())
     sl = settings["statusLine"]
-    assert sl["type"] == "command" and "yigraf status --color" in sl["command"]
+    assert sl["type"] == "command" and "yigraf-statusline.sh" in sl["command"]
+
+
+def test_install_writes_an_executable_jq_optional_adapter(tmp_path: Path):
+    init_workspace(tmp_path)
+    result = install_claude_hooks(tmp_path)
+    adapter = result.adapter_path
+    assert adapter == tmp_path / ".claude" / "yigraf-statusline.sh"
+    assert adapter.stat().st_mode & 0o111  # executable
+    body = adapter.read_text()
+    # jq-optional: the gauge is computed only when jq is present; the bar renders either way.
+    assert "command -v jq" in body and "yigraf status" in body
+    assert "__YIGRAF_PY__" not in body  # the interpreter placeholder was substituted
+
+
+def test_install_gitignores_the_adapter(tmp_path: Path):
+    init_workspace(tmp_path)
+    result = install_claude_hooks(tmp_path)
+    # The adapter bakes a per-machine interpreter path, so it must never be committed.
+    assert "yigraf-statusline.sh" in result.gitignore_path.read_text()
 
 
 def test_install_statusline_is_idempotent(tmp_path: Path):
@@ -160,6 +179,18 @@ def test_install_statusline_is_idempotent(tmp_path: Path):
     install_claude_hooks(tmp_path)
     second = install_claude_hooks(tmp_path)
     assert second.statusline == "unchanged"  # same interpreter ⇒ no churn on re-run
+
+
+def test_install_upgrades_the_old_plain_statusline(tmp_path: Path):
+    init_workspace(tmp_path)
+    claude = tmp_path / ".claude"
+    claude.mkdir()
+    # An earlier yigraf wired the plain command; a re-run must recognize it as ours and upgrade it.
+    (claude / "settings.local.json").write_text(json.dumps(
+        {"statusLine": {"type": "command", "command": '"/old/py" -m yigraf status --color'}}))
+    result = install_claude_hooks(tmp_path)
+    assert result.statusline == "refreshed"
+    assert "yigraf-statusline.sh" in json.loads(result.settings_path.read_text())["statusLine"]["command"]
 
 
 def test_install_keeps_a_foreign_statusline(tmp_path: Path):
