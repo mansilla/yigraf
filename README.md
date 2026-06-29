@@ -40,8 +40,11 @@ queryable graph and re-surfaces the relevant piece exactly when the agent needs 
   or lexically; a decision earns `settled` after surviving K commits un-superseded; `gc` archives churn.
 - **Token-cheap retrieval** — `yigraf context "<topic>"` returns a scoped, budgeted slice (locators +
   signatures, not file dumps) — measured ≈2.5× cheaper than reading the file.
-- **Agent integration** — Claude Code hooks inject governing intent + drift on edit and re-inject the
-  plan after `/clear`; a skill teaches the rituals. The `yigraf` CLI works with any agent.
+- **Agent integration (any host)** — an **MCP server** (`yigraf mcp`) exposes the graph as tools
+  (`context`/`status`/`link`/`remember`) to *any* MCP host (Codex, Antigravity, Cursor, Claude Code);
+  where a host has lifecycle hooks (Claude Code, Codex) those also **push** governing intent + drift on
+  edit and re-inject the plan after a reset. The `yigraf` CLI works with any agent. See
+  [`docs/hosts.md`](docs/hosts.md).
 
 ### Requirements (and what each is for)
 
@@ -50,7 +53,8 @@ queryable graph and re-surfaces the relevant piece exactly when the agent needs 
 | **Python ≥ 3.11** | yigraf runs as a Python CLI |
 | **A git repo** | drift anchoring and git-derived maturity read git history (degrades gracefully without git) |
 | **Tree-sitter grammars** | structure extraction — **bundled**, no setup |
-| **An agent harness** | Claude Code gets hooks + a skill out of the box; any other agent can drive the CLI |
+| **An agent harness** | the MCP server (`yigraf mcp`) reaches any MCP host; Claude Code & Codex also get push hooks; any agent can drive the CLI |
+| **MCP SDK** *(optional, `[mcp]` extra)* | only needed to run `yigraf mcp` (the pull channel); the CLI + hooks work without it |
 | **An embeddings backend** *(optional, `[embeddings]` extra)* | semantic recall of memory/intent by meaning; **falls back to lexical** retrieval if absent — never required |
 
 ## Quickstart
@@ -64,8 +68,11 @@ cd your-repo
 yigraf init
 yigraf build
 
-# 3. wire it into Claude Code (hooks + skill)
-yigraf install-claude-hooks
+# 3. wire it into your agent host
+yigraf install-claude-hooks      # Claude Code (push hooks + skill)
+# or:  yigraf install-codex-hooks       # Codex CLI (push hooks)
+# or:  yigraf install-antigravity       # Antigravity (rule + MCP, no hooks)
+# any MCP host (Cursor/Windsurf/…): point it at `yigraf mcp` — see docs/mcp.md
 
 # 4. use it
 yigraf context "session expiry"          # a scoped, token-cheap slice for a topic
@@ -145,6 +152,21 @@ With Claude Code wired up (`yigraf install-claude-hooks`), steps 4–5 happen au
 **SessionStart** hook re-injects the active plan after a `/clear` — so a flow interrupted by a context
 reset resumes instead of restarting. The hook stays silent on ungoverned, undrifted edits (no nagging).
 
+### Works with any host (two channels)
+
+yigraf reaches an agent through **pull** (the agent calls a tool) and/or **push** (yigraf injects at the
+moment of action). **MCP is the universal floor** — `yigraf mcp` exposes the graph as tools to any
+MCP host. **Push hooks are a thin complement where a host has them** (Claude Code, Codex). They're not
+exclusive: on Claude Code/Codex you can run both. The full per-host matrix and wiring is in
+[`docs/hosts.md`](docs/hosts.md); MCP config per host is in [`docs/mcp.md`](docs/mcp.md).
+
+| Host | Pull (MCP) | Push (hooks) | Wire it |
+|------|:---------:|:------------:|---------|
+| Claude Code | ✓ | ✓ | `yigraf install-claude-hooks` |
+| Codex CLI | ✓ | ✓ | `yigraf install-codex-hooks` |
+| Antigravity IDE | ✓ | — | `yigraf install-antigravity` |
+| Cursor / Windsurf / other MCP | ✓ | — | point at `yigraf mcp` (`docs/mcp.md`) |
+
 ## Files yigraf creates
 
 `yigraf init` lays down a `yigraf/` workspace at your repo root:
@@ -166,11 +188,15 @@ shareable record — they travel with the repo, so the next agent or teammate in
 and volatile state stays gitignored and rebuilds from source. yigraf also writes a self-contained
 `yigraf/.gitignore`, so nothing extra needs to be added to your repo's ignore rules.
 
-Two opt-in installers wire yigraf into your tooling:
+Opt-in installers wire yigraf into your tooling (machine-specific wiring is gitignored; the shareable
+SKILL/AGENTS/rules are committed):
 
-- **`yigraf install-claude-hooks`** — writes `.claude/settings.local.json` (machine-local hooks, *not*
-  committed) and `.claude/skills/yigraf/SKILL.md`.
-- **`yigraf install-hooks`** — adds a git **post-commit** hook that keeps `graph.json` synced to `HEAD`.
+- **`yigraf install-claude-hooks`** — `.claude/settings.local.json` (machine-local hooks) + `SKILL.md`.
+- **`yigraf install-codex-hooks`** — `.codex/hooks.json` (SessionStart + best-effort PostToolUse).
+- **`yigraf install-antigravity`** — `.agents/rules/yigraf.md` + prints the MCP-server config to add.
+- **`yigraf install-hooks`** — a git **post-commit** hook that keeps `graph.json` synced to `HEAD`.
+
+For any other MCP host, run `yigraf mcp` as the configured server (see [`docs/mcp.md`](docs/mcp.md)).
 
 ## Language support
 

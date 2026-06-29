@@ -23,7 +23,8 @@ from yigraf.drift import compute_drift
 from yigraf.extract import build_graph, symbol_content_hash
 from yigraf.graph import from_node_link, write_graph
 from yigraf.languages import available_extractors, extension_map
-from yigraf.hooks import install_claude_hooks, install_post_commit_hook
+from yigraf.hooks import (install_antigravity, install_claude_hooks, install_codex_hooks,
+                          install_post_commit_hook)
 from yigraf.scaffold import WORKSPACE_DIRNAME, init_workspace
 
 _TASK_ID = re.compile(r"^task:(.+)/(\d+)$")
@@ -444,6 +445,20 @@ def status_cmd(
     typer.echo(summary.render_line(color=use_color, icon=icon), color=use_color)
 
 
+@app.command("mcp")
+def mcp_cmd(
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root the server serves (default: cwd; or $YIGRAF_REPO)."),
+) -> None:
+    """Run yigraf as an MCP server (stdio) — the host-agnostic pull channel (int:mcp-server).
+
+    Any MCP host (Codex, Antigravity, Cursor, Claude Code, …) can then pull the graph as tool calls:
+    `context` (the governing slice) and `status`. See docs/mcp.md for per-host config. Needs the
+    optional `[mcp]` extra; without it this prints an install hint and exits non-zero.
+    """
+    from yigraf import mcp_server  # lazy: keep the SDK import off every other command's path
+    raise typer.Exit(code=mcp_server.run(repo))
+
+
 @app.command()
 def drift(
     path: Path = typer.Argument(Path("."), help="Repo root (default: current dir)."),
@@ -569,6 +584,44 @@ def install_claude_hooks_cmd(
     typer.echo("Teammates: re-run this command on your clone to wire your own interpreter path.")
 
 
+@app.command(name="install-codex-hooks")
+def install_codex_hooks_cmd(
+    path: Path = typer.Argument(Path("."), help="Repo root to wire up for Codex CLI."),
+) -> None:
+    """Wire yigraf's SessionStart + PostToolUse hooks into Codex (.codex/hooks.json) + AGENTS.md.
+
+    The push-channel complement for Codex (its hooks mirror Claude Code's). SessionStart re-injection
+    is reliable; PostToolUse-on-edit is best-effort — verify your Codex version's edit-tool name.
+    """
+    _require_workspace(path)
+    result = install_codex_hooks(path)
+    typer.echo(f"Wrote hooks → {result.hooks_path} (per-machine, gitignored)")
+    typer.echo(f"Updated     → {result.agents_path}")
+    typer.echo("Note: Codex loads project `.codex/` hooks only for a *trusted* project; trust it once.")
+    typer.echo("Teammates: re-run this command on your clone to wire your own interpreter path.")
+
+
+@app.command(name="install-antigravity")
+def install_antigravity_cmd(
+    path: Path = typer.Argument(Path("."), help="Repo root to wire up for the Antigravity IDE."),
+) -> None:
+    """Wire yigraf for Antigravity (which has no hooks): an always-on .agents/rule + AGENTS.md + MCP.
+
+    Antigravity has no lifecycle hook, so the complement is an always-on rule pointing the agent at the
+    yigraf MCP tools. Add the printed MCP-server entry via Antigravity's MCP editor to finish wiring.
+    """
+    _require_workspace(path)
+    result = install_antigravity(path)
+    typer.echo(f"Wrote rule → {result.rule_path}")
+    typer.echo(f"Updated    → {result.agents_path}")
+    typer.echo("\nNow add the yigraf MCP server in Antigravity (Agent panel → MCP Servers → raw config),")
+    typer.echo("in ~/.gemini/antigravity/mcp_config.json (or ~/.gemini/config/mcp_config.json):")
+    typer.echo(json.dumps({"mcpServers": {"yigraf": {
+        "command": sys.executable, "args": ["-m", "yigraf", "mcp", "--repo", str(Path(path).resolve())]}}},
+        indent=2))
+    typer.echo("(needs the optional [mcp] extra: `uv pip install -e '.[mcp]'`)")
+
+
 # --- Claude Code hook entry points (invoked by the hooks above; read event JSON on stdin) ----------
 
 hook_app = typer.Typer(help="Claude Code hook entry points (read the hook event JSON on stdin).",
@@ -598,19 +651,49 @@ def _hook_graph(root: Path):
     return graph, config
 
 
-def _post_tool_use(data: dict) -> dict | None:
-    if data.get("tool_name") not in ("Edit", "Write", "MultiEdit"):
+#: Edit-tool names across hosts. Claude Code: Edit/Write/MultiEdit (clean ``file_path``). Codex: the
+#: ``apply_patch`` family (path lives *inside* the patch text). Gating on the tool name keeps the hook
+#: off frequent non-edit tools (Read) so it doesn't rebuild the graph on every call.
+_EDIT_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "apply_patch", "ApplyPatch",
+                         "str_replace_editor", "create_file", "write_file"})
+_PATCH_FILE = re.compile(r"^\*\*\*\s+(?:Add|Update|Delete) File:\s*(.+?)\s*$", re.MULTILINE)
+
+
+def _edited_file(data: dict) -> str | None:
+    """The file an edit tool touched, across hosts — or ``None`` (⇒ the hook stays silent, fail-open).
+
+    A direct ``file_path``/``path`` covers Claude Code (Edit/Write/MultiEdit) and any host that hands a
+    clean field. Codex's ``apply_patch`` carries the path inside the patch body, so fall back to the
+    first ``*** Add|Update|Delete File: <path>`` line. An unknown shape returns ``None``.
+    """
+    if data.get("tool_name") not in _EDIT_TOOLS:
         return None
     tool_input = data.get("tool_input") or {}
-    file_path = tool_input.get("file_path") or tool_input.get("path")
+    direct = tool_input.get("file_path") or tool_input.get("path")
+    if direct:
+        return direct
+    for value in (tool_input.get("patch"), tool_input.get("input"), tool_input.get("changes")):
+        if isinstance(value, str):
+            m = _PATCH_FILE.search(value)
+            if m:
+                return m.group(1)
+    return None
+
+
+def _post_tool_use(data: dict) -> dict | None:
+    file_path = _edited_file(data)
     if not file_path:
         return None
     root = Path(data.get("cwd") or os.getcwd())
     built = _hook_graph(root)
     if built is None:
         return None
+    # Claude Code hands an absolute path; Codex's apply_patch path is repo-relative — anchor it to root.
+    edited = Path(file_path)
+    if not edited.is_absolute():
+        edited = root / edited
     try:
-        rel = Path(file_path).resolve().relative_to(root.resolve())
+        rel = edited.resolve().relative_to(root.resolve())
     except ValueError:
         return None  # edited file is outside the repo
     graph, config = built
