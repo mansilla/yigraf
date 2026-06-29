@@ -8,13 +8,21 @@ at all; on Claude Code the push hooks are still preferred (and this is optional/
 
 ## Tools
 
-| Tool | Args | Returns |
-|------|------|---------|
-| `context` | `query` (required), `repo?`, `family?`, `budget?` | The token-budgeted slice: governing intents, plan, implementing signatures, prior decisions + *why*, and drift — the same as `yigraf context`. Call BEFORE changing code. |
-| `status`  | `repo?` | The compact status line: counts, drift, freshness, semantic-index size. |
+The full agent loop — **read** the governing slice, then **write** back links and the *why* — over MCP,
+so a host with no lifecycle hook (e.g. the Antigravity IDE) still gets the whole of yigraf.
 
-Capture verbs (`remember`/`link`) are the next increment — until then, on a hookless host, capture via
-the `yigraf` CLI directly (or wait for the MCP write tools).
+| Tool | Args | Does |
+|------|------|------|
+| `context` | `query`, `repo?`, `family?`, `budget?` | Pull the token-budgeted slice: governing intents, plan, implementing signatures, prior decisions + *why*, drift. Call BEFORE changing code. |
+| `status`  | `repo?` | The compact status line: counts, drift, freshness, semantic-index size. |
+| `link`    | `task`, `target`, `repo?` | Bind a finished task to the `sym:` it implements (or the `int:` it tracks), anchored to current content. |
+| `remember`| `statement`, `why?`, `serves?`, `concerns?`, `rejected?`, `type?`, `repo?` | Persist a decision/rationale as a memory node; a `concerns` symbol is anchored (drift re-surfaces it). |
+| `note_constraint` | `rule`, `concerns?`, `why?`, `serves?`, `repo?` | Capture a constraint/rule governing code. |
+| `supersede` | `old_id`, `statement`, `why?`, `serves?`, `concerns?`, `rejected?`, `type?`, `repo?` | Record a mind-change: a new node superseding an old one. |
+
+Read tools run **in-process** (warm graph + model across calls); write tools shell out to the matching
+CLI verb, so they reuse its dedup guard, anchoring, and exit-0 "did you mean" guidance unchanged — a bad
+locator comes back as guidance text, not an error.
 
 ## Prerequisites
 
@@ -94,7 +102,7 @@ async def main():
     async with stdio_client(p) as (r,w):
         async with ClientSession(r,w) as s:
             await s.initialize()
-            print([t.name for t in (await s.list_tools()).tools])     # ['context','status']
+            print([t.name for t in (await s.list_tools()).tools])     # context, status, link, remember, …
             print((await s.call_tool("status", {})).content[0].text)
 
 asyncio.run(main())
