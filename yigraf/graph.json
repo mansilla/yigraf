@@ -338,6 +338,36 @@
     {
       "confidence": "EXTRACTED",
       "relation": "imports",
+      "source": "file:src/yigraf/mcp_server.py",
+      "target": "file:src/yigraf/__init__.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
+      "source": "file:src/yigraf/mcp_server.py",
+      "target": "file:src/yigraf/config.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
+      "source": "file:src/yigraf/mcp_server.py",
+      "target": "file:src/yigraf/extract.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
+      "source": "file:src/yigraf/mcp_server.py",
+      "target": "file:src/yigraf/scaffold.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "file:src/yigraf/mcp_server.py",
+      "target": "module:src/yigraf/mcp_server.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
       "source": "file:src/yigraf/memory.py",
       "target": "file:src/yigraf/astnorm.py"
     },
@@ -770,6 +800,24 @@
     {
       "confidence": "EXTRACTED",
       "relation": "imports",
+      "source": "file:tests/test_mcp.py",
+      "target": "file:src/yigraf/__init__.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
+      "source": "file:tests/test_mcp.py",
+      "target": "file:src/yigraf/cli.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "file:tests/test_mcp.py",
+      "target": "module:tests/test_mcp.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
       "source": "file:tests/test_memory.py",
       "target": "file:src/yigraf/__init__.py"
     },
@@ -1112,6 +1160,34 @@
       "relation": "concerns",
       "source": "mem:015",
       "target": "sym:src/yigraf/cli.py#status_cmd"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "serves",
+      "source": "mem:016",
+      "target": "int:mcp-server"
+    },
+    {
+      "anchor": "f694de595271703de9b5665affaff0b4711842d3b30ceb46bd694c928eb7f29c",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:016",
+      "target": "sym:src/yigraf/mcp_server.py#build_server"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "serves",
+      "source": "mem:017",
+      "target": "int:mcp-server"
+    },
+    {
+      "anchor": "33cb81e451fad4c7ffe411bc6aaa88b5482640b77059cfee32214b419210efd3",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:017",
+      "target": "sym:src/yigraf/mcp_server.py#run_context"
     },
     {
       "confidence": "EXTRACTED",
@@ -1616,6 +1692,12 @@
       "relation": "contains",
       "source": "module:src/yigraf/cli.py",
       "target": "sym:src/yigraf/cli.py#main"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/cli.py",
+      "target": "sym:src/yigraf/cli.py#mcp_cmd"
     },
     {
       "confidence": "EXTRACTED",
@@ -2534,6 +2616,42 @@
       "relation": "contains",
       "source": "module:src/yigraf/languages/tags.py",
       "target": "sym:src/yigraf/languages/tags.py#_walk"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/mcp_server.py",
+      "target": "sym:src/yigraf/mcp_server.py#_no_workspace"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/mcp_server.py",
+      "target": "sym:src/yigraf/mcp_server.py#_resolve_root"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/mcp_server.py",
+      "target": "sym:src/yigraf/mcp_server.py#build_server"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/mcp_server.py",
+      "target": "sym:src/yigraf/mcp_server.py#run"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/mcp_server.py",
+      "target": "sym:src/yigraf/mcp_server.py#run_context"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/mcp_server.py",
+      "target": "sym:src/yigraf/mcp_server.py#run_status"
     },
     {
       "confidence": "EXTRACTED",
@@ -4152,6 +4270,48 @@
     {
       "confidence": "EXTRACTED",
       "relation": "contains",
+      "source": "module:tests/test_mcp.py",
+      "target": "sym:tests/test_mcp.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_mcp.py",
+      "target": "sym:tests/test_mcp.py#test_build_server_registers_read_tools"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_mcp.py",
+      "target": "sym:tests/test_mcp.py#test_missing_workspace_is_guided_not_raised"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_mcp.py",
+      "target": "sym:tests/test_mcp.py#test_resolve_root_prefers_arg_then_env"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_mcp.py",
+      "target": "sym:tests/test_mcp.py#test_run_context_returns_a_slice_with_footer"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_mcp.py",
+      "target": "sym:tests/test_mcp.py#test_run_guides_when_sdk_absent"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_mcp.py",
+      "target": "sym:tests/test_mcp.py#test_run_status_returns_the_line"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
       "source": "module:tests/test_memory.py",
       "target": "sym:tests/test_memory.py#_graph"
     },
@@ -4610,6 +4770,12 @@
       "relation": "contains",
       "source": "plan:language-drift-coverage",
       "target": "task:language-drift-coverage/3"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "plan:mcp-server",
+      "target": "task:mcp-server/1"
     },
     {
       "confidence": "EXTRACTED",
@@ -6954,6 +7120,54 @@
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
+      "source": "sym:src/yigraf/mcp_server.py#build_server",
+      "target": "sym:src/yigraf/mcp_server.py#run_context"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/mcp_server.py#build_server",
+      "target": "sym:src/yigraf/mcp_server.py#run_status"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/mcp_server.py#run",
+      "target": "sym:src/yigraf/mcp_server.py#_resolve_root"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/mcp_server.py#run",
+      "target": "sym:src/yigraf/mcp_server.py#build_server"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/mcp_server.py#run_context",
+      "target": "sym:src/yigraf/mcp_server.py#_no_workspace"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/mcp_server.py#run_context",
+      "target": "sym:src/yigraf/mcp_server.py#_resolve_root"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/mcp_server.py#run_status",
+      "target": "sym:src/yigraf/mcp_server.py#_no_workspace"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/mcp_server.py#run_status",
+      "target": "sym:src/yigraf/mcp_server.py#_resolve_root"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
       "source": "sym:src/yigraf/memory.py#_project_memory_edges",
       "target": "sym:src/yigraf/memory.py#_stash"
     },
@@ -8352,6 +8566,24 @@
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
+      "source": "sym:tests/test_mcp.py#test_build_server_registers_read_tools",
+      "target": "sym:tests/test_mcp.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_mcp.py#test_run_context_returns_a_slice_with_footer",
+      "target": "sym:tests/test_mcp.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_mcp.py#test_run_status_returns_the_line",
+      "target": "sym:tests/test_mcp.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
       "source": "sym:tests/test_memory.py#_remember",
       "target": "sym:tests/test_memory.py#_run"
     },
@@ -9030,6 +9262,52 @@
     {
       "confidence": "EXTRACTED",
       "relation": "tracks",
+      "source": "task:mcp-server/1",
+      "target": "int:mcp-server"
+    },
+    {
+      "anchor": "c5f13769d427357d97c895c5902838e56d33b9618091f5390e08117588e2994b",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "source": "task:mcp-server/1",
+      "target": "sym:src/yigraf/cli.py#mcp_cmd"
+    },
+    {
+      "anchor": "f694de595271703de9b5665affaff0b4711842d3b30ceb46bd694c928eb7f29c",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "source": "task:mcp-server/1",
+      "target": "sym:src/yigraf/mcp_server.py#build_server"
+    },
+    {
+      "anchor": "7844ed2d117974b6d706a91c93885d0d277fa064fda8ad847008aac05a6d1c3e",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "source": "task:mcp-server/1",
+      "target": "sym:src/yigraf/mcp_server.py#run"
+    },
+    {
+      "anchor": "33cb81e451fad4c7ffe411bc6aaa88b5482640b77059cfee32214b419210efd3",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "source": "task:mcp-server/1",
+      "target": "sym:src/yigraf/mcp_server.py#run_context"
+    },
+    {
+      "anchor": "e6d45f46ba88f333a9097b76867de8ad5055fc260f4b3aeaab0f0aebd5de940e",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "source": "task:mcp-server/1",
+      "target": "sym:src/yigraf/mcp_server.py#run_status"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "tracks",
       "source": "task:memory-milestone/1",
       "target": "int:memory-family"
     },
@@ -9526,7 +9804,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "0a030894586eff86683a303914227bf7a7ceb32cbbf56d847a83ddbd83d14bed",
+      "content_hash": "28806f69e79288bc6c5ed90072d81d34e8c4c3e5d6d14023a90c0eb02c277f74",
       "family": "structure",
       "id": "file:src/yigraf/cli.py",
       "imports": [
@@ -9556,7 +9834,7 @@
       "source_range": [
         0,
         0,
-        655,
+        669,
         0
       ]
     },
@@ -9958,6 +10236,31 @@
         0,
         0,
         813,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "83fa0da435e8ed14eb1a7228fc60dcb54e8dbc82cfc048443dc57e0f38ba7c93",
+      "family": "structure",
+      "id": "file:src/yigraf/mcp_server.py",
+      "imports": [
+        "os",
+        "pathlib",
+        "sys",
+        "yigraf",
+        "yigraf.config",
+        "yigraf.extract",
+        "yigraf.scaffold"
+      ],
+      "kind": "file",
+      "label": "src/yigraf/mcp_server.py",
+      "language": "python",
+      "source_file": "src/yigraf/mcp_server.py",
+      "source_range": [
+        0,
+        0,
+        123,
         0
       ]
     },
@@ -10508,6 +10811,29 @@
     },
     {
       "confidence": "EXTRACTED",
+      "content_hash": "8f015262d2c436bf6cb95fa4dbbe827fd21049891dc322634aac966eba6e629c",
+      "family": "structure",
+      "id": "file:tests/test_mcp.py",
+      "imports": [
+        "asyncio",
+        "pathlib",
+        "typer.testing",
+        "yigraf",
+        "yigraf.cli"
+      ],
+      "kind": "file",
+      "label": "tests/test_mcp.py",
+      "language": "python",
+      "source_file": "tests/test_mcp.py",
+      "source_range": [
+        0,
+        0,
+        62,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
       "content_hash": "4c9e65e200822a1d581cb5fad8a64e879bd8949f0315e1bc9b7efba77009a8d1",
       "family": "structure",
       "id": "file:tests/test_memory.py",
@@ -10648,6 +10974,21 @@
     },
     {
       "confidence": "EXTRACTED",
+      "design": "In-process FastMCP server (warm graph+model across calls); read tools context+status mirror the CLI verbs via run_context/run_status; optional [mcp] extra imported lazily (graceful guidance if absent), mirroring mem:005. The pull channel reaches hosts without lifecycle hooks (e.g. Antigravity IDE); capture verbs are a planned follow-up.",
+      "family": "intent",
+      "id": "int:mcp-server",
+      "kind": "requirement",
+      "label": "yigraf SHALL run as an MCP server exposing the graph (context, status) as tools, so any MCP-capable host can pull the governing slice without host-specific hooks.",
+      "scenarios": [
+        "Given an MCP host (Codex/Antigravity/Cursor/Claude Code) configured to launch `yigraf mcp`, When the agent calls the context tool with a topic, Then it receives the same token-budgeted slice the CLI `yigraf context` returns.",
+        "Given the optional [mcp] extra is not installed, When `yigraf mcp` runs, Then it prints an install hint and exits non-zero (never a stack trace)."
+      ],
+      "source_file": "intents/mcp-server.md",
+      "statement": "yigraf SHALL run as an MCP server exposing the graph (context, status) as tools, so any MCP-capable host can pull the governing slice without host-specific hooks.",
+      "status": "proposed"
+    },
+    {
+      "confidence": "EXTRACTED",
       "design": "Memory is one .md per node (memory/<seq>-<slug>.md); concerns reuses the implements drift machinery; capture is agent-asserted (no distillation backstop in M7).",
       "family": "intent",
       "id": "int:memory-family",
@@ -10750,7 +11091,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 14,
+      "survival": 18,
       "why": "the two drift-bearing relations differ only in source family + dangling-attr name; folding them into _DRIFT_RELATIONS means rename re-anchoring, the SHA cache, and soft/hard detection are written once"
     },
     {
@@ -10767,7 +11108,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 14,
+      "survival": 18,
       "why": "memory-model \u00a75 option A: cheapest, deterministic, EXTRACTED confidence, mirrors the v0 implements pattern we already trust; add distillation (option B) only once links prove valuable"
     },
     {
@@ -10784,7 +11125,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 14,
+      "survival": 18,
       "why": "only memory carries supersedes edges, so stamping superseded_in:0 on every structure node would bloat graph.json; retrieval reads the counter with a 0 default"
     },
     {
@@ -10801,7 +11142,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 13,
+      "survival": 17,
       "why": "we embed tens-to-thousands of short statements, not the codebase, so N is tiny; a query is one matmul (exact, sub-ms). FAISS/hnswlib add a heavy native dep that buys nothing until N is very large"
     },
     {
@@ -10818,7 +11159,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 13,
+      "survival": 17,
       "why": "no host exposes an embedding endpoint to a hook, so embeddings are yigraf's own responsibility; making them required would break the zero-config promise \u2014 absent backend degrades to the v0 lexical seeder"
     },
     {
@@ -10835,7 +11176,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 11,
+      "survival": 15,
       "why": "DESIGN R1/R2/R3 scope v0 to local state so graph.json stays fully recomputable (no query-time writes, trivial merges, CI-reproducible); the accumulated/shared/merge-reconciled counter model (Model G) needs a cloud service + API for teams to share artifacts, which is v1 Enterprise paid-plan work"
     },
     {
@@ -10852,7 +11193,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 11,
+      "survival": 15,
       "why": "R2 wants maturity branch-cadence-independent and identical on every clone/CI; deriving it from git history (intro commit .. HEAD) makes it recomputable and merge-safe, so no per-session survival counter is stored or reconciled"
     },
     {
@@ -10869,7 +11210,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 11,
+      "survival": 15,
       "why": "R3: history must stay auditable, so churn (superseded_in>0 \u2227 refs_in=0) is moved out of the active glob rather than removed; usage is machine-local sidecar state, not authoritative, so GC must not depend on it"
     },
     {
@@ -10886,7 +11227,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 9,
+      "survival": 13,
       "why": "the per-node fan-out (~2N git calls, on the hot PostToolUse path) was a \ud83d\udd34 perf caveat; _survival_map batches all paths into 2 calls (one topo-order log for commit order + one batched --diff-filter=A --name-status for intros) and the result is memoized by HEAD in the structure cache, since an edit never moves HEAD \u2014 so the hook path is 1 rev-parse and 0 walks. Survival stays byte-identical so graph.json is still recomputable"
     },
     {
@@ -10903,7 +11244,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 7,
+      "survival": 11,
       "why": "the interpreter path is per-machine; settings.local.json is Claude Code's designated per-machine file and a self-contained .claude/.gitignore keeps it out of git \u2014 symmetric with the post-commit git hook, which already bakes the abs path into the never-committed .git/hooks/. This keeps the run-without-the-venv-on-PATH property while never committing a machine path."
     },
     {
@@ -10920,7 +11261,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 6,
+      "survival": 10,
       "why": "yigraf's read path is push (hooks inject) but its write path is pull (link/remember are opt-in), so an undisciplined agent silently starves the graph; making the decay legible in context+SessionStart lets the agent self-correct, while staying advisory (like R9c reconcile) honors fail-open/silence-as-feature"
     },
     {
@@ -10930,14 +11271,14 @@
       "id": "mem:012",
       "kind": "decision",
       "label": "Human-facing graph stats ride a separate ambient channel (the statusline), never the agent's hook injection",
-      "maturity": "working",
+      "maturity": "settled",
       "promotable": false,
       "source_file": "memory/012-human-facing-graph-stats-ride-a.md",
       "statement": "Human-facing graph stats ride a separate ambient channel (the statusline), never the agent's hook injection",
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 0,
+      "survival": 4,
       "why": "the status surface targets the human principal, but the PostToolUse injection spends the AGENT's context/token budget \u2014 folding vanity stats there would violate design-law #2/#4 (output is for the agent's context; silence is a feature). A statusline is a separate UI region that costs the agent zero tokens, so it informs the user without taxing the agent's attention."
     },
     {
@@ -10947,14 +11288,14 @@
       "id": "mem:013",
       "kind": "decision",
       "label": "Context-window occupancy is an injected, host-supplied datum (--ctx-used/--ctx-limit); the status core never reads a transcript or host API",
-      "maturity": "working",
+      "maturity": "settled",
       "promotable": false,
       "source_file": "memory/013-context-window-occupancy-is-an-injected.md",
       "statement": "Context-window occupancy is an injected, host-supplied datum (--ctx-used/--ctx-limit); the status core never reads a transcript or host API",
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 0,
+      "survival": 4,
       "why": "no host hands a CLI its context-window usage (mirrors mem:005 for embeddings), so reading it can't live in the host-agnostic core without coupling yigraf to one host's transcript format. Making it an optional injected param keeps compute_status pure and lets a per-host adapter fill it; a host that can't supply it just omits the ctx segment and the rest still renders."
     },
     {
@@ -10964,14 +11305,14 @@
       "id": "mem:014",
       "kind": "decision",
       "label": "Freshness is derived by comparing the rebuilt graph to committed graph.json (canonical JSON), not by stamping a build-HEAD",
-      "maturity": "working",
+      "maturity": "settled",
       "promotable": false,
       "source_file": "memory/014-freshness-is-derived-by-comparing-the.md",
       "statement": "Freshness is derived by comparing the rebuilt graph to committed graph.json (canonical JSON), not by stamping a build-HEAD",
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 0,
+      "survival": 4,
       "why": "write_graph is deterministic (sort_keys=True), so a byte-equal canonical projection is an exact freshness signal with nothing written anywhere. Stamping the build-HEAD into graph.json would make every query/edit dirty git and write volatile state into the committed projection \u2014 violating R6/mem:006 (files are truth; graph.json is a recomputable projection)."
     },
     {
@@ -10981,15 +11322,49 @@
       "id": "mem:015",
       "kind": "constraint",
       "label": "The status render must force color through click (typer.echo(..., color=use_color)) \u2014 a statusline pipes stdout (non-TTY), and click strips ANSI on a pipe by default, which would silently drop all statusline color",
-      "maturity": "working",
+      "maturity": "settled",
       "promotable": true,
       "source_file": "memory/015-the-status-render-must-force-color.md",
       "statement": "The status render must force color through click (typer.echo(..., color=use_color)) \u2014 a statusline pipes stdout (non-TTY), and click strips ANSI on a pipe by default, which would silently drop all statusline color",
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 0,
+      "survival": 4,
       "why": ""
+    },
+    {
+      "alternatives": "per-host native adapters only \u2014 Antigravity has no push hook, so it would get no yigraf at all; and N bespoke integrations vs one MCP server",
+      "confidence": "EXTRACTED",
+      "family": "memory",
+      "id": "mem:016",
+      "kind": "decision",
+      "label": "The universal cross-host adapter is an MCP server, not per-host native integrations \u2014 one implementation reaches Codex, Antigravity, Cursor, Windsurf, and Claude Code",
+      "maturity": "working",
+      "promotable": false,
+      "source_file": "memory/016-the-universal-cross-host-adapter-is.md",
+      "statement": "The universal cross-host adapter is an MCP server, not per-host native integrations \u2014 one implementation reaches Codex, Antigravity, Cursor, Windsurf, and Claude Code",
+      "status": "active",
+      "superseded_in": 0,
+      "supersedes_out": 0,
+      "survival": 0,
+      "why": "verified host research: the Antigravity IDE has NO lifecycle-hook/context-injection system (Google staff confirmed), while every target host speaks MCP. A push-hook-per-host strategy would leave Antigravity with nothing; MCP is the one channel they all share, so it's the portable floor. Push hooks remain the stronger per-host channel where they exist (Claude Code, Codex)."
+    },
+    {
+      "alternatives": "subprocess-proxy (each MCP tool shells out to the yigraf CLI) \u2014 DRY and zero-refactor, but cold build+model load on every single tool call",
+      "confidence": "EXTRACTED",
+      "family": "memory",
+      "id": "mem:017",
+      "kind": "decision",
+      "label": "The MCP server runs in-process (warm graph + embedding model across calls), not a per-tool-call CLI subprocess",
+      "maturity": "working",
+      "promotable": false,
+      "source_file": "memory/017-the-mcp-server-runs-in-process.md",
+      "statement": "The MCP server runs in-process (warm graph + embedding model across calls), not a per-tool-call CLI subprocess",
+      "status": "active",
+      "superseded_in": 0,
+      "supersedes_out": 0,
+      "survival": 0,
+      "why": "an MCP server is long-lived for the session, so holding the structure graph and the bge-small model warm means the 2nd+ context call skips the cold build/model-load; a subprocess-proxy would re-pay that ~1-2s every call. Cost: ~10 lines of context orchestration duplicated from cli.context (acceptable for an adapter)."
     },
     {
       "confidence": "EXTRACTED",
@@ -11137,7 +11512,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "0a030894586eff86683a303914227bf7a7ceb32cbbf56d847a83ddbd83d14bed",
+      "content_hash": "28806f69e79288bc6c5ed90072d81d34e8c4c3e5d6d14023a90c0eb02c277f74",
       "family": "structure",
       "id": "module:src/yigraf/cli.py",
       "kind": "module",
@@ -11147,7 +11522,7 @@
       "source_range": [
         0,
         0,
-        655,
+        669,
         0
       ]
     },
@@ -11372,6 +11747,22 @@
         0,
         0,
         813,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "83fa0da435e8ed14eb1a7228fc60dcb54e8dbc82cfc048443dc57e0f38ba7c93",
+      "family": "structure",
+      "id": "module:src/yigraf/mcp_server.py",
+      "kind": "module",
+      "label": "src/yigraf/mcp_server.py",
+      "language": "python",
+      "source_file": "src/yigraf/mcp_server.py",
+      "source_range": [
+        0,
+        0,
+        123,
         0
       ]
     },
@@ -11761,6 +12152,22 @@
     },
     {
       "confidence": "EXTRACTED",
+      "content_hash": "8f015262d2c436bf6cb95fa4dbbe827fd21049891dc322634aac966eba6e629c",
+      "family": "structure",
+      "id": "module:tests/test_mcp.py",
+      "kind": "module",
+      "label": "tests/test_mcp.py",
+      "language": "python",
+      "source_file": "tests/test_mcp.py",
+      "source_range": [
+        0,
+        0,
+        62,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
       "content_hash": "4c9e65e200822a1d581cb5fad8a64e879bd8949f0315e1bc9b7efba77009a8d1",
       "family": "structure",
       "id": "module:tests/test_memory.py",
@@ -11829,6 +12236,14 @@
       "id": "plan:language-drift-coverage",
       "kind": "plan",
       "label": "Language drift coverage \u2014 verify enforcement on every extractor-backed language",
+      "phase": "active"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "family": "plan",
+      "id": "plan:mcp-server",
+      "kind": "plan",
+      "label": "MCP server",
       "phase": "active"
     },
     {
@@ -12996,9 +13411,9 @@
       "signature": "def _hook_graph(root: Path):",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        591,
+        605,
         0,
-        597,
+        611,
         24
       ]
     },
@@ -13047,9 +13462,9 @@
       "signature": "def _post_tool_use(data: dict) -> dict | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        600,
+        614,
         0,
-        623,
+        637,
         101
       ]
     },
@@ -13166,9 +13581,9 @@
       "signature": "def _run_hook(handler) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        578,
+        592,
         0,
-        588,
+        602,
         28
       ]
     },
@@ -13183,9 +13598,9 @@
       "signature": "def _session_start(data: dict) -> dict | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        626,
+        640,
         0,
-        637,
+        651,
         102
       ]
     },
@@ -13268,9 +13683,9 @@
       "signature": "def drift( path: Path = typer.Argument(Path(\".\"), help=\"Repo root (default: current dir).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        446,
+        460,
         0,
-        469,
+        483,
         32
       ]
     },
@@ -13285,9 +13700,9 @@
       "signature": "def gc( path: Path = typer.Argument(Path(\".\"), help=\"Repo root (default: current dir).\"), apply: bool = typer.Option(False, \"--apply\", help=\"Actually archive (default: dry-run report).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        472,
+        486,
         0,
-        509,
+        523,
         88
       ]
     },
@@ -13302,9 +13717,9 @@
       "signature": "def graph_merge( base: Path = typer.Argument(..., help=\"Common-ancestor graph.json (git %O; ignored \u2014 v0 graph.json is recomputable).\"), ours: Path = typer.Argument(..., help=\"Our graph.json (git %A) \u2014 the merged result is written here.\"), theirs: Path = typer.Argument(..., help=\"Their graph.json (git %B).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        512,
+        526,
         0,
-        533,
+        547,
         45
       ]
     },
@@ -13319,9 +13734,9 @@
       "signature": "def hook_post_tool_use() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        640,
+        654,
         0,
-        643,
+        657,
         29
       ]
     },
@@ -13336,9 +13751,9 @@
       "signature": "def hook_session_start() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        646,
+        660,
         0,
-        649,
+        663,
         29
       ]
     },
@@ -13370,9 +13785,9 @@
       "signature": "def install_claude_hooks_cmd( path: Path = typer.Argument(Path(\".\"), help=\"Repo root to wire up for Claude Code.\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        558,
+        572,
         0,
-        568,
+        582,
         97
       ]
     },
@@ -13387,9 +13802,9 @@
       "signature": "def install_hooks( path: Path = typer.Argument(Path(\".\"), help=\"Repo root (must be a git repository).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        536,
+        550,
         0,
-        555,
+        569,
         75
       ]
     },
@@ -13438,10 +13853,27 @@
       "signature": "def main() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        652,
+        666,
         0,
-        654,
+        668,
         9
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "c5f13769d427357d97c895c5902838e56d33b9618091f5390e08117588e2994b",
+      "family": "structure",
+      "id": "sym:src/yigraf/cli.py#mcp_cmd",
+      "kind": "function",
+      "label": "mcp_cmd",
+      "language": "python",
+      "signature": "def mcp_cmd( repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root the server serves (default: cwd; or $YIGRAF_REPO).\"), ) -> None:",
+      "source_file": "src/yigraf/cli.py",
+      "source_range": [
+        446,
+        0,
+        457,
+        47
       ]
     },
     {
@@ -17522,6 +17954,108 @@
         0,
         483,
         48
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "9a05ee0591a1af11c9843ea40228d7738a7bf0c68f466b621dc465ee6f2c1e07",
+      "family": "structure",
+      "id": "sym:src/yigraf/mcp_server.py#_no_workspace",
+      "kind": "function",
+      "label": "_no_workspace",
+      "language": "python",
+      "signature": "def _no_workspace(root: Path, also_build: bool = False) -> str:",
+      "source_file": "src/yigraf/mcp_server.py",
+      "source_range": [
+        40,
+        0,
+        42,
+        104
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "9bdaeeab5877b81d8d0cf5f3ef725e83861d26afe40a9daab3ca73699c9a5164",
+      "family": "structure",
+      "id": "sym:src/yigraf/mcp_server.py#_resolve_root",
+      "kind": "function",
+      "label": "_resolve_root",
+      "language": "python",
+      "signature": "def _resolve_root(repo: str | os.PathLike | None) -> Path:",
+      "source_file": "src/yigraf/mcp_server.py",
+      "source_range": [
+        35,
+        0,
+        37,
+        71
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "f694de595271703de9b5665affaff0b4711842d3b30ceb46bd694c928eb7f29c",
+      "family": "structure",
+      "id": "sym:src/yigraf/mcp_server.py#build_server",
+      "kind": "function",
+      "label": "build_server",
+      "language": "python",
+      "signature": "def build_server(default_repo: str | None = None):",
+      "source_file": "src/yigraf/mcp_server.py",
+      "source_range": [
+        79,
+        0,
+        109,
+        17
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "7844ed2d117974b6d706a91c93885d0d277fa064fda8ad847008aac05a6d1c3e",
+      "family": "structure",
+      "id": "sym:src/yigraf/mcp_server.py#run",
+      "kind": "function",
+      "label": "run",
+      "language": "python",
+      "signature": "def run(repo: str | os.PathLike | None = None) -> int:",
+      "source_file": "src/yigraf/mcp_server.py",
+      "source_range": [
+        112,
+        0,
+        122,
+        12
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "33cb81e451fad4c7ffe411bc6aaa88b5482640b77059cfee32214b419210efd3",
+      "family": "structure",
+      "id": "sym:src/yigraf/mcp_server.py#run_context",
+      "kind": "function",
+      "label": "run_context",
+      "language": "python",
+      "signature": "def run_context(repo: str | None, query: str, family: str | None = None, budget: int | None = None) -> str:",
+      "source_file": "src/yigraf/mcp_server.py",
+      "source_range": [
+        45,
+        0,
+        66,
+        111
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "e6d45f46ba88f333a9097b76867de8ad5055fc260f4b3aeaab0f0aebd5de940e",
+      "family": "structure",
+      "id": "sym:src/yigraf/mcp_server.py#run_status",
+      "kind": "function",
+      "label": "run_status",
+      "language": "python",
+      "signature": "def run_status(repo: str | None) -> str:",
+      "source_file": "src/yigraf/mcp_server.py",
+      "source_range": [
+        69,
+        0,
+        76,
+        71
       ]
     },
     {
@@ -22218,6 +22752,125 @@
     },
     {
       "confidence": "EXTRACTED",
+      "content_hash": "b02f9e1adcbdbf2cb11e0a056e07c399da178362796383c509bebd0b730c4d9d",
+      "family": "structure",
+      "id": "sym:tests/test_mcp.py#_repo",
+      "kind": "function",
+      "label": "_repo",
+      "language": "python",
+      "signature": "def _repo(tmp_path: Path) -> Path:",
+      "source_file": "tests/test_mcp.py",
+      "source_range": [
+        17,
+        0,
+        23,
+        19
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "384095fb1a9025d1ab6de6695e97cbb9ae38c63b43f1a5c01dcbeeb095753468",
+      "family": "structure",
+      "id": "sym:tests/test_mcp.py#test_build_server_registers_read_tools",
+      "kind": "function",
+      "label": "test_build_server_registers_read_tools",
+      "language": "python",
+      "signature": "def test_build_server_registers_read_tools(tmp_path: Path):",
+      "source_file": "tests/test_mcp.py",
+      "source_range": [
+        56,
+        0,
+        61,
+        41
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "b48490d5f873615a299fc09b5e14c3d9b06a348c1cd3a7373f1d3445ba8f9e8e",
+      "family": "structure",
+      "id": "sym:tests/test_mcp.py#test_missing_workspace_is_guided_not_raised",
+      "kind": "function",
+      "label": "test_missing_workspace_is_guided_not_raised",
+      "language": "python",
+      "signature": "def test_missing_workspace_is_guided_not_raised(tmp_path: Path):",
+      "source_file": "tests/test_mcp.py",
+      "source_range": [
+        36,
+        0,
+        38,
+        85
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "b2dd358a6089a64c138a3b83e6364050d62538a4bdbfed94b45fb2f6c0534523",
+      "family": "structure",
+      "id": "sym:tests/test_mcp.py#test_resolve_root_prefers_arg_then_env",
+      "kind": "function",
+      "label": "test_resolve_root_prefers_arg_then_env",
+      "language": "python",
+      "signature": "def test_resolve_root_prefers_arg_then_env(tmp_path: Path, monkeypatch):",
+      "source_file": "tests/test_mcp.py",
+      "source_range": [
+        41,
+        0,
+        44,
+        60
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "272bcc6774a2fbe5066214ddb725d6f3af6555e0704963206dfea4b9fb09315b",
+      "family": "structure",
+      "id": "sym:tests/test_mcp.py#test_run_context_returns_a_slice_with_footer",
+      "kind": "function",
+      "label": "test_run_context_returns_a_slice_with_footer",
+      "language": "python",
+      "signature": "def test_run_context_returns_a_slice_with_footer(tmp_path: Path):",
+      "source_file": "tests/test_mcp.py",
+      "source_range": [
+        31,
+        0,
+        33,
+        51
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "1724859162659df63673852939f986ea4494267e2883a5974fa52a5a03a505bf",
+      "family": "structure",
+      "id": "sym:tests/test_mcp.py#test_run_guides_when_sdk_absent",
+      "kind": "function",
+      "label": "test_run_guides_when_sdk_absent",
+      "language": "python",
+      "signature": "def test_run_guides_when_sdk_absent(monkeypatch, capsys):",
+      "source_file": "tests/test_mcp.py",
+      "source_range": [
+        47,
+        0,
+        53,
+        51
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "96df71c1ba71ab56d4cca05be69fee917a3a75cee5de99aabbce78fc1cfa9310",
+      "family": "structure",
+      "id": "sym:tests/test_mcp.py#test_run_status_returns_the_line",
+      "kind": "function",
+      "label": "test_run_status_returns_the_line",
+      "language": "python",
+      "signature": "def test_run_status_returns_the_line(tmp_path: Path):",
+      "source_file": "tests/test_mcp.py",
+      "source_range": [
+        26,
+        0,
+        28,
+        104
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
       "content_hash": "a4f8e67b184f6680497b2d2ae5d4e89347bf1324ead2c0730b3e3c2b406d20fc",
       "family": "structure",
       "id": "sym:tests/test_memory.py#_graph",
@@ -23500,6 +24153,15 @@
       "label": "Ruby/PHP astnorm quote handling DECIDED: keep semantically-distinct (not normalized \u2014 `'` literal vs `\"` interpolating differ), pinned by test_{ruby,php}_quote_flip_is_drift_not_cosmetic",
       "order": 3,
       "state": "done"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "family": "plan",
+      "id": "task:mcp-server/1",
+      "kind": "task",
+      "label": "yigraf mcp: in-process FastMCP stdio server exposing context+status as tools (the universal pull channel); optional [mcp] extra; per-host config docs",
+      "order": 1,
+      "state": "todo"
     },
     {
       "confidence": "EXTRACTED",
