@@ -388,3 +388,39 @@ def install_antigravity(root: Path) -> AntigravityResult:
     agents_path = _write_agents_block(root / "AGENTS.md")
     mcp_command = f'"{sys.executable}" -m yigraf mcp --repo "{root}"'
     return AntigravityResult(rule_path=rule_path, agents_path=agents_path, mcp_command=mcp_command)
+
+
+# --------------------------------------------------------------------------------------------------
+# Host auto-detection (M-multi): which natively-supported host(s) are present, so `yigraf install`
+# can wire the right channel without asking — falling back to MCP for anything else.
+# --------------------------------------------------------------------------------------------------
+
+#: A host name → the marker dirs that signal it (repo-local "configured here" OR home "installed here").
+_HOST_MARKERS = {
+    "claude": (".claude",),       # home: ~/.claude
+    "codex": (".codex",),         # home: ~/.codex
+    "antigravity": (".agents",),  # home: ~/.gemini, ~/.antigravity
+}
+_HOST_HOME_MARKERS = {
+    "claude": (".claude",),
+    "codex": (".codex",),
+    "antigravity": (".gemini", ".antigravity"),
+}
+
+
+def detect_hosts(root: Path, home: Path | None = None) -> list[str]:
+    """The natively-supported hosts present, by config markers — repo-local or in the home dir.
+
+    Repo markers mean "configured for this repo"; home markers mean "installed on this machine". Either
+    counts. ``home`` is injectable for testing. Returns names in install order (claude, codex,
+    antigravity); empty ⇒ `yigraf install` falls back to the universal MCP server.
+    """
+    root = Path(root)
+    home = Path(home) if home is not None else Path.home()
+    found = []
+    for host in ("claude", "codex", "antigravity"):
+        repo_hit = any((root / m).exists() for m in _HOST_MARKERS[host])
+        home_hit = any((home / m).exists() for m in _HOST_HOME_MARKERS[host])
+        if repo_hit or home_hit:
+            found.append(host)
+    return found

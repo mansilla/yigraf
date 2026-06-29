@@ -10,7 +10,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from yigraf.cli import _edited_file, _post_tool_use, app
-from yigraf.hooks import _AGENTS_START, install_antigravity, install_codex_hooks
+from yigraf.hooks import _AGENTS_START, detect_hosts, install_antigravity, install_codex_hooks
 
 runner = CliRunner()
 SYM = "sym:auth/session.py#refresh"
@@ -77,3 +77,29 @@ def test_install_antigravity_writes_rule_and_mcp_command(tmp_path: Path):
     assert "MCP" in body and "context" in body and "remember" in body
     assert _AGENTS_START in res.agents_path.read_text()
     assert "-m" in res.mcp_command and "yigraf" in res.mcp_command and "mcp" in res.mcp_command
+
+
+# ── auto-host detection + `yigraf install` dispatch ───────────────────────────────────────────────
+
+def test_detect_hosts_by_repo_and_home_markers(tmp_path: Path):
+    repo, home = tmp_path / "repo", tmp_path / "home"
+    repo.mkdir(); home.mkdir()
+    assert detect_hosts(repo, home) == []                       # nothing installed/configured
+    (repo / ".claude").mkdir(); assert detect_hosts(repo, home) == ["claude"]   # repo marker
+    (home / ".codex").mkdir(); assert detect_hosts(repo, home) == ["claude", "codex"]  # home marker
+    (home / ".gemini").mkdir(); assert detect_hosts(repo, home) == ["claude", "codex", "antigravity"]
+
+
+def test_install_host_codex_wires_codex(tmp_path: Path):
+    runner.invoke(app, ["init", str(tmp_path)])
+    out = runner.invoke(app, ["install", str(tmp_path), "--host", "codex"])
+    assert out.exit_code == 0 and "codex" in out.stdout
+    assert (tmp_path / ".codex" / "hooks.json").exists()
+
+
+def test_install_mcp_and_unknown_host_fall_back_to_mcp(tmp_path: Path):
+    runner.invoke(app, ["init", str(tmp_path)])
+    for host in ("mcp", "cursor"):  # explicit mcp, and an unsupported host name
+        out = runner.invoke(app, ["install", str(tmp_path), "--host", host])
+        assert out.exit_code == 0 and "mcpServers" in out.stdout and "yigraf" in out.stdout
+    assert not (tmp_path / ".codex").exists()  # fallback wires nothing host-native

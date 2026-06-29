@@ -1251,6 +1251,20 @@
     },
     {
       "confidence": "EXTRACTED",
+      "relation": "serves",
+      "source": "mem:021",
+      "target": "int:multi-host"
+    },
+    {
+      "anchor": "b2a115a667f9788bef6ae7fcc12a86204879f4b63313c1da795a001006db0a12",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:021",
+      "target": "sym:src/yigraf/hooks.py#detect_hosts"
+    },
+    {
+      "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:scripts/eval/judge.py",
       "target": "sym:scripts/eval/judge.py#EnforcementScore"
@@ -1625,6 +1639,12 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:src/yigraf/cli.py",
+      "target": "sym:src/yigraf/cli.py#_print_mcp_config"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/cli.py",
       "target": "sym:src/yigraf/cli.py#_ranked_with_telemetry"
     },
     {
@@ -1740,6 +1760,12 @@
       "relation": "contains",
       "source": "module:src/yigraf/cli.py",
       "target": "sym:src/yigraf/cli.py#install_claude_hooks_cmd"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/cli.py",
+      "target": "sym:src/yigraf/cli.py#install_cmd"
     },
     {
       "confidence": "EXTRACTED",
@@ -2148,6 +2174,12 @@
       "relation": "contains",
       "source": "module:src/yigraf/hooks.py",
       "target": "sym:src/yigraf/hooks.py#_write_agents_block"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/hooks.py",
+      "target": "sym:src/yigraf/hooks.py#detect_hosts"
     },
     {
       "confidence": "EXTRACTED",
@@ -4607,6 +4639,12 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:tests/test_multihost.py",
+      "target": "sym:tests/test_multihost.py#test_detect_hosts_by_repo_and_home_markers"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_multihost.py",
       "target": "sym:tests/test_multihost.py#test_edited_file_claude_and_codex_and_ignored"
     },
     {
@@ -4626,6 +4664,18 @@
       "relation": "contains",
       "source": "module:tests/test_multihost.py",
       "target": "sym:tests/test_multihost.py#test_install_codex_hooks_writes_both_events_and_gitignore"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_multihost.py",
+      "target": "sym:tests/test_multihost.py#test_install_host_codex_wires_codex"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_multihost.py",
+      "target": "sym:tests/test_multihost.py#test_install_mcp_and_unknown_host_fall_back_to_mcp"
     },
     {
       "confidence": "EXTRACTED",
@@ -5555,12 +5605,30 @@
       "confidence": "EXTRACTED",
       "relation": "calls",
       "source": "sym:src/yigraf/cli.py#install_antigravity_cmd",
+      "target": "sym:src/yigraf/cli.py#_print_mcp_config"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/cli.py#install_antigravity_cmd",
       "target": "sym:src/yigraf/cli.py#_require_workspace"
     },
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
       "source": "sym:src/yigraf/cli.py#install_claude_hooks_cmd",
+      "target": "sym:src/yigraf/cli.py#_require_workspace"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/cli.py#install_cmd",
+      "target": "sym:src/yigraf/cli.py#_print_mcp_config"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/cli.py#install_cmd",
       "target": "sym:src/yigraf/cli.py#_require_workspace"
     },
     {
@@ -9806,6 +9874,22 @@
       "target": "sym:src/yigraf/cli.py#_edited_file"
     },
     {
+      "anchor": "66ccafe6b9474e664d904bee8ad63303d7765b23ec245895e14c6c7060f49bfa",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "source": "task:multi-host/1",
+      "target": "sym:src/yigraf/cli.py#install_cmd"
+    },
+    {
+      "anchor": "b2a115a667f9788bef6ae7fcc12a86204879f4b63313c1da795a001006db0a12",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "source": "task:multi-host/1",
+      "target": "sym:src/yigraf/hooks.py#detect_hosts"
+    },
+    {
       "anchor": "66d84a92cb40f0b0d635dde7fb52dd7f32bc827cec7269792cd31f6e32f63e4b",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
@@ -10230,7 +10314,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "c4855f81d3ed36ee8e03883b470ed31a251d570920c20861ff4fa406671a7647",
+      "content_hash": "9151f465c45e6b4c03570016be0badde80c6a78becd4c3e0a606fe2c3dec65a2",
       "family": "structure",
       "id": "file:src/yigraf/cli.py",
       "imports": [
@@ -10260,7 +10344,7 @@
       "source_range": [
         0,
         0,
-        738,
+        788,
         0
       ]
     },
@@ -10406,7 +10490,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "8c525cdcbe1eac2d172b6628cd06e4fc43e7d2a02261988c7baf1a0cc86ec6d5",
+      "content_hash": "195ba72fa98af4d7e52b1974f57a0c7c8e3f47b81b36e90d102a107c362a00b4",
       "family": "structure",
       "id": "file:src/yigraf/hooks.py",
       "imports": [
@@ -10424,7 +10508,7 @@
       "source_range": [
         0,
         0,
-        390,
+        426,
         0
       ]
     },
@@ -11287,7 +11371,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "100d9b7aac3d354c7a4cd538ec4ae8bba5c2980eb927d146232ec59a64ac9421",
+      "content_hash": "224034d508f5a3b1f309f69aa18ed6d12c6a64109b699751f7f6d592b77663c1",
       "family": "structure",
       "id": "file:tests/test_multihost.py",
       "imports": [
@@ -11304,7 +11388,7 @@
       "source_range": [
         0,
         0,
-        79,
+        105,
         0
       ]
     },
@@ -11557,7 +11641,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 22,
+      "survival": 24,
       "why": "the two drift-bearing relations differ only in source family + dangling-attr name; folding them into _DRIFT_RELATIONS means rename re-anchoring, the SHA cache, and soft/hard detection are written once"
     },
     {
@@ -11574,7 +11658,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 22,
+      "survival": 24,
       "why": "memory-model \u00a75 option A: cheapest, deterministic, EXTRACTED confidence, mirrors the v0 implements pattern we already trust; add distillation (option B) only once links prove valuable"
     },
     {
@@ -11591,7 +11675,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 22,
+      "survival": 24,
       "why": "only memory carries supersedes edges, so stamping superseded_in:0 on every structure node would bloat graph.json; retrieval reads the counter with a 0 default"
     },
     {
@@ -11608,7 +11692,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 21,
+      "survival": 23,
       "why": "we embed tens-to-thousands of short statements, not the codebase, so N is tiny; a query is one matmul (exact, sub-ms). FAISS/hnswlib add a heavy native dep that buys nothing until N is very large"
     },
     {
@@ -11625,7 +11709,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 21,
+      "survival": 23,
       "why": "no host exposes an embedding endpoint to a hook, so embeddings are yigraf's own responsibility; making them required would break the zero-config promise \u2014 absent backend degrades to the v0 lexical seeder"
     },
     {
@@ -11642,7 +11726,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 19,
+      "survival": 21,
       "why": "DESIGN R1/R2/R3 scope v0 to local state so graph.json stays fully recomputable (no query-time writes, trivial merges, CI-reproducible); the accumulated/shared/merge-reconciled counter model (Model G) needs a cloud service + API for teams to share artifacts, which is v1 Enterprise paid-plan work"
     },
     {
@@ -11659,7 +11743,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 19,
+      "survival": 21,
       "why": "R2 wants maturity branch-cadence-independent and identical on every clone/CI; deriving it from git history (intro commit .. HEAD) makes it recomputable and merge-safe, so no per-session survival counter is stored or reconciled"
     },
     {
@@ -11676,7 +11760,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 19,
+      "survival": 21,
       "why": "R3: history must stay auditable, so churn (superseded_in>0 \u2227 refs_in=0) is moved out of the active glob rather than removed; usage is machine-local sidecar state, not authoritative, so GC must not depend on it"
     },
     {
@@ -11693,7 +11777,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 17,
+      "survival": 19,
       "why": "the per-node fan-out (~2N git calls, on the hot PostToolUse path) was a \ud83d\udd34 perf caveat; _survival_map batches all paths into 2 calls (one topo-order log for commit order + one batched --diff-filter=A --name-status for intros) and the result is memoized by HEAD in the structure cache, since an edit never moves HEAD \u2014 so the hook path is 1 rev-parse and 0 walks. Survival stays byte-identical so graph.json is still recomputable"
     },
     {
@@ -11710,7 +11794,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 15,
+      "survival": 17,
       "why": "the interpreter path is per-machine; settings.local.json is Claude Code's designated per-machine file and a self-contained .claude/.gitignore keeps it out of git \u2014 symmetric with the post-commit git hook, which already bakes the abs path into the never-committed .git/hooks/. This keeps the run-without-the-venv-on-PATH property while never committing a machine path."
     },
     {
@@ -11727,7 +11811,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 14,
+      "survival": 16,
       "why": "yigraf's read path is push (hooks inject) but its write path is pull (link/remember are opt-in), so an undisciplined agent silently starves the graph; making the decay legible in context+SessionStart lets the agent self-correct, while staying advisory (like R9c reconcile) honors fail-open/silence-as-feature"
     },
     {
@@ -11744,7 +11828,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 8,
+      "survival": 10,
       "why": "the status surface targets the human principal, but the PostToolUse injection spends the AGENT's context/token budget \u2014 folding vanity stats there would violate design-law #2/#4 (output is for the agent's context; silence is a feature). A statusline is a separate UI region that costs the agent zero tokens, so it informs the user without taxing the agent's attention."
     },
     {
@@ -11761,7 +11845,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 8,
+      "survival": 10,
       "why": "no host hands a CLI its context-window usage (mirrors mem:005 for embeddings), so reading it can't live in the host-agnostic core without coupling yigraf to one host's transcript format. Making it an optional injected param keeps compute_status pure and lets a per-host adapter fill it; a host that can't supply it just omits the ctx segment and the rest still renders."
     },
     {
@@ -11778,7 +11862,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 8,
+      "survival": 10,
       "why": "write_graph is deterministic (sort_keys=True), so a byte-equal canonical projection is an exact freshness signal with nothing written anywhere. Stamping the build-HEAD into graph.json would make every query/edit dirty git and write volatile state into the committed projection \u2014 violating R6/mem:006 (files are truth; graph.json is a recomputable projection)."
     },
     {
@@ -11795,7 +11879,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 8,
+      "survival": 10,
       "why": ""
     },
     {
@@ -11812,7 +11896,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 3,
+      "survival": 5,
       "why": "verified host research: the Antigravity IDE has NO lifecycle-hook/context-injection system (Google staff confirmed), while every target host speaks MCP. A push-hook-per-host strategy would leave Antigravity with nothing; MCP is the one channel they all share, so it's the portable floor. Push hooks remain the stronger per-host channel where they exist (Claude Code, Codex)."
     },
     {
@@ -11829,7 +11913,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 3,
+      "survival": 5,
       "why": "an MCP server is long-lived for the session, so holding the structure graph and the bge-small model warm means the 2nd+ context call skips the cold build/model-load; a subprocess-proxy would re-pay that ~1-2s every call. Cost: ~10 lines of context orchestration duplicated from cli.context (acceptable for an adapter)."
     },
     {
@@ -11839,14 +11923,14 @@
       "id": "mem:018",
       "kind": "decision",
       "label": "MCP write tools shell out to the matching CLI verb (subprocess); only read tools run in-process",
-      "maturity": "working",
+      "maturity": "settled",
       "promotable": false,
       "source_file": "memory/018-mcp-write-tools-shell-out-to.md",
       "statement": "MCP write tools shell out to the matching CLI verb (subprocess); only read tools run in-process",
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 2,
+      "survival": 4,
       "why": "writes are rare and already rebuild the graph, so the per-call process cost is negligible \u2014 and shelling out reuses the CLI's dedup guard, anchoring, and exit-0 'did you mean' guidance verbatim, so the MCP write path can't drift from the CLI's. Reads stay in-process for warmth (mem:017). _run_cli returns stdout (the agent-facing text) and folds in stderr only on failure, so model-load progress never pollutes a result."
     },
     {
@@ -11856,14 +11940,14 @@
       "id": "mem:019",
       "kind": "decision",
       "label": "Codex push hooks reuse the Claude Code handlers verbatim; only the install target differs (.codex/hooks.json). apply_patch path is parsed from the patch, best-effort + fail-open",
-      "maturity": "working",
+      "maturity": "settled",
       "promotable": false,
       "source_file": "memory/019-codex-push-hooks-reuse-the-claude.md",
       "statement": "Codex push hooks reuse the Claude Code handlers verbatim; only the install target differs (.codex/hooks.json). apply_patch path is parsed from the patch, best-effort + fail-open",
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 1,
+      "survival": 3,
       "why": "Codex's hook contract mirrors Claude Code's (same tool_name/tool_input/cwd in, hookSpecificOutput.additionalContext out), so generalizing _edited_file to also parse apply_patch's '*** Update File:' line is the only new logic \u2014 the handlers and output envelope are shared. The exact edit-tool name + hooks.json schema are version-sensitive, so PostToolUse stays best-effort and silent on a mismatch (R8 fail-open); SessionStart is the reliable win. Codex paths are repo-relative, so they're anchored to root before resolving."
     },
     {
@@ -11873,15 +11957,32 @@
       "id": "mem:020",
       "kind": "decision",
       "label": "Antigravity has no hooks, so its complement is an always-on .agents/rules file pointing at the MCP tools; the global mcp_config.json is printed, not auto-written",
-      "maturity": "working",
+      "maturity": "settled",
       "promotable": false,
       "source_file": "memory/020-antigravity-has-no-hooks-so-its.md",
       "statement": "Antigravity has no hooks, so its complement is an always-on .agents/rules file pointing at the MCP tools; the global mcp_config.json is printed, not auto-written",
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 1,
+      "survival": 3,
       "why": "verified: the Antigravity IDE has no lifecycle-hook/context-injection system, so there is no push channel to wire \u2014 MCP (pull) + an always-on rule that instructs the agent to call the MCP tools is the substitute. The global mcp_config.json path is version-specific (~/.gemini/antigravity/ vs ~/.gemini/config/), so auto-writing it risks the wrong location; printing the snippet for the in-app MCP editor is safer and is an outward/global change the user should apply deliberately."
+    },
+    {
+      "alternatives": "pick a single host by precedence \u2014 wrong on a machine with several installed; or prompt the user to choose \u2014 defeats the one-command goal; or only honor explicit --host \u2014 no zero-config path",
+      "confidence": "EXTRACTED",
+      "family": "memory",
+      "id": "mem:021",
+      "kind": "decision",
+      "label": "yigraf install auto-detects hosts by config markers (repo-local + home dir), wires every detected one, and falls back to MCP when none of the three is found or an unsupported --host is given",
+      "maturity": "working",
+      "promotable": false,
+      "source_file": "memory/021-yigraf-install-auto-detects-hosts-by.md",
+      "statement": "yigraf install auto-detects hosts by config markers (repo-local + home dir), wires every detected one, and falls back to MCP when none of the three is found or an unsupported --host is given",
+      "status": "active",
+      "superseded_in": 0,
+      "supersedes_out": 0,
+      "survival": 0,
+      "why": "the user shouldn't have to know which install-X command matches their host. Markers (.claude/.codex/.agents in repo, or ~/.claude / ~/.codex / ~/.gemini on the machine) are a zero-config signal of which hosts are present; wiring ALL detected ones is more useful than guessing a single 'the' host on a multi-tool machine. MCP is the universal floor, so any unrecognized/other host degrades to printing the MCP config \u2014 consistent with 'MCP is the bet'. detect_hosts takes an injectable home for deterministic tests."
     },
     {
       "confidence": "EXTRACTED",
@@ -12029,7 +12130,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "c4855f81d3ed36ee8e03883b470ed31a251d570920c20861ff4fa406671a7647",
+      "content_hash": "9151f465c45e6b4c03570016be0badde80c6a78becd4c3e0a606fe2c3dec65a2",
       "family": "structure",
       "id": "module:src/yigraf/cli.py",
       "kind": "module",
@@ -12039,7 +12140,7 @@
       "source_range": [
         0,
         0,
-        738,
+        788,
         0
       ]
     },
@@ -12141,7 +12242,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "8c525cdcbe1eac2d172b6628cd06e4fc43e7d2a02261988c7baf1a0cc86ec6d5",
+      "content_hash": "195ba72fa98af4d7e52b1974f57a0c7c8e3f47b81b36e90d102a107c362a00b4",
       "family": "structure",
       "id": "module:src/yigraf/hooks.py",
       "kind": "module",
@@ -12151,7 +12252,7 @@
       "source_range": [
         0,
         0,
-        390,
+        426,
         0
       ]
     },
@@ -12701,7 +12802,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "100d9b7aac3d354c7a4cd538ec4ae8bba5c2980eb927d146232ec59a64ac9421",
+      "content_hash": "224034d508f5a3b1f309f69aa18ed6d12c6a64109b699751f7f6d592b77663c1",
       "family": "structure",
       "id": "module:tests/test_multihost.py",
       "kind": "module",
@@ -12711,7 +12812,7 @@
       "source_range": [
         0,
         0,
-        79,
+        105,
         0
       ]
     },
@@ -13918,9 +14019,9 @@
       "signature": "def _edited_file(data: dict) -> str | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        661,
+        711,
         0,
-        679,
+        729,
         15
       ]
     },
@@ -13969,9 +14070,9 @@
       "signature": "def _hook_graph(root: Path):",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        644,
+        694,
         0,
-        650,
+        700,
         24
       ]
     },
@@ -14020,10 +14121,27 @@
       "signature": "def _post_tool_use(data: dict) -> dict | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        682,
+        732,
         0,
-        706,
+        756,
         101
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "5d87515142f729b9c14ac2086229e36fac646725e51c02370189bd8098c93c14",
+      "family": "structure",
+      "id": "sym:src/yigraf/cli.py#_print_mcp_config",
+      "kind": "function",
+      "label": "_print_mcp_config",
+      "language": "python",
+      "signature": "def _print_mcp_config(repo: Path) -> None:",
+      "source_file": "src/yigraf/cli.py",
+      "source_range": [
+        621,
+        0,
+        627,
+        80
       ]
     },
     {
@@ -14139,9 +14257,9 @@
       "signature": "def _run_hook(handler) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        631,
+        681,
         0,
-        641,
+        691,
         28
       ]
     },
@@ -14156,9 +14274,9 @@
       "signature": "def _session_start(data: dict) -> dict | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        709,
+        759,
         0,
-        720,
+        770,
         102
       ]
     },
@@ -14292,9 +14410,9 @@
       "signature": "def hook_post_tool_use() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        723,
+        773,
         0,
-        726,
+        776,
         29
       ]
     },
@@ -14309,9 +14427,9 @@
       "signature": "def hook_session_start() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        729,
+        779,
         0,
-        732,
+        782,
         29
       ]
     },
@@ -14334,7 +14452,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "a88e2e2e32e1c686e919718285a497762fa57e0d34b390bd2096026d75eedd45",
+      "content_hash": "39b7dd4d3a64574abe23657f2476eff7a5e363afeb2d00969273467fdf1e10a6",
       "family": "structure",
       "id": "sym:src/yigraf/cli.py#install_antigravity_cmd",
       "kind": "function",
@@ -14345,8 +14463,8 @@
       "source_range": [
         603,
         0,
-        621,
-        80
+        618,
+        27
       ]
     },
     {
@@ -14364,6 +14482,23 @@
         0,
         583,
         97
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "66ccafe6b9474e664d904bee8ad63303d7765b23ec245895e14c6c7060f49bfa",
+      "family": "structure",
+      "id": "sym:src/yigraf/cli.py#install_cmd",
+      "kind": "function",
+      "label": "install_cmd",
+      "language": "python",
+      "signature": "def install_cmd( path: Path = typer.Argument(Path(\".\"), help=\"Repo root to wire up.\"), host: str = typer.Option(\"auto\", \"--host\", help=\"auto | claude | codex | antigravity | mcp (default: auto-detect).\"), ) -> None:",
+      "source_file": "src/yigraf/cli.py",
+      "source_range": [
+        630,
+        0,
+        671,
+        35
       ]
     },
     {
@@ -14445,9 +14580,9 @@
       "signature": "def main() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        735,
+        785,
         0,
-        737,
+        787,
         9
       ]
     },
@@ -15588,6 +15723,23 @@
         0,
         267,
         22
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "b2a115a667f9788bef6ae7fcc12a86204879f4b63313c1da795a001006db0a12",
+      "family": "structure",
+      "id": "sym:src/yigraf/hooks.py#detect_hosts",
+      "kind": "function",
+      "label": "detect_hosts",
+      "language": "python",
+      "signature": "def detect_hosts(root: Path, home: Path | None = None) -> list[str]:",
+      "source_file": "src/yigraf/hooks.py",
+      "source_range": [
+        410,
+        0,
+        425,
+        16
       ]
     },
     {
@@ -24075,6 +24227,23 @@
     },
     {
       "confidence": "EXTRACTED",
+      "content_hash": "d995d21fe587316154ebc65206e306ca3dd08717ecf838f1358a6766a78227ec",
+      "family": "structure",
+      "id": "sym:tests/test_multihost.py#test_detect_hosts_by_repo_and_home_markers",
+      "kind": "function",
+      "label": "test_detect_hosts_by_repo_and_home_markers",
+      "language": "python",
+      "signature": "def test_detect_hosts_by_repo_and_home_markers(tmp_path: Path):",
+      "source_file": "tests/test_multihost.py",
+      "source_range": [
+        83,
+        0,
+        89,
+        101
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
       "content_hash": "d7e08b2d1c94c87a2018e94af5e4e39dfa0fe2cd7aedf3ebca73fb79e3099ac0",
       "family": "structure",
       "id": "sym:tests/test_multihost.py#test_edited_file_claude_and_codex_and_ignored",
@@ -24139,6 +24308,40 @@
         0,
         60,
         55
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "2c39b9bf2588ab00dbcb6c0481e481601ffd0f6d5edf38555d713de93bb9fe00",
+      "family": "structure",
+      "id": "sym:tests/test_multihost.py#test_install_host_codex_wires_codex",
+      "kind": "function",
+      "label": "test_install_host_codex_wires_codex",
+      "language": "python",
+      "signature": "def test_install_host_codex_wires_codex(tmp_path: Path):",
+      "source_file": "tests/test_multihost.py",
+      "source_range": [
+        92,
+        0,
+        96,
+        56
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "f7f45c673434966e8c2e7b4a4a54836510ec9e825b686e8251746e500c74c5e6",
+      "family": "structure",
+      "id": "sym:tests/test_multihost.py#test_install_mcp_and_unknown_host_fall_back_to_mcp",
+      "kind": "function",
+      "label": "test_install_mcp_and_unknown_host_fall_back_to_mcp",
+      "language": "python",
+      "signature": "def test_install_mcp_and_unknown_host_fall_back_to_mcp(tmp_path: Path):",
+      "source_file": "tests/test_multihost.py",
+      "source_range": [
+        99,
+        0,
+        104,
+        83
       ]
     },
     {

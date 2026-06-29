@@ -68,11 +68,9 @@ cd your-repo
 yigraf init
 yigraf build
 
-# 3. wire it into your agent host
-yigraf install-claude-hooks      # Claude Code (push hooks + skill)
-# or:  yigraf install-codex-hooks       # Codex CLI (push hooks)
-# or:  yigraf install-antigravity       # Antigravity (rule + MCP, no hooks)
-# any MCP host (Cursor/Windsurf/…): point it at `yigraf mcp` — see docs/mcp.md
+# 3. wire it into your agent host — auto-detects Claude Code / Codex / Antigravity, else MCP
+yigraf install
+# target one explicitly with: yigraf install --host claude|codex|antigravity|mcp
 
 # 4. use it
 yigraf context "session expiry"          # a scoped, token-cheap slice for a topic
@@ -191,6 +189,8 @@ and volatile state stays gitignored and rebuilds from source. yigraf also writes
 Opt-in installers wire yigraf into your tooling (machine-specific wiring is gitignored; the shareable
 SKILL/AGENTS/rules are committed):
 
+- **`yigraf install`** — **auto-detects** your host (Claude Code / Codex / Antigravity) and wires each;
+  falls back to the universal MCP server for anything else. `--host <name>` targets one explicitly.
 - **`yigraf install-claude-hooks`** — `.claude/settings.local.json` (machine-local hooks) + `SKILL.md`.
 - **`yigraf install-codex-hooks`** — `.codex/hooks.json` (SessionStart + best-effort PostToolUse).
 - **`yigraf install-antigravity`** — `.agents/rules/yigraf.md` + prints the MCP-server config to add.
