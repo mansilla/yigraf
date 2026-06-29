@@ -185,6 +185,7 @@ class ClaudeHookResult:
     agents_path: Path
     hooks_changed: bool
     gitignore_path: Path | None = None  # .claude/.gitignore keeping settings.local.json out of git
+    statusline: str = "unchanged"  # "set" | "refreshed" | "kept-foreign" | "unchanged"
 
 
 def _ensure_claude_gitignore(claude: Path) -> Path:
@@ -209,6 +210,26 @@ def _ensure_hook(hooks: dict, event: str, matcher: str, command: str, verb: str)
                 return False
     entries.append({"matcher": matcher, "hooks": [{"type": "command", "command": command, "timeout": 15}]})
     return True
+
+
+def _ensure_statusline(settings: dict, command: str) -> str:
+    """Point Claude Code's ``statusLine`` at ``yigraf status --color`` — idempotent, non-clobbering.
+
+    The hooks speak into the *agent's* context; the statusline is the *human's* ambient surface, so
+    wiring it is what makes the ``[Yigraf]`` brand + graph health actually visible on every refresh
+    (int:status-surface). A statusLine is a single object (not a list), so we only set it when it's
+    absent or already ours (refreshing this clone's interpreter path); a *foreign* statusLine is left
+    untouched — clobbering a user's own status bar would be hostile (mirrors the non-clobbering rule
+    the hook merge already follows). Returns the action taken for the install summary.
+    """
+    existing = settings.get("statusLine")
+    if isinstance(existing, dict) and "yigraf status" not in existing.get("command", ""):
+        return "kept-foreign"
+    if isinstance(existing, dict) and existing.get("command") == command:
+        return "unchanged"
+    refreshed = isinstance(existing, dict)
+    settings["statusLine"] = {"type": "command", "command": command}
+    return "refreshed" if refreshed else "set"
 
 
 def install_claude_hooks(root: Path) -> ClaudeHookResult:
@@ -240,6 +261,8 @@ def install_claude_hooks(root: Path) -> ClaudeHookResult:
                            f'"{py}" -m yigraf hook post-tool-use', "hook post-tool-use")
     changed |= _ensure_hook(hooks, "SessionStart", "startup|resume|clear|compact",
                             f'"{py}" -m yigraf hook session-start', "hook session-start")
+    statusline = _ensure_statusline(settings, f'"{py}" -m yigraf status --color')
+    changed |= statusline in ("set", "refreshed")
 
     claude.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
@@ -252,7 +275,7 @@ def install_claude_hooks(root: Path) -> ClaudeHookResult:
     agents_path = _write_agents_block(root / "AGENTS.md")
     return ClaudeHookResult(settings_path=settings_path, skill_path=skill_path,
                             agents_path=agents_path, hooks_changed=changed,
-                            gitignore_path=gitignore_path)
+                            gitignore_path=gitignore_path, statusline=statusline)
 
 
 def _write_agents_block(agents_path: Path) -> Path:

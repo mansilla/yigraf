@@ -145,6 +145,36 @@ def test_install_is_idempotent(tmp_path: Path):
     assert (tmp_path / ".claude" / ".gitignore").read_text().count("settings.local.json") == 1
 
 
+def test_install_wires_the_statusline(tmp_path: Path):
+    init_workspace(tmp_path)
+    result = install_claude_hooks(tmp_path)
+    # The human-facing [Yigraf] bar must be wired on a fresh install — that's what makes it "always seen".
+    assert result.statusline == "set"
+    settings = json.loads(result.settings_path.read_text())
+    sl = settings["statusLine"]
+    assert sl["type"] == "command" and "yigraf status --color" in sl["command"]
+
+
+def test_install_statusline_is_idempotent(tmp_path: Path):
+    init_workspace(tmp_path)
+    install_claude_hooks(tmp_path)
+    second = install_claude_hooks(tmp_path)
+    assert second.statusline == "unchanged"  # same interpreter ⇒ no churn on re-run
+
+
+def test_install_keeps_a_foreign_statusline(tmp_path: Path):
+    init_workspace(tmp_path)
+    claude = tmp_path / ".claude"
+    claude.mkdir()
+    (claude / "settings.local.json").write_text(json.dumps(
+        {"statusLine": {"type": "command", "command": "my-own-bar.sh"}}))
+    result = install_claude_hooks(tmp_path)
+    # Clobbering a user's own status bar would be hostile — leave it, the install summary says so.
+    assert result.statusline == "kept-foreign"
+    sl = json.loads(result.settings_path.read_text())["statusLine"]
+    assert sl["command"] == "my-own-bar.sh"
+
+
 def test_install_preserves_foreign_local_settings_and_hooks(tmp_path: Path):
     init_workspace(tmp_path)
     claude = tmp_path / ".claude"

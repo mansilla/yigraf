@@ -1,6 +1,6 @@
 ---
 concerns:
-- anchor: 2a281e77f465206f6c79cbcbe889751afa7a59ad72065bd39cda384ca66208dd
+- anchor: 21ae4a812ee5f36f11307520f41f1ef3bde656927eacae88e00ad497bf8d1a61
   anchor_algo: astnorm-v1
   sym: sym:src/yigraf/hooks.py#install_claude_hooks
 family: memory

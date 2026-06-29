@@ -14,7 +14,7 @@ edges:
     - anchor: b2a115a667f9788bef6ae7fcc12a86204879f4b63313c1da795a001006db0a12
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/hooks.py#detect_hosts
-    - anchor: 66ccafe6b9474e664d904bee8ad63303d7765b23ec245895e14c6c7060f49bfa
+    - anchor: 1673de87b330e62149a3e644119f445c2cfee2045cca1068fdd6c00119f9b141
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/cli.py#install_cmd
     tracks: int:multi-host

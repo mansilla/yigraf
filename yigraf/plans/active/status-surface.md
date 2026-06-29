@@ -11,6 +11,9 @@ edges:
     - anchor: 3366a112e423c1d2107d3b156b254bc20409862882b15e20aac8634505259f32
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/cli.py#status_cmd
+    - anchor: 75830fd993be4186a548fa13670acf7cdf57058c7019cc0d825505e873be67a8
+      anchor_algo: astnorm-v1
+      sym: sym:src/yigraf/hooks.py#_ensure_statusline
     tracks: int:status-surface
 family: plan
 id: plan:status-surface

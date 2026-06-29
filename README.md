@@ -149,6 +149,9 @@ With Claude Code wired up (`yigraf install-claude-hooks`), steps 4–5 happen au
 **PostToolUse** hook injects governing intent + drift the moment the agent edits a governed file, and a
 **SessionStart** hook re-injects the active plan after a `/clear` — so a flow interrupted by a context
 reset resumes instead of restarting. The hook stays silent on ungoverned, undrifted edits (no nagging).
+It also wires a **statusline** — the spinning `[Yigraf]` graph-health bar (`yigraf status --color`:
+symbols, intents, open tasks, drift, freshness) — so you see the graph's shape on every refresh without
+spending the agent's context. (An existing statusLine of yours is left untouched.)
 
 ### Works with any host (two channels)
 
