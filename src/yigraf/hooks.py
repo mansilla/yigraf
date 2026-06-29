@@ -266,3 +266,125 @@ def _write_agents_block(agents_path: Path) -> Path:
         updated = (existing.rstrip() + "\n\n" if existing.strip() else "") + _AGENTS_BLOCK + "\n"
     agents_path.write_text(updated, encoding="utf-8")
     return agents_path
+
+
+def _ensure_gitignore(directory: Path, ignore_line: str, comment: str) -> Path:
+    """Idempotently add ``ignore_line`` to ``directory/.gitignore`` (non-clobbering)."""
+    path = directory / ".gitignore"
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    if ignore_line not in {ln.strip() for ln in existing.splitlines()}:
+        prefix = existing.rstrip() + "\n\n" if existing.strip() else ""
+        path.write_text(f"{prefix}# {comment}\n{ignore_line}\n", encoding="utf-8")
+    return path
+
+
+# --------------------------------------------------------------------------------------------------
+# Codex CLI hooks (M-multi): SessionStart re-inject + best-effort PostToolUse — the SAME handlers as
+# Claude Code (Codex's hook contract mirrors it: snake_case tool_name/tool_input/cwd in, and
+# hookSpecificOutput.additionalContext out). So the only host-specific piece is *where* the wiring
+# lives: Codex reads project-local `.codex/hooks.json` (a trusted project) instead of Claude's
+# `.claude/settings.local.json`. AGENTS.md (the shared committed block) already instructs Codex.
+# --------------------------------------------------------------------------------------------------
+
+#: Codex edits via the apply_patch family; the matcher gates PostToolUse to edit tools (the handler
+#: also gates, so a mismatch just stays silent — fail-open). SessionStart is the guaranteed win.
+_CODEX_EDIT_MATCHER = "apply_patch|ApplyPatch|str_replace_editor|write_file|create_file"
+
+
+@dataclass
+class CodexHookResult:
+    hooks_path: Path
+    agents_path: Path
+    hooks_changed: bool
+    gitignore_path: Path | None = None
+
+
+def install_codex_hooks(root: Path) -> CodexHookResult:
+    """Register yigraf's SessionStart + PostToolUse hooks in ``.codex/hooks.json`` + the AGENTS block.
+
+    Reuses the exact ``yigraf hook session-start`` / ``post-tool-use`` handlers — Codex's hook JSON
+    mirrors Claude Code's (same input fields, same ``additionalContext`` output), so only the install
+    target differs. Like the Claude installer, the command bakes in this clone's absolute interpreter
+    (PATH-independent), making ``hooks.json`` machine-specific — so a ``.codex/.gitignore`` keeps it out
+    of git and a teammate re-runs this command. Idempotent + non-clobbering (merges, keyed by verb).
+    ``SessionStart`` is the reliable re-injection; ``PostToolUse`` is best-effort (verify the edit-tool
+    name on your Codex version — see ``mem:019``).
+    """
+    root = Path(root).resolve()
+    codex = root / ".codex"
+    hooks_path = codex / "hooks.json"
+
+    data: dict = {}
+    if hooks_path.exists():
+        try:
+            data = json.loads(hooks_path.read_text(encoding="utf-8")) or {}
+        except json.JSONDecodeError:
+            data = {}
+    hooks = data.setdefault("hooks", {})
+
+    py = sys.executable
+    changed = _ensure_hook(hooks, "SessionStart", "startup|resume|clear|compact",
+                           f'"{py}" -m yigraf hook session-start', "hook session-start")
+    changed |= _ensure_hook(hooks, "PostToolUse", _CODEX_EDIT_MATCHER,
+                            f'"{py}" -m yigraf hook post-tool-use', "hook post-tool-use")
+
+    codex.mkdir(parents=True, exist_ok=True)
+    hooks_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    gitignore_path = _ensure_gitignore(
+        codex, "hooks.json",
+        "Machine-local Codex hooks written by `yigraf install-codex-hooks` (absolute interpreter path).")
+    agents_path = _write_agents_block(root / "AGENTS.md")
+    return CodexHookResult(hooks_path=hooks_path, agents_path=agents_path,
+                           hooks_changed=changed, gitignore_path=gitignore_path)
+
+
+# --------------------------------------------------------------------------------------------------
+# Antigravity (M-multi): there is NO hook system in the IDE (verified — Google staff), so the only
+# push-like surface is an *always-on rule* the agent reads, pointing it at the yigraf MCP tools. We
+# write `.agents/rules/yigraf.md` (+ the AGENTS block) and hand back the MCP-config snippet for the
+# user to add via the in-app MCP editor — we don't auto-write the global `mcp_config.json` (its path
+# is version-specific: `~/.gemini/antigravity/` vs `~/.gemini/config/`).
+# --------------------------------------------------------------------------------------------------
+
+_ANTIGRAVITY_RULE = """\
+# yigraf (via MCP)
+
+This repo is indexed by **yigraf** — one graph over code, intent, plan, and the *why* (decisions,
+constraints, rejected alternatives). yigraf is wired as an MCP server; use its tools:
+
+- **Before** changing code, call the `context` tool with your topic — it returns the governing
+  intents, the active plan, implementing signatures, prior decisions and their *why*, and any drift to
+  re-verify. Don't re-derive intent or re-read what the graph already encodes.
+- **After** finishing a task, call `link` to name the symbols it implements, and `remember` the
+  non-obvious decisions (with `why` and `concerns`). Changed your mind? `supersede` the old decision.
+  A correction/rule → `note_constraint`.
+- `status` gives a one-line health check (scale, drift, freshness).
+
+If a spec already governs your change, follow it; if a decision already settled the question, follow
+it (or `supersede` it on purpose).
+"""
+
+
+@dataclass
+class AntigravityResult:
+    rule_path: Path
+    agents_path: Path
+    mcp_command: str  # the command a host launches for the MCP server (for the printed config snippet)
+
+
+def install_antigravity(root: Path) -> AntigravityResult:
+    """Wire yigraf for the Antigravity IDE (which has no hooks): an always-on rule + the AGENTS block.
+
+    Writes ``.agents/rules/yigraf.md`` (model reads it every session) and refreshes the AGENTS.md
+    block — both committed/shareable. The MCP server is the data channel; the caller prints the
+    ``mcp_config.json`` snippet for the user to add via Antigravity's MCP editor (its global config
+    path is version-specific, so we don't auto-write it).
+    """
+    root = Path(root).resolve()
+    rules_dir = root / ".agents" / "rules"
+    rules_dir.mkdir(parents=True, exist_ok=True)
+    rule_path = rules_dir / "yigraf.md"
+    rule_path.write_text(_ANTIGRAVITY_RULE, encoding="utf-8")
+    agents_path = _write_agents_block(root / "AGENTS.md")
+    mcp_command = f'"{sys.executable}" -m yigraf mcp --repo "{root}"'
+    return AntigravityResult(rule_path=rule_path, agents_path=agents_path, mcp_command=mcp_command)
