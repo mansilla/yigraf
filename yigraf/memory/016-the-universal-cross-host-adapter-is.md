@@ -1,6 +1,6 @@
 ---
 concerns:
-- anchor: f694de595271703de9b5665affaff0b4711842d3b30ceb46bd694c928eb7f29c
+- anchor: cf9e4deafdad0b3e765f4048719aaee63f85d8a28a53daa887096432feaf25a4
   anchor_algo: astnorm-v1
   sym: sym:src/yigraf/mcp_server.py#build_server
 family: memory

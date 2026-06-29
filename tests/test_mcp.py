@@ -54,9 +54,43 @@ def test_run_guides_when_sdk_absent(monkeypatch, capsys):
     assert "[mcp] extra" in capsys.readouterr().err
 
 
-def test_build_server_registers_read_tools(tmp_path: Path):
+def _linked_repo(tmp_path: Path) -> Path:
+    """A built repo with a plan task ready to link/remember against."""
+    root = _repo(tmp_path)
+    assert runner.invoke(app, ["plan", "demo", "--repo", str(root), "-t", "Demo",
+                               "--task", "do it"]).exit_code == 0
+    return root
+
+
+def test_link_writes_and_anchors(tmp_path: Path):
+    out = mcp_server.run_link(str(_linked_repo(tmp_path)), "task:demo/1",
+                              "sym:auth/session.py#refresh")
+    assert "Linked task:demo/1" in out and "implements" in out
+
+
+def test_bad_locator_returns_guidance_not_error(tmp_path: Path):
+    """A write verb reuses the CLI's exit-0 'did you mean' guidance through MCP (errors teach abandonment)."""
+    out = mcp_server.run_link(str(_linked_repo(tmp_path)), "task:demo/1",
+                              "sym:auth/session.py#nope")
+    assert "Couldn't find" in out and "Did you mean" in out
+
+
+def test_remember_captures_a_decision(tmp_path: Path):
+    out = mcp_server.run_remember(str(_linked_repo(tmp_path)), "use token rotation",
+                                  why="security", concerns=["sym:auth/session.py#refresh"])
+    assert out.startswith("Captured mem:") and "concerns" in out
+    # stderr noise (model-load progress / HF notices) must not pollute a successful result.
+    assert "Loading weights" not in out and "HF Hub" not in out
+
+
+def test_multi_expands_repeatable_options():
+    assert mcp_server._multi("--serves", ["int:a", "int:b"]) == ["--serves", "int:a", "--serves", "int:b"]
+    assert mcp_server._multi("--concerns", None) == []
+
+
+def test_build_server_registers_all_tools(tmp_path: Path):
     import pytest
     pytest.importorskip("mcp")  # the [mcp] extra; skip cleanly when absent
     server = mcp_server.build_server(str(_repo(tmp_path)))
     names = {t.name for t in asyncio.run(server.list_tools())}
-    assert {"context", "status"} <= names
+    assert {"context", "status", "link", "remember", "note_constraint", "supersede"} <= names
