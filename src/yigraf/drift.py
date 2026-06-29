@@ -88,9 +88,13 @@ def compute_drift(graph: nx.DiGraph) -> list[DriftItem]:
     """
     items: list[DriftItem] = []
 
+    # A superseded decision is historical (mem:024 → mem:023 via `supersedes`); its `concerns` anchor
+    # must not drift-nag — the successor now carries that concern. Skip drift sourced from such nodes.
+    superseded = {dst for _, dst, a in graph.edges(data=True) if a.get("relation") == "supersedes"}
+
     for src, dst, attrs in graph.edges(data=True):
         relation = attrs.get("relation")
-        if relation not in _DRIFT_RELATIONS:
+        if relation not in _DRIFT_RELATIONS or src in superseded:
             continue
         if "renamed_from" in attrs:
             items.append(DriftItem("renamed", src, attrs["renamed_from"], new_locator=dst,
