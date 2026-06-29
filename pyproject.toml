@@ -56,6 +56,12 @@ embeddings = [
     "numpy>=1.24",
     "sentence-transformers>=2.2",
 ]
+# Host-agnostic pull channel: run yigraf as an MCP server (`yigraf mcp`) so any MCP-capable host
+# (Codex, Antigravity, Cursor, Claude Code, …) can pull the graph as tool calls. Optional by design —
+# the CLI + Claude Code hooks work without it; `yigraf mcp` guides to install this extra if absent.
+mcp = [
+    "mcp>=1.2",
+]
 
 [project.urls]
 Homepage = "https://github.com/mansilla/yigraf"

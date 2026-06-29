@@ -444,6 +444,20 @@ def status_cmd(
     typer.echo(summary.render_line(color=use_color, icon=icon), color=use_color)
 
 
+@app.command("mcp")
+def mcp_cmd(
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root the server serves (default: cwd; or $YIGRAF_REPO)."),
+) -> None:
+    """Run yigraf as an MCP server (stdio) — the host-agnostic pull channel (int:mcp-server).
+
+    Any MCP host (Codex, Antigravity, Cursor, Claude Code, …) can then pull the graph as tool calls:
+    `context` (the governing slice) and `status`. See docs/mcp.md for per-host config. Needs the
+    optional `[mcp]` extra; without it this prints an install hint and exits non-zero.
+    """
+    from yigraf import mcp_server  # lazy: keep the SDK import off every other command's path
+    raise typer.Exit(code=mcp_server.run(repo))
+
+
 @app.command()
 def drift(
     path: Path = typer.Argument(Path("."), help="Repo root (default: current dir)."),
