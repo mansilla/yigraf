@@ -1,7 +1,7 @@
 ---
 family: intent
 id: int:drift-detection
-status: proposed
+status: satisfied
 type: requirement
 ---
 ## Requirement

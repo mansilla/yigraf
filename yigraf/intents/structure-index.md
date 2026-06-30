@@ -1,7 +1,7 @@
 ---
 family: intent
 id: int:structure-index
-status: proposed
+status: satisfied
 type: requirement
 ---
 ## Requirement

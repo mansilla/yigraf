@@ -1,7 +1,7 @@
 ---
 family: intent
 id: int:enforceable-link
-status: proposed
+status: satisfied
 type: requirement
 ---
 ## Requirement

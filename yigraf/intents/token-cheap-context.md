@@ -1,7 +1,7 @@
 ---
 family: intent
 id: int:token-cheap-context
-status: proposed
+status: satisfied
 type: requirement
 ---
 ## Requirement

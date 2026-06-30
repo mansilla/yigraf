@@ -1,7 +1,7 @@
 ---
 family: intent
 id: int:multi-host
-status: proposed
+status: satisfied
 type: requirement
 ---
 ## Requirement

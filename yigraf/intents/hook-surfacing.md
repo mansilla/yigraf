@@ -1,7 +1,7 @@
 ---
 family: intent
 id: int:hook-surfacing
-status: proposed
+status: satisfied
 type: requirement
 ---
 ## Requirement

@@ -1,7 +1,7 @@
 ---
 family: intent
 id: int:status-surface
-status: proposed
+status: satisfied
 type: requirement
 ---
 ## Requirement

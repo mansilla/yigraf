@@ -1,7 +1,7 @@
 ---
 family: intent
 id: int:mcp-server
-status: proposed
+status: satisfied
 type: requirement
 ---
 ## Requirement
