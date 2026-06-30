@@ -169,47 +169,14 @@ any drift to re-verify. After finishing a task, run `yigraf link task:<plan>/<n>
 `yigraf remember` the non-obvious choices (with `--why` and `--concerns <sym>`).
 {_AGENTS_END}"""
 
-#: Machine-local Claude Code files `yigraf install-claude-hooks` writes — both bake this clone's
-#: absolute interpreter path, so neither may reach a commit. A teammate inherits the committed
+#: Machine-local Claude Code files `yigraf install-claude-hooks` writes — they bake this clone's
+#: absolute interpreter path, so they may never reach a commit. A teammate inherits the committed
 #: SKILL.md + AGENTS.md block and just re-runs the installer to wire their own paths.
-_CLAUDE_GITIGNORE_FILES = ("settings.local.json", "yigraf-statusline.sh")
+_CLAUDE_GITIGNORE_FILES = ("settings.local.json",)
 _CLAUDE_GITIGNORE_HEADER = (
     "# Machine-local Claude Code wiring written by `yigraf install-claude-hooks` — the commands bake\n"
     "# in this clone's absolute interpreter path, so they're per-machine and kept out of git.\n"
 )
-
-#: The Claude Code statusline adapter (host-specific glue, NOT yigraf's agnostic core). Claude Code
-#: pipes the session event as JSON on stdin; if ``jq`` is present we derive context-window occupancy
-#: from the transcript and pass it via ``--ctx-used``/``--ctx-limit`` (the ctx gauge), else we render
-#: the bar without it. The core never reads a transcript (int:status-surface / mem:013) — that parse
-#: lives HERE. ``__YIGRAF_PY__`` is replaced with this clone's interpreter at install time. Fail-open.
-_CLAUDE_STATUSLINE_SH = """\
-#!/usr/bin/env bash
-# yigraf → Claude Code statusline adapter, written by `yigraf install-claude-hooks` (per-machine).
-# With `jq`: shows the [Yigraf] bar + context-window gauge. Without `jq`: shows the bar, no gauge.
-# yigraf's core never reads a transcript (int:status-surface / mem:013); that parse lives here.
-set -eo pipefail
-
-PY="__YIGRAF_PY__"
-args=(--color)
-
-if command -v jq >/dev/null 2>&1; then
-  in=$(cat)
-  cwd=$(printf '%s' "$in" | jq -r '.workspace.current_dir // .cwd // "."')
-  # 1M-context models report a different ceiling; default to 200k otherwise.
-  limit=$(printf '%s' "$in" | jq -r 'if ((.model.id // "") | test("1m"; "i")) then 1000000 else 200000 end')
-  tx=$(printf '%s' "$in" | jq -r '.transcript_path // empty')
-  args=(--repo "$cwd" --color)
-  if [ -n "$tx" ] && [ -f "$tx" ]; then
-    used=$(jq -rs '[.[] | .message?.usage? // empty] | last
-                   | (.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens) // empty' \\
-                   "$tx" 2>/dev/null || true)
-    [ -n "${used:-}" ] && args+=(--ctx-used "$used" --ctx-limit "$limit")
-  fi
-fi
-
-"$PY" -m yigraf status "${args[@]}" 2>/dev/null || true
-"""
 
 
 @dataclass
@@ -220,7 +187,6 @@ class ClaudeHookResult:
     hooks_changed: bool
     gitignore_path: Path | None = None  # .claude/.gitignore keeping settings.local.json out of git
     statusline: str = "unchanged"  # "set" | "refreshed" | "kept-foreign" | "unchanged"
-    adapter_path: Path | None = None  # .claude/yigraf-statusline.sh — the [Yigraf] bar + ctx gauge
 
 
 def _ensure_claude_gitignore(claude: Path) -> Path:
@@ -236,12 +202,6 @@ def _ensure_claude_gitignore(claude: Path) -> Path:
     return path
 
 
-def _write_statusline_adapter(claude: Path, python: str) -> Path:
-    """Write the executable Claude Code statusline adapter, baking in this clone's interpreter."""
-    path = claude / "yigraf-statusline.sh"
-    path.write_text(_CLAUDE_STATUSLINE_SH.replace("__YIGRAF_PY__", python), encoding="utf-8")
-    path.chmod(0o755)
-    return path
 
 
 def _ensure_hook(hooks: dict, event: str, matcher: str, command: str, verb: str) -> bool:
@@ -259,15 +219,16 @@ def _ensure_hook(hooks: dict, event: str, matcher: str, command: str, verb: str)
 
 
 def _ensure_statusline(settings: dict, command: str) -> str:
-    """Point Claude Code's ``statusLine`` at the yigraf adapter — idempotent, non-clobbering.
+    """Point Claude Code's ``statusLine`` at ``yigraf statusline`` — idempotent, non-clobbering.
 
     The hooks speak into the *agent's* context; the statusline is the *human's* ambient surface, so
     wiring it is what makes the ``[Yigraf]`` brand + graph health actually visible on every refresh
     (int:status-surface). A statusLine is a single object (not a list), so we only set it when it's
-    absent or already ours — recognized by ``yigraf-statusline`` (the adapter) or ``yigraf status``
-    (the plain command earlier versions wired), so an upgrade refreshes in place. A *foreign*
-    statusLine is left untouched — clobbering a user's own status bar would be hostile (mirrors the
-    non-clobbering rule the hook merge already follows). Returns the action for the install summary.
+    absent or already ours — recognized by ``yigraf statusline`` (the current command), the old
+    ``yigraf-statusline.sh`` bash adapter, or the older plain ``yigraf status`` — so any prior version
+    refreshes in place. A *foreign* statusLine is left untouched — clobbering a user's own status bar
+    would be hostile (mirrors the non-clobbering rule the hook merge already follows). Returns the
+    action for the install summary.
     """
     existing = settings.get("statusLine")
     if isinstance(existing, dict):
@@ -313,9 +274,10 @@ def install_claude_hooks(root: Path) -> ClaudeHookResult:
                             f'"{py}" -m yigraf hook session-start', "hook session-start")
 
     claude.mkdir(parents=True, exist_ok=True)
-    adapter_path = _write_statusline_adapter(claude, py)  # the [Yigraf] bar + ctx gauge (jq-optional)
-    statusline = _ensure_statusline(settings, f'"{adapter_path}"')
+    # The statusline adapter is a dependency-free Python command — the [Yigraf] bar + ctx gauge, no jq.
+    statusline = _ensure_statusline(settings, f'"{py}" -m yigraf statusline')
     changed |= statusline in ("set", "refreshed")
+    (claude / "yigraf-statusline.sh").unlink(missing_ok=True)  # retire the old bash+jq adapter
 
     settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     gitignore_path = _ensure_claude_gitignore(claude)
@@ -327,8 +289,7 @@ def install_claude_hooks(root: Path) -> ClaudeHookResult:
     agents_path = _write_agents_block(root / "AGENTS.md")
     return ClaudeHookResult(settings_path=settings_path, skill_path=skill_path,
                             agents_path=agents_path, hooks_changed=changed,
-                            gitignore_path=gitignore_path, statusline=statusline,
-                            adapter_path=adapter_path)
+                            gitignore_path=gitignore_path, statusline=statusline)
 
 
 def _write_agents_block(agents_path: Path) -> Path:

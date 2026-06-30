@@ -445,6 +445,64 @@ def status_cmd(
     typer.echo(summary.render_line(color=use_color, icon=icon), color=use_color)
 
 
+def _claude_ctx(data: dict) -> tuple[Path, int | None, int | None]:
+    """Derive ``(repo, ctx_used, ctx_limit)`` from Claude Code's statusline stdin event.
+
+    Host-specific glue, NOT the agnostic core: ``compute_status`` never reads a transcript (mem:013),
+    so this Claude-Code-shaped parse lives here in the adapter command. Token usage = the last
+    transcript record's input + cache-read + cache-creation tokens; the window ceiling is model-derived
+    (1M-context models report a larger limit). Stdlib ``json`` only — no ``jq``. A missing transcript or
+    usage record ⇒ no ctx, and the bar simply renders without the gauge.
+    """
+    workspace = data.get("workspace") or {}
+    repo = Path(workspace.get("current_dir") or data.get("cwd") or ".")
+    model_id = ((data.get("model") or {}).get("id") or "")
+    limit = 1_000_000 if "1m" in model_id.lower() else 200_000
+    used: int | None = None
+    tx = data.get("transcript_path")
+    if tx and Path(tx).is_file():
+        for line in Path(tx).read_text(encoding="utf-8").splitlines():
+            try:
+                usage = (json.loads(line).get("message") or {}).get("usage")
+            except ValueError:
+                continue
+            if usage:  # keep the last usage record's running total
+                used = (usage.get("input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
+                        + usage.get("cache_creation_input_tokens", 0)) or None
+    return repo, used, (limit if used is not None else None)
+
+
+@app.command("statusline")
+def statusline_cmd(
+    repo: Path = typer.Option(None, "--repo", help="Repo root; default: the event's cwd, else current dir."),
+) -> None:
+    """Claude Code statusline adapter: render the [Yigraf] bar with a context-window gauge.
+
+    Wired by ``install-claude-hooks`` as the ``statusLine`` command. Reads Claude Code's session JSON
+    on stdin, derives context-window occupancy from the transcript (host-specific; the agnostic core
+    never reads a transcript — mem:013), and prints the colored bar. Dependency-free (stdlib ``json``,
+    no ``jq``; no shell) and fail-open: any error prints nothing rather than breaking the statusline.
+    """
+    try:
+        raw = sys.stdin.read()
+        data = json.loads(raw) if raw.strip() else {}
+    except (ValueError, OSError):
+        data = {}
+    try:
+        event_repo, ctx_used, ctx_limit = _claude_ctx(data)
+        root = repo or event_repo
+        workspace = root / WORKSPACE_DIRNAME
+        if not workspace.is_dir():
+            return  # ungoverned repo — stay silent (fail-open)
+        config = load_config(workspace / "config.yaml")
+        graph, _ = build_graph(root, config)
+        summary = status.compute_status(graph, root, config, ctx_used=ctx_used, ctx_limit=ctx_limit)
+        icon = status.SPIN[int(time.time()) % len(status.SPIN)]
+        typer.echo(summary.render_line(color=True, icon=icon), color=True)
+    except Exception:  # noqa: BLE001 — an ambient surface must never break the host (design law #5)
+        return
+
+
 @app.command("mcp")
 def mcp_cmd(
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root the server serves (default: cwd; or $YIGRAF_REPO)."),
@@ -581,12 +639,11 @@ def install_claude_hooks_cmd(
     typer.echo(f"Wrote hooks → {result.settings_path} (per-machine, gitignored)")
     typer.echo(f"Wrote skill → {result.skill_path}")
     typer.echo(f"Updated     → {result.agents_path}")
-    typer.echo(f"Wrote bar   → {result.adapter_path} (the [Yigraf] bar + ctx gauge; jq optional)")
     _STATUSLINE_NOTE = {
-        "set": "Statusline → wired to the [Yigraf] bar — shows on every refresh.",
-        "refreshed": "Statusline → re-pointed at the [Yigraf] adapter for this clone's interpreter.",
-        "kept-foreign": "Statusline → left your existing statusLine intact (point it at the adapter above to use the bar).",
-        "unchanged": "Statusline → already wired to the [Yigraf] adapter.",
+        "set": "Statusline → wired to `yigraf statusline` — the [Yigraf] bar + ctx gauge on every refresh.",
+        "refreshed": "Statusline → re-pointed at `yigraf statusline` for this clone's interpreter.",
+        "kept-foreign": "Statusline → left your existing statusLine intact (point it at `yigraf statusline` to use the bar).",
+        "unchanged": "Statusline → already wired to `yigraf statusline`.",
     }
     typer.echo(_STATUSLINE_NOTE[result.statusline])
     typer.echo("Teammates: re-run this command on your clone to wire your own interpreter path.")
@@ -669,7 +726,7 @@ def install_cmd(
         if h == "claude":
             r = install_claude_hooks(path)
             typer.echo(f"  hooks → {r.settings_path}  ·  skill → {r.skill_path}  ·  AGENTS → {r.agents_path}")
-            typer.echo(f"  statusline → {r.statusline} ([Yigraf] bar + ctx gauge; jq optional)")
+            typer.echo(f"  statusline → {r.statusline} ([Yigraf] bar + ctx gauge; no deps)")
         elif h == "codex":
             r = install_codex_hooks(path)
             typer.echo(f"  hooks → {r.hooks_path}  ·  AGENTS → {r.agents_path}")

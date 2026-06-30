@@ -108,6 +108,8 @@ def compute_drift(graph: nx.DiGraph) -> list[DriftItem]:
                                    relation=relation))
 
     for node_id, node_attrs in graph.nodes(data=True):
+        if node_id in superseded:  # a superseded decision's dangling concern is historical — no nag
+            continue
         for relation, attr in _DRIFT_RELATIONS.items():
             for entry in node_attrs.get(attr, []):
                 items.append(DriftItem("hard", node_id, entry["sym"], detail="symbol not found",
