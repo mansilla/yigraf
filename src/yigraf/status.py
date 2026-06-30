@@ -69,6 +69,7 @@ class StatusSummary:
     semantic: bool  # a non-empty embedding index is present (reflects the last build, not a live model load)
     embedded: int  # nodes in that index
     head: str | None  # short HEAD sha, informational
+    update: str | None = None  # a newer yigraf version on PyPI, if the daily check found one
     ctx_used: int | None = None  # context tokens in use, if a host supplied it
     ctx_limit: int | None = None  # context window size, if a host supplied it
 
@@ -96,6 +97,8 @@ class StatusSummary:
             parts.append(f"sem {self.embedded}")
         if self.ctx_pct is not None:
             parts.append(f"ctx {self.ctx_pct}%")
+        if self.update:
+            parts.append(f"⬆ {self.update}")
         return " · ".join(parts)
 
     def _pretty(self, icon: str | None) -> str:
@@ -117,6 +120,8 @@ class StatusSummary:
             segs.append(_c("✦", "35") + _c(f" sem {self.embedded}", "2"))
         if self.ctx_pct is not None:
             segs.append(self._ctx_gauge())
+        if self.update:  # a newer yigraf is on PyPI — gentle, brand-colored nudge
+            segs.append(_c(f"⬆ {self.update}", "1;36"))
         return _c(" · ", "2").join(segs)
 
     def _ctx_gauge(self) -> str:
@@ -184,11 +189,16 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
     from yigraf.counters import _head_sha
     head = _head_sha(root)
 
+    # A pure read of the .local sidecar the daily check writes — no network here (a statusline runs
+    # often); update.refresh() does the throttled fetch, and only the human-facing CLI surfaces call it.
+    from yigraf import __version__, update
+    available = update.available(root, __version__)
+
     return StatusSummary(
         symbols=symbols, intents=intents, plans=plans,
         tasks_total=tasks_total, tasks_open=tasks_open, decisions=decisions,
         drifting=drifting, freshness=_freshness(root, graph),
         semantic=embedded > 0, embedded=embedded,
-        head=head[:7] if head else None,
+        head=head[:7] if head else None, update=available,
         ctx_used=ctx_used, ctx_limit=ctx_limit,
     )
