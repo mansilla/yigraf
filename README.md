@@ -155,6 +155,10 @@ full the window is on every refresh, without spending the agent's context. It's 
 adapter (`yigraf statusline`), so the gauge works out of the box (no `jq`, no shell). The statusline is a
 Claude Code surface; an existing statusLine of yours is left untouched.
 
+The statusline also checks PyPI **at most once a day** (cached in the gitignored `.local/` sidecar,
+fail-open) and shows an `⬆ <version>` marker when a newer yigraf is released — `yigraf status` in a
+terminal then prints the one-line update command. No background job, no scheduler.
+
 ### Works with any host (two channels)
 
 yigraf reaches an agent through **pull** (the agent calls a tool) and/or **push** (yigraf injects at the

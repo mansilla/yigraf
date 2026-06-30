@@ -1,6 +1,6 @@
 ---
 concerns:
-- anchor: 71282160692f0b2895e966d4bd2c349c7f47ca913bcd8ea346cdcd9920360791
+- anchor: c2ccf9296e8b36f1250f03901a9f79c1ef1bf153be03d1ee49bf55c55719bb1d
   anchor_algo: astnorm-v1
   sym: sym:src/yigraf/cli.py#statusline_cmd
 - anchor: 0a791e94b09fba66067ef629363c2176ddc84a8be781d9c37e91e1dd6304951d

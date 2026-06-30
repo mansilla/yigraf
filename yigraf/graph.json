@@ -445,6 +445,12 @@
     },
     {
       "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "file:src/yigraf/update.py",
+      "target": "module:src/yigraf/update.py"
+    },
+    {
+      "confidence": "EXTRACTED",
       "relation": "imports",
       "source": "file:tests/conftest.py",
       "target": "file:src/yigraf/__init__.py"
@@ -932,6 +938,18 @@
     {
       "confidence": "EXTRACTED",
       "relation": "imports",
+      "source": "file:tests/test_update.py",
+      "target": "file:src/yigraf/__init__.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "file:tests/test_update.py",
+      "target": "module:tests/test_update.py"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "imports",
       "source": "file:tests/test_verbs.py",
       "target": "file:src/yigraf/cli.py"
     },
@@ -1136,7 +1154,7 @@
       "target": "int:status-surface"
     },
     {
-      "anchor": "0f9367e1084fbb8254e51e7c38f4a72d82bdab2759e1500e0423681e277964ca",
+      "anchor": "6fcfe7c9d86e8d08ea8285519798f14c67579749dd859716826bff195e13ebfd",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "concerns",
@@ -1150,7 +1168,7 @@
       "target": "int:status-surface"
     },
     {
-      "anchor": "0f9367e1084fbb8254e51e7c38f4a72d82bdab2759e1500e0423681e277964ca",
+      "anchor": "6fcfe7c9d86e8d08ea8285519798f14c67579749dd859716826bff195e13ebfd",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "concerns",
@@ -1172,7 +1190,7 @@
       "target": "sym:src/yigraf/status.py#_freshness"
     },
     {
-      "anchor": "3366a112e423c1d2107d3b156b254bc20409862882b15e20aac8634505259f32",
+      "anchor": "c42031ccfdedcb19110abe91c718486cda6eda0128774a97d8911572c093a80a",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "concerns",
@@ -1270,7 +1288,7 @@
       "target": "int:status-surface"
     },
     {
-      "anchor": "9d2a6cee6aead1ccba4442141eb6da243b16c8e6638868157d04ee646443dde9",
+      "anchor": "34dd0c31d599827eb6420af1f6aef3b3aaeb10943a0ce9b3c2cafb8f04e23f3a",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "concerns",
@@ -1332,7 +1350,7 @@
       "target": "sym:src/yigraf/cli.py#_claude_ctx"
     },
     {
-      "anchor": "71282160692f0b2895e966d4bd2c349c7f47ca913bcd8ea346cdcd9920360791",
+      "anchor": "c2ccf9296e8b36f1250f03901a9f79c1ef1bf153be03d1ee49bf55c55719bb1d",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "concerns",
@@ -1346,6 +1364,28 @@
       "relation": "concerns",
       "source": "mem:025",
       "target": "sym:src/yigraf/hooks.py#_ensure_statusline"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "serves",
+      "source": "mem:026",
+      "target": "int:status-surface"
+    },
+    {
+      "anchor": "83f255232b206b3b9e0bdebdc2157e27819be47ebddca27dc2dfaf5751e376ca",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:026",
+      "target": "sym:src/yigraf/update.py#available"
+    },
+    {
+      "anchor": "011a806d0ea0c909c17d97ccf3f36bfbdd2d835f5ad25efe3f7e3481e61fa31c",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:026",
+      "target": "sym:src/yigraf/update.py#refresh"
     },
     {
       "confidence": "EXTRACTED",
@@ -3270,6 +3310,42 @@
     {
       "confidence": "EXTRACTED",
       "relation": "contains",
+      "source": "module:src/yigraf/update.py",
+      "target": "sym:src/yigraf/update.py#_cache_path"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/update.py",
+      "target": "sym:src/yigraf/update.py#_fetch_latest"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/update.py",
+      "target": "sym:src/yigraf/update.py#_is_newer"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/update.py",
+      "target": "sym:src/yigraf/update.py#_parse"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/update.py",
+      "target": "sym:src/yigraf/update.py#available"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/update.py",
+      "target": "sym:src/yigraf/update.py#refresh"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
       "source": "module:tests/conftest.py",
       "target": "sym:tests/conftest.py#_disable_embeddings"
     },
@@ -4891,6 +4967,12 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:tests/test_status.py",
+      "target": "sym:tests/test_status.py#test_no_update_marker_without_a_newer_version"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_status.py",
       "target": "sym:tests/test_status.py#test_open_tasks_counted"
     },
     {
@@ -4910,6 +4992,12 @@
       "relation": "contains",
       "source": "module:tests/test_status.py",
       "target": "sym:tests/test_status.py#test_status_cli_line_and_json"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_status.py",
+      "target": "sym:tests/test_status.py#test_update_marker_shows_when_the_cache_has_a_newer_version"
     },
     {
       "confidence": "EXTRACTED",
@@ -5108,6 +5196,66 @@
       "relation": "contains",
       "source": "module:tests/test_tags.py",
       "target": "sym:tests/test_tags.py#test_vendored_languages_are_enabled"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_update.py",
+      "target": "sym:tests/test_update.py#_cache"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_update.py",
+      "target": "sym:tests/test_update.py#_write_cache"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_update.py",
+      "target": "sym:tests/test_update.py#test_available_is_silent_for_an_unknown_current_version"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_update.py",
+      "target": "sym:tests/test_update.py#test_available_is_silent_when_current_is_latest"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_update.py",
+      "target": "sym:tests/test_update.py#test_available_is_silent_without_a_cache"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_update.py",
+      "target": "sym:tests/test_update.py#test_available_reports_a_newer_version"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_update.py",
+      "target": "sym:tests/test_update.py#test_refresh_fetches_when_stale_and_writes_cache"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_update.py",
+      "target": "sym:tests/test_update.py#test_refresh_first_run_creates_the_cache"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_update.py",
+      "target": "sym:tests/test_update.py#test_refresh_is_fail_open_and_keeps_last_known"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_update.py",
+      "target": "sym:tests/test_update.py#test_refresh_is_throttled_within_the_ttl"
     },
     {
       "confidence": "EXTRACTED",
@@ -8202,6 +8350,30 @@
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
+      "source": "sym:src/yigraf/update.py#_is_newer",
+      "target": "sym:src/yigraf/update.py#_parse"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/update.py#available",
+      "target": "sym:src/yigraf/update.py#_cache_path"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/update.py#available",
+      "target": "sym:src/yigraf/update.py#_is_newer"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/update.py#refresh",
+      "target": "sym:src/yigraf/update.py#_cache_path"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
       "source": "sym:tests/test_astnorm.py#test_adding_a_member_flips_the_class_but_not_the_module",
       "target": "sym:tests/test_astnorm.py#_changed"
     },
@@ -9504,6 +9676,18 @@
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
+      "source": "sym:tests/test_status.py#test_no_update_marker_without_a_newer_version",
+      "target": "sym:tests/test_status.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_status.py#test_no_update_marker_without_a_newer_version",
+      "target": "sym:tests/test_status.py#_summary"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
       "source": "sym:tests/test_status.py#test_open_tasks_counted",
       "target": "sym:tests/test_status.py#_repo"
     },
@@ -9542,6 +9726,18 @@
       "relation": "calls",
       "source": "sym:tests/test_status.py#test_status_cli_line_and_json",
       "target": "sym:tests/test_status.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_status.py#test_update_marker_shows_when_the_cache_has_a_newer_version",
+      "target": "sym:tests/test_status.py#_repo"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_status.py#test_update_marker_shows_when_the_cache_has_a_newer_version",
+      "target": "sym:tests/test_status.py#_summary"
     },
     {
       "confidence": "EXTRACTED",
@@ -9752,6 +9948,60 @@
       "relation": "calls",
       "source": "sym:tests/test_tags.py#test_swift_class_protocol_and_methods",
       "target": "sym:tests/test_tags.py#_kinds"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_update.py#test_available_is_silent_for_an_unknown_current_version",
+      "target": "sym:tests/test_update.py#_write_cache"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_update.py#test_available_is_silent_when_current_is_latest",
+      "target": "sym:tests/test_update.py#_write_cache"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_update.py#test_available_reports_a_newer_version",
+      "target": "sym:tests/test_update.py#_write_cache"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_update.py#test_refresh_fetches_when_stale_and_writes_cache",
+      "target": "sym:tests/test_update.py#_write_cache"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_update.py#test_refresh_first_run_creates_the_cache",
+      "target": "sym:tests/test_update.py#_cache"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_update.py#test_refresh_is_fail_open_and_keeps_last_known",
+      "target": "sym:tests/test_update.py#_cache"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_update.py#test_refresh_is_fail_open_and_keeps_last_known",
+      "target": "sym:tests/test_update.py#_write_cache"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_update.py#test_refresh_is_throttled_within_the_ttl",
+      "target": "sym:tests/test_update.py#_cache"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:tests/test_update.py#test_refresh_is_throttled_within_the_ttl",
+      "target": "sym:tests/test_update.py#_write_cache"
     },
     {
       "confidence": "EXTRACTED",
@@ -10224,7 +10474,7 @@
       "target": "sym:src/yigraf/cli.py#_claude_ctx"
     },
     {
-      "anchor": "3366a112e423c1d2107d3b156b254bc20409862882b15e20aac8634505259f32",
+      "anchor": "c42031ccfdedcb19110abe91c718486cda6eda0128774a97d8911572c093a80a",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "implements",
@@ -10232,7 +10482,7 @@
       "target": "sym:src/yigraf/cli.py#status_cmd"
     },
     {
-      "anchor": "71282160692f0b2895e966d4bd2c349c7f47ca913bcd8ea346cdcd9920360791",
+      "anchor": "c2ccf9296e8b36f1250f03901a9f79c1ef1bf153be03d1ee49bf55c55719bb1d",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "implements",
@@ -10248,7 +10498,7 @@
       "target": "sym:src/yigraf/hooks.py#_ensure_statusline"
     },
     {
-      "anchor": "5b2f9126fa156a78a65df7c0dd0b2d2f2960fa65a2dd2a25bb52fb061fb0ea67",
+      "anchor": "8c219efc3498b031f797b7a1425e3de11fe3ff0f63f1ac0e11995f5e8a2264db",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "implements",
@@ -10256,12 +10506,28 @@
       "target": "sym:src/yigraf/status.py#StatusSummary"
     },
     {
-      "anchor": "0f9367e1084fbb8254e51e7c38f4a72d82bdab2759e1500e0423681e277964ca",
+      "anchor": "6fcfe7c9d86e8d08ea8285519798f14c67579749dd859716826bff195e13ebfd",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "implements",
       "source": "task:status-surface/1",
       "target": "sym:src/yigraf/status.py#compute_status"
+    },
+    {
+      "anchor": "83f255232b206b3b9e0bdebdc2157e27819be47ebddca27dc2dfaf5751e376ca",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "source": "task:status-surface/1",
+      "target": "sym:src/yigraf/update.py#available"
+    },
+    {
+      "anchor": "011a806d0ea0c909c17d97ccf3f36bfbdd2d835f5ad25efe3f7e3481e61fa31c",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "implements",
+      "source": "task:status-surface/1",
+      "target": "sym:src/yigraf/update.py#refresh"
     },
     {
       "confidence": "EXTRACTED",
@@ -10580,7 +10846,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "3669c252dba50cc6b85a7752c361e51a789412628ff01d6e873ececb5e0eda62",
+      "content_hash": "9f80d64688608aaa37c16b262814970be027a1fe8905179708afab22cdc9a37c",
       "family": "structure",
       "id": "file:src/yigraf/cli.py",
       "imports": [
@@ -10610,7 +10876,7 @@
       "source_range": [
         0,
         0,
-        854,
+        860,
         0
       ]
     },
@@ -11136,7 +11402,29 @@
       "source_range": [
         0,
         0,
-        194,
+        204,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "aa889f3db6aeebee055db32be2ace0757be4d590e20d43b702ef6ae06a7f0a29",
+      "family": "structure",
+      "id": "file:src/yigraf/update.py",
+      "imports": [
+        "json",
+        "pathlib",
+        "time",
+        "urllib.request"
+      ],
+      "kind": "file",
+      "label": "src/yigraf/update.py",
+      "language": "python",
+      "source_file": "src/yigraf/update.py",
+      "source_range": [
+        0,
+        0,
+        80,
         0
       ]
     },
@@ -11660,7 +11948,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "dbd4f79ddf4619a7996c079a887a79424eac86b133dbb453800529671f121e98",
+      "content_hash": "27a85142f2f62e16bff85b25cf8378a8f8d97cb11224adc34fb8f061daf45baa",
       "family": "structure",
       "id": "file:tests/test_status.py",
       "imports": [
@@ -11679,7 +11967,7 @@
       "source_range": [
         0,
         0,
-        103,
+        117,
         0
       ]
     },
@@ -11701,6 +11989,27 @@
         0,
         0,
         299,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "d5eef0ae8ee87a6bd6d0916ec0ccdf8deabfd78efe4f3426f8ca150928191080",
+      "family": "structure",
+      "id": "file:tests/test_update.py",
+      "imports": [
+        "json",
+        "pathlib",
+        "yigraf"
+      ],
+      "kind": "file",
+      "label": "tests/test_update.py",
+      "language": "python",
+      "source_file": "tests/test_update.py",
+      "source_range": [
+        0,
+        0,
+        64,
         0
       ]
     },
@@ -11907,7 +12216,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 28,
+      "survival": 29,
       "why": "the two drift-bearing relations differ only in source family + dangling-attr name; folding them into _DRIFT_RELATIONS means rename re-anchoring, the SHA cache, and soft/hard detection are written once"
     },
     {
@@ -11924,7 +12233,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 28,
+      "survival": 29,
       "why": "memory-model \u00a75 option A: cheapest, deterministic, EXTRACTED confidence, mirrors the v0 implements pattern we already trust; add distillation (option B) only once links prove valuable"
     },
     {
@@ -11941,7 +12250,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 28,
+      "survival": 29,
       "why": "only memory carries supersedes edges, so stamping superseded_in:0 on every structure node would bloat graph.json; retrieval reads the counter with a 0 default"
     },
     {
@@ -11958,7 +12267,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 27,
+      "survival": 28,
       "why": "we embed tens-to-thousands of short statements, not the codebase, so N is tiny; a query is one matmul (exact, sub-ms). FAISS/hnswlib add a heavy native dep that buys nothing until N is very large"
     },
     {
@@ -11975,7 +12284,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 27,
+      "survival": 28,
       "why": "no host exposes an embedding endpoint to a hook, so embeddings are yigraf's own responsibility; making them required would break the zero-config promise \u2014 absent backend degrades to the v0 lexical seeder"
     },
     {
@@ -11992,7 +12301,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 25,
+      "survival": 26,
       "why": "DESIGN R1/R2/R3 scope v0 to local state so graph.json stays fully recomputable (no query-time writes, trivial merges, CI-reproducible); the accumulated/shared/merge-reconciled counter model (Model G) needs a cloud service + API for teams to share artifacts, which is v1 Enterprise paid-plan work"
     },
     {
@@ -12009,7 +12318,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 25,
+      "survival": 26,
       "why": "R2 wants maturity branch-cadence-independent and identical on every clone/CI; deriving it from git history (intro commit .. HEAD) makes it recomputable and merge-safe, so no per-session survival counter is stored or reconciled"
     },
     {
@@ -12026,7 +12335,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 25,
+      "survival": 26,
       "why": "R3: history must stay auditable, so churn (superseded_in>0 \u2227 refs_in=0) is moved out of the active glob rather than removed; usage is machine-local sidecar state, not authoritative, so GC must not depend on it"
     },
     {
@@ -12043,7 +12352,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 23,
+      "survival": 24,
       "why": "the per-node fan-out (~2N git calls, on the hot PostToolUse path) was a \ud83d\udd34 perf caveat; _survival_map batches all paths into 2 calls (one topo-order log for commit order + one batched --diff-filter=A --name-status for intros) and the result is memoized by HEAD in the structure cache, since an edit never moves HEAD \u2014 so the hook path is 1 rev-parse and 0 walks. Survival stays byte-identical so graph.json is still recomputable"
     },
     {
@@ -12060,7 +12369,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 21,
+      "survival": 22,
       "why": "the interpreter path is per-machine; settings.local.json is Claude Code's designated per-machine file and a self-contained .claude/.gitignore keeps it out of git \u2014 symmetric with the post-commit git hook, which already bakes the abs path into the never-committed .git/hooks/. This keeps the run-without-the-venv-on-PATH property while never committing a machine path."
     },
     {
@@ -12077,7 +12386,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 20,
+      "survival": 21,
       "why": "yigraf's read path is push (hooks inject) but its write path is pull (link/remember are opt-in), so an undisciplined agent silently starves the graph; making the decay legible in context+SessionStart lets the agent self-correct, while staying advisory (like R9c reconcile) honors fail-open/silence-as-feature"
     },
     {
@@ -12094,7 +12403,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 14,
+      "survival": 15,
       "why": "the status surface targets the human principal, but the PostToolUse injection spends the AGENT's context/token budget \u2014 folding vanity stats there would violate design-law #2/#4 (output is for the agent's context; silence is a feature). A statusline is a separate UI region that costs the agent zero tokens, so it informs the user without taxing the agent's attention."
     },
     {
@@ -12111,7 +12420,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 14,
+      "survival": 15,
       "why": "no host hands a CLI its context-window usage (mirrors mem:005 for embeddings), so reading it can't live in the host-agnostic core without coupling yigraf to one host's transcript format. Making it an optional injected param keeps compute_status pure and lets a per-host adapter fill it; a host that can't supply it just omits the ctx segment and the rest still renders."
     },
     {
@@ -12128,7 +12437,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 14,
+      "survival": 15,
       "why": "write_graph is deterministic (sort_keys=True), so a byte-equal canonical projection is an exact freshness signal with nothing written anywhere. Stamping the build-HEAD into graph.json would make every query/edit dirty git and write volatile state into the committed projection \u2014 violating R6/mem:006 (files are truth; graph.json is a recomputable projection)."
     },
     {
@@ -12145,7 +12454,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 14,
+      "survival": 15,
       "why": ""
     },
     {
@@ -12162,7 +12471,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 9,
+      "survival": 10,
       "why": "verified host research: the Antigravity IDE has NO lifecycle-hook/context-injection system (Google staff confirmed), while every target host speaks MCP. A push-hook-per-host strategy would leave Antigravity with nothing; MCP is the one channel they all share, so it's the portable floor. Push hooks remain the stronger per-host channel where they exist (Claude Code, Codex)."
     },
     {
@@ -12179,7 +12488,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 9,
+      "survival": 10,
       "why": "an MCP server is long-lived for the session, so holding the structure graph and the bge-small model warm means the 2nd+ context call skips the cold build/model-load; a subprocess-proxy would re-pay that ~1-2s every call. Cost: ~10 lines of context orchestration duplicated from cli.context (acceptable for an adapter)."
     },
     {
@@ -12196,7 +12505,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 8,
+      "survival": 9,
       "why": "writes are rare and already rebuild the graph, so the per-call process cost is negligible \u2014 and shelling out reuses the CLI's dedup guard, anchoring, and exit-0 'did you mean' guidance verbatim, so the MCP write path can't drift from the CLI's. Reads stay in-process for warmth (mem:017). _run_cli returns stdout (the agent-facing text) and folds in stderr only on failure, so model-load progress never pollutes a result."
     },
     {
@@ -12213,7 +12522,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 7,
+      "survival": 8,
       "why": "Codex's hook contract mirrors Claude Code's (same tool_name/tool_input/cwd in, hookSpecificOutput.additionalContext out), so generalizing _edited_file to also parse apply_patch's '*** Update File:' line is the only new logic \u2014 the handlers and output envelope are shared. The exact edit-tool name + hooks.json schema are version-sensitive, so PostToolUse stays best-effort and silent on a mismatch (R8 fail-open); SessionStart is the reliable win. Codex paths are repo-relative, so they're anchored to root before resolving."
     },
     {
@@ -12230,7 +12539,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 7,
+      "survival": 8,
       "why": "verified: the Antigravity IDE has no lifecycle-hook/context-injection system, so there is no push channel to wire \u2014 MCP (pull) + an always-on rule that instructs the agent to call the MCP tools is the substitute. The global mcp_config.json path is version-specific (~/.gemini/antigravity/ vs ~/.gemini/config/), so auto-writing it risks the wrong location; printing the snippet for the in-app MCP editor is safer and is an outward/global change the user should apply deliberately."
     },
     {
@@ -12247,7 +12556,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 4,
+      "survival": 5,
       "why": "the user shouldn't have to know which install-X command matches their host. Markers (.claude/.codex/.agents in repo, or ~/.claude / ~/.codex / ~/.gemini on the machine) are a zero-config signal of which hosts are present; wiring ALL detected ones is more useful than guessing a single 'the' host on a multi-tool machine. MCP is the universal floor, so any unrecognized/other host degrades to printing the MCP config \u2014 consistent with 'MCP is the bet'. detect_hosts takes an injectable home for deterministic tests."
     },
     {
@@ -12264,7 +12573,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 3,
+      "survival": 4,
       "why": "Design law #2: the styled render is a human-facing TTY flourish, but _plain is the byte-stable channel pipes/--json/tests/agent-injection depend on (test asserts startswith 'yigraf '), so the brand animation lives only in _pretty and SPIN[0]='Y' keeps the color test green"
     },
     {
@@ -12281,7 +12590,7 @@
       "status": "active",
       "superseded_in": 1,
       "supersedes_out": 0,
-      "survival": 2,
+      "survival": 3,
       "why": "the hooks speak into the agent's context, but the [Yigraf] brand + graph health is the human's ambient surface and was previously never wired by any install path, so a README install never saw it; wiring it on install makes it always-on. Non-clobbering: a foreign statusLine is kept (kept-foreign), only an absent or yigraf-owned one is set/refreshed \u2014 same abs-interpreter-in-settings.local.json approach as the hooks (mem:010)"
     },
     {
@@ -12305,7 +12614,7 @@
       "status": "active",
       "superseded_in": 1,
       "supersedes_out": 1,
-      "survival": 1,
+      "survival": 2,
       "why": "shipping the adapter (not just 'yigraf status --color') means the context-window gauge is available to everyone, not only on a machine with a hand-written adapter. jq is made optional so a missing jq degrades to the bar-without-gauge instead of breaking the statusline (fail-open). The script bakes this clone's interpreter path (like the hooks) so it's gitignored and per-machine; ownership is recognized by 'yigraf-statusline' OR the old 'yigraf status' string so an upgrade refreshes in place; a foreign statusLine is still kept"
     },
     {
@@ -12322,8 +12631,25 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 1,
-      "survival": 0,
+      "survival": 1,
       "why": "the bash+jq adapter only showed the ctx gauge where jq was installed and never ran on Windows; since yigraf is already a Python program, the adapter command parses Claude Code's stdin event + transcript with stdlib json (zero deps) so the gauge is universal. mem:013 is still honored: the transcript parse lives in this host-specific command (_claude_ctx), never in the agnostic compute_status core. Ownership recognizes the old bash 'yigraf-statusline' and plain 'yigraf status' wiring so an upgrade refreshes in place and deletes the retired .sh; a foreign statusLine is still kept"
+    },
+    {
+      "alternatives": "A cloud-scheduled Routine (create_trigger) \u2014 no CCR environment exists to fire a session into; or a macOS LaunchAgent / ~/.zshrc check \u2014 a system-level change outside yigraf when the tool already runs constantly and has a human ambient surface (the statusline) to carry the nudge; or checking PyPI on every statusline refresh \u2014 would hammer the network and add latency, hence the 1x/day .local-cached throttle",
+      "confidence": "EXTRACTED",
+      "family": "memory",
+      "id": "mem:026",
+      "kind": "decision",
+      "label": "yigraf self-checks PyPI for a newer release at most once a day, caches it in the gitignored .local sidecar, and surfaces an \u2b06<version> marker on the statusline (+ a one-line update notice in a TTY) \u2014 the network fetch lives in update.refresh(), never in compute_status",
+      "maturity": "working",
+      "promotable": false,
+      "source_file": "memory/026-yigraf-self-checks-pypi-for-a.md",
+      "statement": "yigraf self-checks PyPI for a newer release at most once a day, caches it in the gitignored .local sidecar, and surfaces an \u2b06<version> marker on the statusline (+ a one-line update notice in a TTY) \u2014 the network fetch lives in update.refresh(), never in compute_status",
+      "status": "active",
+      "superseded_in": 0,
+      "supersedes_out": 0,
+      "survival": 0,
+      "why": "the user wanted a daily update check that asks before updating; with no cloud environment a scheduled Routine had nothing to fire into, so the check is built into yigraf on-use: refresh() is throttled to 1x/day and fail-open (offline/slow PyPI never blocks the statusline), and stamps checked_at even on failure so it won't re-hit the network every refresh. It rides the human ambient surface (statusline), not a hook injection \u2014 an update is the human's concern, not the agent's (design law #4). compute_status only does a pure .local read (update.available); the network call is isolated in refresh() and invoked solely by the human-facing status/statusline commands, so mem:013's 'core reads no host API' still holds (the sidecar is an on-disk artifact like the embedding index)"
     },
     {
       "confidence": "EXTRACTED",
@@ -12471,7 +12797,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "3669c252dba50cc6b85a7752c361e51a789412628ff01d6e873ececb5e0eda62",
+      "content_hash": "9f80d64688608aaa37c16b262814970be027a1fe8905179708afab22cdc9a37c",
       "family": "structure",
       "id": "module:src/yigraf/cli.py",
       "kind": "module",
@@ -12481,7 +12807,7 @@
       "source_range": [
         0,
         0,
-        854,
+        860,
         0
       ]
     },
@@ -12785,7 +13111,23 @@
       "source_range": [
         0,
         0,
-        194,
+        204,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "aa889f3db6aeebee055db32be2ace0757be4d590e20d43b702ef6ae06a7f0a29",
+      "family": "structure",
+      "id": "module:src/yigraf/update.py",
+      "kind": "module",
+      "label": "src/yigraf/update.py",
+      "language": "python",
+      "source_file": "src/yigraf/update.py",
+      "source_range": [
+        0,
+        0,
+        80,
         0
       ]
     },
@@ -13159,7 +13501,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "dbd4f79ddf4619a7996c079a887a79424eac86b133dbb453800529671f121e98",
+      "content_hash": "27a85142f2f62e16bff85b25cf8378a8f8d97cb11224adc34fb8f061daf45baa",
       "family": "structure",
       "id": "module:tests/test_status.py",
       "kind": "module",
@@ -13169,7 +13511,7 @@
       "source_range": [
         0,
         0,
-        103,
+        117,
         0
       ]
     },
@@ -13186,6 +13528,22 @@
         0,
         0,
         299,
+        0
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "d5eef0ae8ee87a6bd6d0916ec0ccdf8deabfd78efe4f3426f8ca150928191080",
+      "family": "structure",
+      "id": "module:tests/test_update.py",
+      "kind": "module",
+      "label": "tests/test_update.py",
+      "language": "python",
+      "source_file": "tests/test_update.py",
+      "source_range": [
+        0,
+        0,
+        64,
         0
       ]
     },
@@ -14343,9 +14701,9 @@
       "signature": "def _claude_ctx(data: dict) -> tuple[Path, int | None, int | None]:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        447,
+        452,
         0,
-        471,
+        476,
         60
       ]
     },
@@ -14377,9 +14735,9 @@
       "signature": "def _edited_file(data: dict) -> str | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        777,
+        783,
         0,
-        795,
+        801,
         15
       ]
     },
@@ -14428,9 +14786,9 @@
       "signature": "def _hook_graph(root: Path):",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        760,
-        0,
         766,
+        0,
+        772,
         24
       ]
     },
@@ -14479,9 +14837,9 @@
       "signature": "def _post_tool_use(data: dict) -> dict | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        798,
+        804,
         0,
-        822,
+        828,
         101
       ]
     },
@@ -14496,9 +14854,9 @@
       "signature": "def _print_mcp_config(repo: Path) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        686,
-        0,
         692,
+        0,
+        698,
         80
       ]
     },
@@ -14615,9 +14973,9 @@
       "signature": "def _run_hook(handler) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        747,
+        753,
         0,
-        757,
+        763,
         28
       ]
     },
@@ -14632,9 +14990,9 @@
       "signature": "def _session_start(data: dict) -> dict | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        825,
+        831,
         0,
-        836,
+        842,
         102
       ]
     },
@@ -14717,9 +15075,9 @@
       "signature": "def drift( path: Path = typer.Argument(Path(\".\"), help=\"Repo root (default: current dir).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        519,
+        525,
         0,
-        542,
+        548,
         32
       ]
     },
@@ -14734,9 +15092,9 @@
       "signature": "def gc( path: Path = typer.Argument(Path(\".\"), help=\"Repo root (default: current dir).\"), apply: bool = typer.Option(False, \"--apply\", help=\"Actually archive (default: dry-run report).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        545,
+        551,
         0,
-        582,
+        588,
         88
       ]
     },
@@ -14751,9 +15109,9 @@
       "signature": "def graph_merge( base: Path = typer.Argument(..., help=\"Common-ancestor graph.json (git %O; ignored \u2014 v0 graph.json is recomputable).\"), ours: Path = typer.Argument(..., help=\"Our graph.json (git %A) \u2014 the merged result is written here.\"), theirs: Path = typer.Argument(..., help=\"Their graph.json (git %B).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        585,
+        591,
         0,
-        606,
+        612,
         45
       ]
     },
@@ -14768,9 +15126,9 @@
       "signature": "def hook_post_tool_use() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        839,
+        845,
         0,
-        842,
+        848,
         29
       ]
     },
@@ -14785,9 +15143,9 @@
       "signature": "def hook_session_start() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        845,
+        851,
         0,
-        848,
+        854,
         29
       ]
     },
@@ -14819,9 +15177,9 @@
       "signature": "def install_antigravity_cmd( path: Path = typer.Argument(Path(\".\"), help=\"Repo root to wire up for the Antigravity IDE.\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        668,
+        674,
         0,
-        683,
+        689,
         27
       ]
     },
@@ -14836,9 +15194,9 @@
       "signature": "def install_claude_hooks_cmd( path: Path = typer.Argument(Path(\".\"), help=\"Repo root to wire up for Claude Code.\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        631,
+        637,
         0,
-        648,
+        654,
         97
       ]
     },
@@ -14853,9 +15211,9 @@
       "signature": "def install_cmd( path: Path = typer.Argument(Path(\".\"), help=\"Repo root to wire up.\"), host: str = typer.Option(\"auto\", \"--host\", help=\"auto | claude | codex | antigravity | mcp (default: auto-detect).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        695,
+        701,
         0,
-        737,
+        743,
         35
       ]
     },
@@ -14870,9 +15228,9 @@
       "signature": "def install_codex_hooks_cmd( path: Path = typer.Argument(Path(\".\"), help=\"Repo root to wire up for Codex CLI.\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        651,
+        657,
         0,
-        665,
+        671,
         97
       ]
     },
@@ -14887,9 +15245,9 @@
       "signature": "def install_hooks( path: Path = typer.Argument(Path(\".\"), help=\"Repo root (must be a git repository).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        609,
+        615,
         0,
-        628,
+        634,
         75
       ]
     },
@@ -14938,9 +15296,9 @@
       "signature": "def main() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        851,
+        857,
         0,
-        853,
+        859,
         9
       ]
     },
@@ -14955,9 +15313,9 @@
       "signature": "def mcp_cmd( repo: Path = typer.Option(Path(\".\"), \"--repo\", help=\"Repo root the server serves (default: cwd; or $YIGRAF_REPO).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        505,
+        511,
         0,
-        516,
+        522,
         47
       ]
     },
@@ -15014,7 +15372,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "3366a112e423c1d2107d3b156b254bc20409862882b15e20aac8634505259f32",
+      "content_hash": "c42031ccfdedcb19110abe91c718486cda6eda0128774a97d8911572c093a80a",
       "family": "structure",
       "id": "sym:src/yigraf/cli.py#status_cmd",
       "kind": "function",
@@ -15025,13 +15383,13 @@
       "source_range": [
         419,
         0,
-        444,
-        80
+        449,
+        97
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "71282160692f0b2895e966d4bd2c349c7f47ca913bcd8ea346cdcd9920360791",
+      "content_hash": "c2ccf9296e8b36f1250f03901a9f79c1ef1bf153be03d1ee49bf55c55719bb1d",
       "family": "structure",
       "id": "sym:src/yigraf/cli.py#statusline_cmd",
       "kind": "function",
@@ -15040,9 +15398,9 @@
       "signature": "def statusline_cmd( repo: Path = typer.Option(None, \"--repo\", help=\"Repo root; default: the event's cwd, else current dir.\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        474,
+        479,
         0,
-        502,
+        508,
         14
       ]
     },
@@ -20284,7 +20642,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "5b2f9126fa156a78a65df7c0dd0b2d2f2960fa65a2dd2a25bb52fb061fb0ea67",
+      "content_hash": "8c219efc3498b031f797b7a1425e3de11fe3ff0f63f1ac0e11995f5e8a2264db",
       "family": "structure",
       "id": "sym:src/yigraf/status.py#StatusSummary",
       "kind": "class",
@@ -20295,7 +20653,7 @@
       "source_range": [
         56,
         0,
-        130,
+        135,
         27
       ]
     },
@@ -20310,15 +20668,15 @@
       "signature": "def _ctx_gauge(self) -> str:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        121,
-        4,
         126,
+        4,
+        131,
         89
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "b1bfcebb95e23f3f5758b539f76371f51a037960f1343053aab4c23ebe5ac590",
+      "content_hash": "2f32af60d192e3f581ceadbb1c811fb8cfdc6536792ff622264d0bbb2ac5a28b",
       "family": "structure",
       "id": "sym:src/yigraf/status.py#StatusSummary._plain",
       "kind": "method",
@@ -20327,15 +20685,15 @@
       "signature": "def _plain(self, brand: str) -> str:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        90,
+        91,
         4,
-        98,
+        101,
         33
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "9d2a6cee6aead1ccba4442141eb6da243b16c8e6638868157d04ee646443dde9",
+      "content_hash": "34dd0c31d599827eb6420af1f6aef3b3aaeb10943a0ce9b3c2cafb8f04e23f3a",
       "family": "structure",
       "id": "sym:src/yigraf/status.py#StatusSummary._pretty",
       "kind": "method",
@@ -20344,9 +20702,9 @@
       "signature": "def _pretty(self, icon: str | None) -> str:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        100,
+        103,
         4,
-        119,
+        124,
         41
       ]
     },
@@ -20361,9 +20719,9 @@
       "signature": "def as_dict(self) -> dict:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        128,
+        133,
         4,
-        130,
+        135,
         27
       ]
     },
@@ -20378,9 +20736,9 @@
       "signature": "def ctx_pct(self) -> int | None:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        74,
+        75,
         4,
-        79,
+        80,
         19
       ]
     },
@@ -20395,9 +20753,9 @@
       "signature": "def render_line(self, *, color: bool = False, icon: str | None = None) -> str:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        81,
+        82,
         4,
-        88,
+        89,
         77
       ]
     },
@@ -20429,15 +20787,15 @@
       "signature": "def _freshness(root: Path, graph: nx.DiGraph) -> str:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        133,
+        138,
         0,
-        148,
+        153,
         81
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "0f9367e1084fbb8254e51e7c38f4a72d82bdab2759e1500e0423681e277964ca",
+      "content_hash": "6fcfe7c9d86e8d08ea8285519798f14c67579749dd859716826bff195e13ebfd",
       "family": "structure",
       "id": "sym:src/yigraf/status.py#compute_status",
       "kind": "function",
@@ -20446,10 +20804,112 @@
       "signature": "def compute_status(graph: nx.DiGraph, root: Path, config: dict, *, ctx_used: int | None = None, ctx_limit: int | None = None) -> StatusSummary:",
       "source_file": "src/yigraf/status.py",
       "source_range": [
-        151,
+        156,
         0,
-        193,
+        203,
         5
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "c45b4fed0b7edc51a2e1f6f7d2c8c9b7578f15b875746b57f0a8191853b6fd90",
+      "family": "structure",
+      "id": "sym:src/yigraf/update.py#_cache_path",
+      "kind": "function",
+      "label": "_cache_path",
+      "language": "python",
+      "signature": "def _cache_path(root: Path) -> Path:",
+      "source_file": "src/yigraf/update.py",
+      "source_range": [
+        22,
+        0,
+        23,
+        65
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "e8096827385fd7aeffd8467b8cb893f87ec21bdb1e89528babb24d07e350165e",
+      "family": "structure",
+      "id": "sym:src/yigraf/update.py#_fetch_latest",
+      "kind": "function",
+      "label": "_fetch_latest",
+      "language": "python",
+      "signature": "def _fetch_latest(timeout: float = 2.0) -> str | None:",
+      "source_file": "src/yigraf/update.py",
+      "source_range": [
+        40,
+        0,
+        46,
+        19
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "13d44bce5edd6e228d09c8cc1a3e8b7f70a301db402cb2b3a570db2c8ebe69b3",
+      "family": "structure",
+      "id": "sym:src/yigraf/update.py#_is_newer",
+      "kind": "function",
+      "label": "_is_newer",
+      "language": "python",
+      "signature": "def _is_newer(latest: str, current: str) -> bool:",
+      "source_file": "src/yigraf/update.py",
+      "source_range": [
+        34,
+        0,
+        37,
+        88
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "2039a1f4e79a831303d07f7d41224341ff140a8669508f1ed5d6ef5364695662",
+      "family": "structure",
+      "id": "sym:src/yigraf/update.py#_parse",
+      "kind": "function",
+      "label": "_parse",
+      "language": "python",
+      "signature": "def _parse(v: str) -> tuple[int, ...]:",
+      "source_file": "src/yigraf/update.py",
+      "source_range": [
+        26,
+        0,
+        31,
+        17
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "83f255232b206b3b9e0bdebdc2157e27819be47ebddca27dc2dfaf5751e376ca",
+      "family": "structure",
+      "id": "sym:src/yigraf/update.py#available",
+      "kind": "function",
+      "label": "available",
+      "language": "python",
+      "signature": "def available(root: Path, current: str) -> str | None:",
+      "source_file": "src/yigraf/update.py",
+      "source_range": [
+        73,
+        0,
+        79,
+        68
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "011a806d0ea0c909c17d97ccf3f36bfbdd2d835f5ad25efe3f7e3481e61fa31c",
+      "family": "structure",
+      "id": "sym:src/yigraf/update.py#refresh",
+      "kind": "function",
+      "label": "refresh",
+      "language": "python",
+      "signature": "def refresh(root: Path, *, fetch=_fetch_latest, now: float | None = None) -> None:",
+      "source_file": "src/yigraf/update.py",
+      "source_range": [
+        49,
+        0,
+        70,
+        12
       ]
     },
     {
@@ -25002,9 +25462,9 @@
       "signature": "def test_context_is_injected_not_read(tmp_path: Path):",
       "source_file": "tests/test_status.py",
       "source_range": [
-        66,
+        80,
         0,
-        73,
+        87,
         39
       ]
     },
@@ -25044,6 +25504,23 @@
     },
     {
       "confidence": "EXTRACTED",
+      "content_hash": "d160e27226705ff599f71a2fcaf57abad8739eade51176f2c420028ec69f1d75",
+      "family": "structure",
+      "id": "sym:tests/test_status.py#test_no_update_marker_without_a_newer_version",
+      "kind": "function",
+      "label": "test_no_update_marker_without_a_newer_version",
+      "language": "python",
+      "signature": "def test_no_update_marker_without_a_newer_version(tmp_path: Path):",
+      "source_file": "tests/test_status.py",
+      "source_range": [
+        76,
+        0,
+        77,
+        87
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
       "content_hash": "677271fa245756aecbb23a4799dcf8c04ca1be71e901fa4b578c4b41549973fc",
       "family": "structure",
       "id": "sym:tests/test_status.py#test_open_tasks_counted",
@@ -25070,9 +25547,9 @@
       "signature": "def test_plain_render_has_no_ansi_but_color_does(tmp_path: Path):",
       "source_file": "tests/test_status.py",
       "source_range": [
-        82,
+        96,
         0,
-        88,
+        102,
         67
       ]
     },
@@ -25087,9 +25564,9 @@
       "signature": "def test_render_line_is_a_single_compact_line(tmp_path: Path):",
       "source_file": "tests/test_status.py",
       "source_range": [
-        76,
+        90,
         0,
-        79,
+        93,
         80
       ]
     },
@@ -25104,10 +25581,27 @@
       "signature": "def test_status_cli_line_and_json(tmp_path: Path):",
       "source_file": "tests/test_status.py",
       "source_range": [
-        91,
+        105,
         0,
-        102,
+        116,
         93
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "26ca4075fcffa7184b30fa9a3a48871f1db7f587c6efb8af2240b4fb8fd8a25b",
+      "family": "structure",
+      "id": "sym:tests/test_status.py#test_update_marker_shows_when_the_cache_has_a_newer_version",
+      "kind": "function",
+      "label": "test_update_marker_shows_when_the_cache_has_a_newer_version",
+      "language": "python",
+      "signature": "def test_update_marker_shows_when_the_cache_has_a_newer_version(tmp_path: Path):",
+      "source_file": "tests/test_status.py",
+      "source_range": [
+        66,
+        0,
+        73,
+        75
       ]
     },
     {
@@ -25669,6 +26163,176 @@
         0,
         135,
         37
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "6c2cb50f4a69d8923c71a1ae5734c8fe9add38149a8d6952f650a914c1d91140",
+      "family": "structure",
+      "id": "sym:tests/test_update.py#_cache",
+      "kind": "function",
+      "label": "_cache",
+      "language": "python",
+      "signature": "def _cache(root: Path) -> dict:",
+      "source_file": "tests/test_update.py",
+      "source_range": [
+        16,
+        0,
+        17,
+        85
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "036e3538da6fef42d2c9fd5a004e849dad944d76538f23a5fbd7ea70a26bc8c0",
+      "family": "structure",
+      "id": "sym:tests/test_update.py#_write_cache",
+      "kind": "function",
+      "label": "_write_cache",
+      "language": "python",
+      "signature": "def _write_cache(root: Path, **fields) -> Path:",
+      "source_file": "tests/test_update.py",
+      "source_range": [
+        9,
+        0,
+        13,
+        15
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "0f5a0e4d22e06f8ab46a7818692b8893a15c861d9be2ddd76f4ab7b36cd8775e",
+      "family": "structure",
+      "id": "sym:tests/test_update.py#test_available_is_silent_for_an_unknown_current_version",
+      "kind": "function",
+      "label": "test_available_is_silent_for_an_unknown_current_version",
+      "language": "python",
+      "signature": "def test_available_is_silent_for_an_unknown_current_version(tmp_path: Path):",
+      "source_file": "tests/test_update.py",
+      "source_range": [
+        34,
+        0,
+        36,
+        89
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "bf1658bc23616faafad3d36d1de5ed8e5741e3929b2634c2eda73a0ff516dfb4",
+      "family": "structure",
+      "id": "sym:tests/test_update.py#test_available_is_silent_when_current_is_latest",
+      "kind": "function",
+      "label": "test_available_is_silent_when_current_is_latest",
+      "language": "python",
+      "signature": "def test_available_is_silent_when_current_is_latest(tmp_path: Path):",
+      "source_file": "tests/test_update.py",
+      "source_range": [
+        25,
+        0,
+        27,
+        54
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "80fe74bba91219493de66891cb12333e87911ce5fa75594da2e17e6b76e612c7",
+      "family": "structure",
+      "id": "sym:tests/test_update.py#test_available_is_silent_without_a_cache",
+      "kind": "function",
+      "label": "test_available_is_silent_without_a_cache",
+      "language": "python",
+      "signature": "def test_available_is_silent_without_a_cache(tmp_path: Path):",
+      "source_file": "tests/test_update.py",
+      "source_range": [
+        30,
+        0,
+        31,
+        54
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "4fb1f53dcd0031f9b6bdf8c13a0efbb5646b024e895950ed61999778eb0a3c72",
+      "family": "structure",
+      "id": "sym:tests/test_update.py#test_available_reports_a_newer_version",
+      "kind": "function",
+      "label": "test_available_reports_a_newer_version",
+      "language": "python",
+      "signature": "def test_available_reports_a_newer_version(tmp_path: Path):",
+      "source_file": "tests/test_update.py",
+      "source_range": [
+        20,
+        0,
+        22,
+        57
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "50db7c584cf2fddd25017f8a5258d4484d474d935e9eb719b228ca9b1abc5da0",
+      "family": "structure",
+      "id": "sym:tests/test_update.py#test_refresh_fetches_when_stale_and_writes_cache",
+      "kind": "function",
+      "label": "test_refresh_fetches_when_stale_and_writes_cache",
+      "language": "python",
+      "signature": "def test_refresh_fetches_when_stale_and_writes_cache(tmp_path: Path):",
+      "source_file": "tests/test_update.py",
+      "source_range": [
+        47,
+        0,
+        50,
+        57
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "8fbbc26f85a7e1147af2923f77224d6049f380b7900001fab62d397639d1dcc7",
+      "family": "structure",
+      "id": "sym:tests/test_update.py#test_refresh_first_run_creates_the_cache",
+      "kind": "function",
+      "label": "test_refresh_first_run_creates_the_cache",
+      "language": "python",
+      "signature": "def test_refresh_first_run_creates_the_cache(tmp_path: Path):",
+      "source_file": "tests/test_update.py",
+      "source_range": [
+        61,
+        0,
+        63,
+        71
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "1d8c392e728ed4e69a2cc79fa7a4025f1691e94e619ee3f241cd1c9eeeeec223",
+      "family": "structure",
+      "id": "sym:tests/test_update.py#test_refresh_is_fail_open_and_keeps_last_known",
+      "kind": "function",
+      "label": "test_refresh_is_fail_open_and_keeps_last_known",
+      "language": "python",
+      "signature": "def test_refresh_is_fail_open_and_keeps_last_known(tmp_path: Path):",
+      "source_file": "tests/test_update.py",
+      "source_range": [
+        53,
+        0,
+        58,
+        83
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "6050ccc37a61384ada11eb42670815f21cae7e899768ce89c40ead3ab37ed4bf",
+      "family": "structure",
+      "id": "sym:tests/test_update.py#test_refresh_is_throttled_within_the_ttl",
+      "kind": "function",
+      "label": "test_refresh_is_throttled_within_the_ttl",
+      "language": "python",
+      "signature": "def test_refresh_is_throttled_within_the_ttl(tmp_path: Path):",
+      "source_file": "tests/test_update.py",
+      "source_range": [
+        39,
+        0,
+        44,
+        67
       ]
     },
     {

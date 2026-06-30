@@ -1,6 +1,6 @@
 ---
 concerns:
-- anchor: 3366a112e423c1d2107d3b156b254bc20409862882b15e20aac8634505259f32
+- anchor: c42031ccfdedcb19110abe91c718486cda6eda0128774a97d8911572c093a80a
   anchor_algo: astnorm-v1
   sym: sym:src/yigraf/cli.py#status_cmd
 family: memory

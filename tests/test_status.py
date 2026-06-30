@@ -64,6 +64,20 @@ def test_body_edit_surfaces_as_drift_in_the_summary(tmp_path: Path):
     assert _summary(root).drifting == 1
 
 
+def test_update_marker_shows_when_the_cache_has_a_newer_version(tmp_path: Path):
+    root = _repo(tmp_path)
+    # Simulate the daily check having found a newer release (a pure sidecar read — no network).
+    cache = root / "yigraf" / ".local" / "update-check.json"
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps({"checked_at": 0, "latest": "99.0.0"}))
+    line = _summary(root).render_line()
+    assert "⬆ 99.0.0" in line  # the human-facing nudge; silent otherwise
+
+
+def test_no_update_marker_without_a_newer_version(tmp_path: Path):
+    assert "⬆" not in _summary(_repo(tmp_path)).render_line()  # silence is a feature
+
+
 def test_context_is_injected_not_read(tmp_path: Path):
     """The one non-agnostic datum is host-supplied: absent ⇒ no ctx segment; present ⇒ a percentage."""
     root = _repo(tmp_path)

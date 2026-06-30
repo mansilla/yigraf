@@ -2,24 +2,30 @@
 edges:
   task:status-surface/1:
     implements:
-    - anchor: 0f9367e1084fbb8254e51e7c38f4a72d82bdab2759e1500e0423681e277964ca
+    - anchor: 6fcfe7c9d86e8d08ea8285519798f14c67579749dd859716826bff195e13ebfd
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/status.py#compute_status
-    - anchor: 5b2f9126fa156a78a65df7c0dd0b2d2f2960fa65a2dd2a25bb52fb061fb0ea67
+    - anchor: 8c219efc3498b031f797b7a1425e3de11fe3ff0f63f1ac0e11995f5e8a2264db
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/status.py#StatusSummary
-    - anchor: 3366a112e423c1d2107d3b156b254bc20409862882b15e20aac8634505259f32
+    - anchor: c42031ccfdedcb19110abe91c718486cda6eda0128774a97d8911572c093a80a
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/cli.py#status_cmd
     - anchor: 59982f9b71548591d00f6c6e9bd2461aefeac1ef6be8fd45e6dff3caf742cf33
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/hooks.py#_ensure_statusline
-    - anchor: 71282160692f0b2895e966d4bd2c349c7f47ca913bcd8ea346cdcd9920360791
+    - anchor: c2ccf9296e8b36f1250f03901a9f79c1ef1bf153be03d1ee49bf55c55719bb1d
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/cli.py#statusline_cmd
     - anchor: 0a791e94b09fba66067ef629363c2176ddc84a8be781d9c37e91e1dd6304951d
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/cli.py#_claude_ctx
+    - anchor: 011a806d0ea0c909c17d97ccf3f36bfbdd2d835f5ad25efe3f7e3481e61fa31c
+      anchor_algo: astnorm-v1
+      sym: sym:src/yigraf/update.py#refresh
+    - anchor: 83f255232b206b3b9e0bdebdc2157e27819be47ebddca27dc2dfaf5751e376ca
+      anchor_algo: astnorm-v1
+      sym: sym:src/yigraf/update.py#available
     tracks: int:status-surface
 family: plan
 id: plan:status-surface

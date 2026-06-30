@@ -1,6 +1,6 @@
 ---
 concerns:
-- anchor: 0f9367e1084fbb8254e51e7c38f4a72d82bdab2759e1500e0423681e277964ca
+- anchor: 6fcfe7c9d86e8d08ea8285519798f14c67579749dd859716826bff195e13ebfd
   anchor_algo: astnorm-v1
   sym: sym:src/yigraf/status.py#compute_status
 family: memory

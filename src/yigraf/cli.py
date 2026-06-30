@@ -16,7 +16,7 @@ from typing import NoReturn
 
 import typer
 
-from yigraf import __version__, artifacts, counters, embeddings, memory, retrieval, status
+from yigraf import __version__, artifacts, counters, embeddings, memory, retrieval, status, update
 from yigraf.astnorm import ANCHOR_ALGO
 from yigraf.config import load_config
 from yigraf.drift import compute_drift
@@ -433,6 +433,7 @@ def status_cmd(
     """
     workspace = _require_workspace(repo)
     config = load_config(workspace / "config.yaml")
+    update.refresh(repo)  # throttled (≤1×/day) + fail-open: refresh the "newer yigraf on PyPI?" cache
     graph, _ = build_graph(repo, config)  # no telemetry overlay — keep graph byte-equal for freshness
     summary = status.compute_status(graph, repo, config, ctx_used=ctx_used, ctx_limit=ctx_limit)
     if as_json:
@@ -443,6 +444,10 @@ def status_cmd(
     icon = status.SPIN[int(time.time()) % len(status.SPIN)] if use_color else None
     # color= keeps click from stripping ANSI on a non-TTY pipe — exactly the statusline's case.
     typer.echo(summary.render_line(color=use_color, icon=icon), color=use_color)
+    # A one-line "how to update" notice, only for a human at a real terminal (never a piped statusline).
+    if summary.update and sys.stdout.isatty():
+        typer.echo(f"⬆ yigraf {summary.update} is available — update with: "
+                   f"uv tool upgrade yigraf  (or: pipx upgrade yigraf · pip install -U yigraf)")
 
 
 def _claude_ctx(data: dict) -> tuple[Path, int | None, int | None]:
@@ -494,6 +499,7 @@ def statusline_cmd(
         workspace = root / WORKSPACE_DIRNAME
         if not workspace.is_dir():
             return  # ungoverned repo — stay silent (fail-open)
+        update.refresh(root)  # throttled (≤1×/day) + fail-open: the "newer yigraf on PyPI?" check
         config = load_config(workspace / "config.yaml")
         graph, _ = build_graph(root, config)
         summary = status.compute_status(graph, root, config, ctx_used=ctx_used, ctx_limit=ctx_limit)
