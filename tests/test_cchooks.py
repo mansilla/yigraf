@@ -145,33 +145,13 @@ def test_install_is_idempotent(tmp_path: Path):
     assert (tmp_path / ".claude" / ".gitignore").read_text().count("settings.local.json") == 1
 
 
-def test_install_wires_the_statusline_to_the_adapter(tmp_path: Path):
+def test_install_wires_the_statusline_to_the_python_command(tmp_path: Path):
     init_workspace(tmp_path)
     result = install_claude_hooks(tmp_path)
     # The human-facing [Yigraf] bar must be wired on a fresh install — that's what makes it "always seen".
     assert result.statusline == "set"
-    settings = json.loads(result.settings_path.read_text())
-    sl = settings["statusLine"]
-    assert sl["type"] == "command" and "yigraf-statusline.sh" in sl["command"]
-
-
-def test_install_writes_an_executable_jq_optional_adapter(tmp_path: Path):
-    init_workspace(tmp_path)
-    result = install_claude_hooks(tmp_path)
-    adapter = result.adapter_path
-    assert adapter == tmp_path / ".claude" / "yigraf-statusline.sh"
-    assert adapter.stat().st_mode & 0o111  # executable
-    body = adapter.read_text()
-    # jq-optional: the gauge is computed only when jq is present; the bar renders either way.
-    assert "command -v jq" in body and "yigraf status" in body
-    assert "__YIGRAF_PY__" not in body  # the interpreter placeholder was substituted
-
-
-def test_install_gitignores_the_adapter(tmp_path: Path):
-    init_workspace(tmp_path)
-    result = install_claude_hooks(tmp_path)
-    # The adapter bakes a per-machine interpreter path, so it must never be committed.
-    assert "yigraf-statusline.sh" in result.gitignore_path.read_text()
+    sl = json.loads(result.settings_path.read_text())["statusLine"]
+    assert sl["type"] == "command" and "-m yigraf statusline" in sl["command"]
 
 
 def test_install_statusline_is_idempotent(tmp_path: Path):
@@ -185,12 +165,27 @@ def test_install_upgrades_the_old_plain_statusline(tmp_path: Path):
     init_workspace(tmp_path)
     claude = tmp_path / ".claude"
     claude.mkdir()
-    # An earlier yigraf wired the plain command; a re-run must recognize it as ours and upgrade it.
+    # An earlier yigraf wired the plain command; a re-run recognizes it as ours and upgrades it.
     (claude / "settings.local.json").write_text(json.dumps(
         {"statusLine": {"type": "command", "command": '"/old/py" -m yigraf status --color'}}))
     result = install_claude_hooks(tmp_path)
     assert result.statusline == "refreshed"
-    assert "yigraf-statusline.sh" in json.loads(result.settings_path.read_text())["statusLine"]["command"]
+    assert "-m yigraf statusline" in json.loads(result.settings_path.read_text())["statusLine"]["command"]
+
+
+def test_install_retires_the_old_bash_adapter(tmp_path: Path):
+    init_workspace(tmp_path)
+    claude = tmp_path / ".claude"
+    claude.mkdir()
+    stale = claude / "yigraf-statusline.sh"
+    stale.write_text("#!/usr/bin/env bash\n# old bash+jq adapter\n")
+    (claude / "settings.local.json").write_text(json.dumps(
+        {"statusLine": {"type": "command", "command": f'"{stale}"'}}))
+    result = install_claude_hooks(tmp_path)
+    # The bash adapter is superseded by `yigraf statusline`; the upgrade removes the dead script.
+    assert result.statusline == "refreshed"
+    assert not stale.exists()
+    assert "-m yigraf statusline" in json.loads(result.settings_path.read_text())["statusLine"]["command"]
 
 
 def test_install_keeps_a_foreign_statusline(tmp_path: Path):
@@ -219,3 +214,45 @@ def test_install_preserves_foreign_local_settings_and_hooks(tmp_path: Path):
     assert settings["model"] == "some-model"
     commands = [h["command"] for e in settings["hooks"]["PostToolUse"] for h in e["hooks"]]
     assert "mine.sh" in commands and any("hook post-tool-use" in c for c in commands)
+
+
+# --- statusline adapter command (dependency-free; reads Claude Code's stdin event) ----------------
+
+
+def _statusline(root: Path, transcript: Path | None = None, model: str = "claude-opus-4-8"):
+    event = {"workspace": {"current_dir": str(root)}, "model": {"id": model}}
+    if transcript is not None:
+        event["transcript_path"] = str(transcript)
+    return runner.invoke(app, ["statusline"], input=json.dumps(event))
+
+
+def test_statusline_renders_the_bar_without_a_transcript(tmp_path: Path):
+    root = _governed_repo(tmp_path)
+    out = _statusline(root).output
+    assert "sym" in out and "ctx" not in out  # bar renders; no transcript ⇒ no gauge
+
+
+def test_statusline_shows_ctx_gauge_from_the_transcript(tmp_path: Path):
+    root = _governed_repo(tmp_path)
+    tx = tmp_path / "tx.jsonl"
+    tx.write_text(json.dumps(
+        {"message": {"usage": {"input_tokens": 10000, "cache_read_input_tokens": 30000,
+                               "cache_creation_input_tokens": 0}}}) + "\n")
+    out = _statusline(root, tx).output
+    assert "ctx" in out and "20%" in out  # 40,000 / 200,000 = 20%, no jq involved
+
+
+def test_statusline_1m_model_uses_the_larger_ceiling(tmp_path: Path):
+    root = _governed_repo(tmp_path)
+    tx = tmp_path / "tx.jsonl"
+    tx.write_text(json.dumps(
+        {"message": {"usage": {"input_tokens": 100000, "cache_read_input_tokens": 0,
+                               "cache_creation_input_tokens": 0}}}) + "\n")
+    out = _statusline(root, tx, model="claude-opus-4-8[1m]").output
+    assert "10%" in out  # 100,000 / 1,000,000, not / 200,000
+
+
+def test_statusline_is_fail_open_on_garbage(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # no workspace here ⇒ silent
+    result = runner.invoke(app, ["statusline"], input="not json {{")
+    assert result.exit_code == 0 and result.output.strip() == ""

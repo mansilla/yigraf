@@ -20,7 +20,7 @@ edges:
     tracks: int:enforceable-link
   task:yigraf-v0/3:
     implements:
-    - anchor: 2a16bd439cd34517e13f849f1be8bb3c15acb6355dc488a9598a9d238ced7de0
+    - anchor: 87bfae53a071d670d5fcbedf7de43033daee0f540faa44fba7aff16cc2fdcf1d
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/drift.py#compute_drift
     - anchor: e716cbe43024eaa7324bd553b48116ef692ad82ae9c0205465f80cddb018a9d4
@@ -38,7 +38,7 @@ edges:
     - anchor: b3232318c4d1bc867a56349efef6921a892ed9177c67fda541bfa48495207c3c
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/retrieval.py#context_for_locus
-    - anchor: a0082b257d2b55cfac1230bdf0dd375e0ccf1f189baeca1acdd8f3f0558483f1
+    - anchor: 5920a067bd0b0b0e36cab4758abb72b7c8a76e05784e4a96ac8300941fa40263
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/hooks.py#install_claude_hooks
     tracks: int:hook-surfacing

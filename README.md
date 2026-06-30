@@ -150,10 +150,10 @@ With Claude Code wired up (`yigraf install-claude-hooks`), steps 4–5 happen au
 **SessionStart** hook re-injects the active plan after a `/clear` — so a flow interrupted by a context
 reset resumes instead of restarting. The hook stays silent on ungoverned, undrifted edits (no nagging).
 It also wires a **statusline** — the spinning `[Yigraf]` graph-health bar (symbols, intents, open tasks,
-drift, freshness) — so you see the graph's shape on every refresh without spending the agent's context.
-If [`jq`](https://jqlang.github.io/jq/) is installed, the bar also shows a **context-window gauge**
-(`ctx ▰▰▱▱ 42%`); without it, the bar simply omits that segment. (An existing statusLine of yours is
-left untouched.)
+drift, freshness) plus a **context-window gauge** (`ctx ▰▰▱▱ 42%`) — so you see the graph's shape and how
+full the window is on every refresh, without spending the agent's context. It's a dependency-free Python
+adapter (`yigraf statusline`), so the gauge works out of the box (no `jq`, no shell). The statusline is a
+Claude Code surface; an existing statusLine of yours is left untouched.
 
 ### Works with any host (two channels)
 
