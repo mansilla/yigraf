@@ -3679,6 +3679,12 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:tests/test_cli.py",
+      "target": "sym:tests/test_cli.py#test_version_matches_installed_package_metadata"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_cli.py",
       "target": "sym:tests/test_cli.py#test_version_runs"
     },
     {
@@ -10467,10 +10473,12 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "3d1c5eb0ced30596cb37688bffb0258517bc65ff788eb96cf097610896ee1d88",
+      "content_hash": "318942f258df00148cec8e4ce67ca35990753983423c2cf0eaa9d1a81392495b",
       "family": "structure",
       "id": "file:src/yigraf/__init__.py",
-      "imports": [],
+      "imports": [
+        "importlib.metadata"
+      ],
       "kind": "file",
       "label": "src/yigraf/__init__.py",
       "language": "python",
@@ -10478,7 +10486,7 @@
       "source_range": [
         0,
         0,
-        3,
+        8,
         0
       ]
     },
@@ -11244,7 +11252,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "c9ae87a469979e9f95865a2902009ad30c061b062513ee63f77ee9d7014cfab6",
+      "content_hash": "78727fcc02b037105a8efba8a8db55566d4414c93369db42e8d13f3e1a8e4f55",
       "family": "structure",
       "id": "file:tests/test_cli.py",
       "imports": [
@@ -11259,7 +11267,7 @@
       "source_range": [
         0,
         0,
-        32,
+        39,
         0
       ]
     },
@@ -11899,7 +11907,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 27,
+      "survival": 28,
       "why": "the two drift-bearing relations differ only in source family + dangling-attr name; folding them into _DRIFT_RELATIONS means rename re-anchoring, the SHA cache, and soft/hard detection are written once"
     },
     {
@@ -11916,7 +11924,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 27,
+      "survival": 28,
       "why": "memory-model \u00a75 option A: cheapest, deterministic, EXTRACTED confidence, mirrors the v0 implements pattern we already trust; add distillation (option B) only once links prove valuable"
     },
     {
@@ -11933,7 +11941,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 27,
+      "survival": 28,
       "why": "only memory carries supersedes edges, so stamping superseded_in:0 on every structure node would bloat graph.json; retrieval reads the counter with a 0 default"
     },
     {
@@ -11950,7 +11958,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 26,
+      "survival": 27,
       "why": "we embed tens-to-thousands of short statements, not the codebase, so N is tiny; a query is one matmul (exact, sub-ms). FAISS/hnswlib add a heavy native dep that buys nothing until N is very large"
     },
     {
@@ -11967,7 +11975,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 26,
+      "survival": 27,
       "why": "no host exposes an embedding endpoint to a hook, so embeddings are yigraf's own responsibility; making them required would break the zero-config promise \u2014 absent backend degrades to the v0 lexical seeder"
     },
     {
@@ -11984,7 +11992,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 24,
+      "survival": 25,
       "why": "DESIGN R1/R2/R3 scope v0 to local state so graph.json stays fully recomputable (no query-time writes, trivial merges, CI-reproducible); the accumulated/shared/merge-reconciled counter model (Model G) needs a cloud service + API for teams to share artifacts, which is v1 Enterprise paid-plan work"
     },
     {
@@ -12001,7 +12009,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 24,
+      "survival": 25,
       "why": "R2 wants maturity branch-cadence-independent and identical on every clone/CI; deriving it from git history (intro commit .. HEAD) makes it recomputable and merge-safe, so no per-session survival counter is stored or reconciled"
     },
     {
@@ -12018,7 +12026,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 24,
+      "survival": 25,
       "why": "R3: history must stay auditable, so churn (superseded_in>0 \u2227 refs_in=0) is moved out of the active glob rather than removed; usage is machine-local sidecar state, not authoritative, so GC must not depend on it"
     },
     {
@@ -12035,7 +12043,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 22,
+      "survival": 23,
       "why": "the per-node fan-out (~2N git calls, on the hot PostToolUse path) was a \ud83d\udd34 perf caveat; _survival_map batches all paths into 2 calls (one topo-order log for commit order + one batched --diff-filter=A --name-status for intros) and the result is memoized by HEAD in the structure cache, since an edit never moves HEAD \u2014 so the hook path is 1 rev-parse and 0 walks. Survival stays byte-identical so graph.json is still recomputable"
     },
     {
@@ -12052,7 +12060,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 20,
+      "survival": 21,
       "why": "the interpreter path is per-machine; settings.local.json is Claude Code's designated per-machine file and a self-contained .claude/.gitignore keeps it out of git \u2014 symmetric with the post-commit git hook, which already bakes the abs path into the never-committed .git/hooks/. This keeps the run-without-the-venv-on-PATH property while never committing a machine path."
     },
     {
@@ -12069,7 +12077,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 19,
+      "survival": 20,
       "why": "yigraf's read path is push (hooks inject) but its write path is pull (link/remember are opt-in), so an undisciplined agent silently starves the graph; making the decay legible in context+SessionStart lets the agent self-correct, while staying advisory (like R9c reconcile) honors fail-open/silence-as-feature"
     },
     {
@@ -12086,7 +12094,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 13,
+      "survival": 14,
       "why": "the status surface targets the human principal, but the PostToolUse injection spends the AGENT's context/token budget \u2014 folding vanity stats there would violate design-law #2/#4 (output is for the agent's context; silence is a feature). A statusline is a separate UI region that costs the agent zero tokens, so it informs the user without taxing the agent's attention."
     },
     {
@@ -12103,7 +12111,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 13,
+      "survival": 14,
       "why": "no host hands a CLI its context-window usage (mirrors mem:005 for embeddings), so reading it can't live in the host-agnostic core without coupling yigraf to one host's transcript format. Making it an optional injected param keeps compute_status pure and lets a per-host adapter fill it; a host that can't supply it just omits the ctx segment and the rest still renders."
     },
     {
@@ -12120,7 +12128,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 13,
+      "survival": 14,
       "why": "write_graph is deterministic (sort_keys=True), so a byte-equal canonical projection is an exact freshness signal with nothing written anywhere. Stamping the build-HEAD into graph.json would make every query/edit dirty git and write volatile state into the committed projection \u2014 violating R6/mem:006 (files are truth; graph.json is a recomputable projection)."
     },
     {
@@ -12137,7 +12145,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 13,
+      "survival": 14,
       "why": ""
     },
     {
@@ -12154,7 +12162,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 8,
+      "survival": 9,
       "why": "verified host research: the Antigravity IDE has NO lifecycle-hook/context-injection system (Google staff confirmed), while every target host speaks MCP. A push-hook-per-host strategy would leave Antigravity with nothing; MCP is the one channel they all share, so it's the portable floor. Push hooks remain the stronger per-host channel where they exist (Claude Code, Codex)."
     },
     {
@@ -12171,7 +12179,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 8,
+      "survival": 9,
       "why": "an MCP server is long-lived for the session, so holding the structure graph and the bge-small model warm means the 2nd+ context call skips the cold build/model-load; a subprocess-proxy would re-pay that ~1-2s every call. Cost: ~10 lines of context orchestration duplicated from cli.context (acceptable for an adapter)."
     },
     {
@@ -12188,7 +12196,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 7,
+      "survival": 8,
       "why": "writes are rare and already rebuild the graph, so the per-call process cost is negligible \u2014 and shelling out reuses the CLI's dedup guard, anchoring, and exit-0 'did you mean' guidance verbatim, so the MCP write path can't drift from the CLI's. Reads stay in-process for warmth (mem:017). _run_cli returns stdout (the agent-facing text) and folds in stderr only on failure, so model-load progress never pollutes a result."
     },
     {
@@ -12205,7 +12213,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 6,
+      "survival": 7,
       "why": "Codex's hook contract mirrors Claude Code's (same tool_name/tool_input/cwd in, hookSpecificOutput.additionalContext out), so generalizing _edited_file to also parse apply_patch's '*** Update File:' line is the only new logic \u2014 the handlers and output envelope are shared. The exact edit-tool name + hooks.json schema are version-sensitive, so PostToolUse stays best-effort and silent on a mismatch (R8 fail-open); SessionStart is the reliable win. Codex paths are repo-relative, so they're anchored to root before resolving."
     },
     {
@@ -12222,7 +12230,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 6,
+      "survival": 7,
       "why": "verified: the Antigravity IDE has no lifecycle-hook/context-injection system, so there is no push channel to wire \u2014 MCP (pull) + an always-on rule that instructs the agent to call the MCP tools is the substitute. The global mcp_config.json path is version-specific (~/.gemini/antigravity/ vs ~/.gemini/config/), so auto-writing it risks the wrong location; printing the snippet for the in-app MCP editor is safer and is an outward/global change the user should apply deliberately."
     },
     {
@@ -12239,7 +12247,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 3,
+      "survival": 4,
       "why": "the user shouldn't have to know which install-X command matches their host. Markers (.claude/.codex/.agents in repo, or ~/.claude / ~/.codex / ~/.gemini on the machine) are a zero-config signal of which hosts are present; wiring ALL detected ones is more useful than guessing a single 'the' host on a multi-tool machine. MCP is the universal floor, so any unrecognized/other host degrades to printing the MCP config \u2014 consistent with 'MCP is the bet'. detect_hosts takes an injectable home for deterministic tests."
     },
     {
@@ -12249,14 +12257,14 @@
       "id": "mem:022",
       "kind": "decision",
       "label": "The pretty statusline brand is a spinning [Yigraf]: the Y rotates through 0/90/180/270 (Y\u227b\u2144\u227a) with 'igraf' in Mathematical-Monospace; the plain render stays ASCII 'yigraf'",
-      "maturity": "working",
+      "maturity": "settled",
       "promotable": false,
       "source_file": "memory/022-the-pretty-statusline-brand-is-a.md",
       "statement": "The pretty statusline brand is a spinning [Yigraf]: the Y rotates through 0/90/180/270 (Y\u227b\u2144\u227a) with 'igraf' in Mathematical-Monospace; the plain render stays ASCII 'yigraf'",
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 2,
+      "survival": 3,
       "why": "Design law #2: the styled render is a human-facing TTY flourish, but _plain is the byte-stable channel pipes/--json/tests/agent-injection depend on (test asserts startswith 'yigraf '), so the brand animation lives only in _pretty and SPIN[0]='Y' keeps the color test green"
     },
     {
@@ -12273,7 +12281,7 @@
       "status": "active",
       "superseded_in": 1,
       "supersedes_out": 0,
-      "survival": 1,
+      "survival": 2,
       "why": "the hooks speak into the agent's context, but the [Yigraf] brand + graph health is the human's ambient surface and was previously never wired by any install path, so a README install never saw it; wiring it on install makes it always-on. Non-clobbering: a foreign statusLine is kept (kept-foreign), only an absent or yigraf-owned one is set/refreshed \u2014 same abs-interpreter-in-settings.local.json approach as the hooks (mem:010)"
     },
     {
@@ -12297,7 +12305,7 @@
       "status": "active",
       "superseded_in": 1,
       "supersedes_out": 1,
-      "survival": 0,
+      "survival": 1,
       "why": "shipping the adapter (not just 'yigraf status --color') means the context-window gauge is available to everyone, not only on a machine with a hand-written adapter. jq is made optional so a missing jq degrades to the bar-without-gauge instead of breaking the statusline (fail-open). The script bakes this clone's interpreter path (like the hooks) so it's gitignored and per-machine; ownership is recognized by 'yigraf-statusline' OR the old 'yigraf status' string so an upgrade refreshes in place; a foreign statusLine is still kept"
     },
     {
@@ -12383,7 +12391,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "3d1c5eb0ced30596cb37688bffb0258517bc65ff788eb96cf097610896ee1d88",
+      "content_hash": "318942f258df00148cec8e4ce67ca35990753983423c2cf0eaa9d1a81392495b",
       "family": "structure",
       "id": "module:src/yigraf/__init__.py",
       "kind": "module",
@@ -12393,7 +12401,7 @@
       "source_range": [
         0,
         0,
-        3,
+        8,
         0
       ]
     },
@@ -12863,7 +12871,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "c9ae87a469979e9f95865a2902009ad30c061b062513ee63f77ee9d7014cfab6",
+      "content_hash": "78727fcc02b037105a8efba8a8db55566d4414c93369db42e8d13f3e1a8e4f55",
       "family": "structure",
       "id": "module:tests/test_cli.py",
       "kind": "module",
@@ -12873,7 +12881,7 @@
       "source_range": [
         0,
         0,
-        32,
+        39,
         0
       ]
     },
@@ -21577,9 +21585,9 @@
       "signature": "def test_init_via_cli(tmp_path):",
       "source_file": "tests/test_cli.py",
       "source_range": [
-        20,
+        27,
         0,
-        24,
+        31,
         58
       ]
     },
@@ -21594,10 +21602,27 @@
       "signature": "def test_init_via_cli_idempotent(tmp_path):",
       "source_file": "tests/test_cli.py",
       "source_range": [
-        27,
+        34,
         0,
-        31,
+        38,
         45
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "4b26728d1d06e984619aa960d17b342a423d1203595a48f7a47dbefb3a5c805a",
+      "family": "structure",
+      "id": "sym:tests/test_cli.py#test_version_matches_installed_package_metadata",
+      "kind": "function",
+      "label": "test_version_matches_installed_package_metadata",
+      "language": "python",
+      "signature": "def test_version_matches_installed_package_metadata(): # Regression: __version__ was hardcoded \"0.0.0\" and drifted from pyproject \u2014 derive it from the # installed package metadata so `--version` can never report a stale/placeholder version again.",
+      "source_file": "tests/test_cli.py",
+      "source_range": [
+        20,
+        0,
+        24,
+        54
       ]
     },
     {

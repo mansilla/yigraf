@@ -1,6 +1,6 @@
 [project]
 name = "yigraf"
-version = "0.1.7"
+version = "0.1.8"
 description = "A harness primitive for AI coding agents: one connected graph over code, intent, plan, and memory — legible (token-cheap retrieval) and enforceable (intent↔code drift checks)."
 readme = "README.md"
 requires-python = ">=3.11"
