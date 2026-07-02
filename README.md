@@ -54,7 +54,7 @@ queryable graph and re-surfaces the relevant piece exactly when the agent needs 
 | **A git repo** | drift anchoring and git-derived maturity read git history (degrades gracefully without git) |
 | **Tree-sitter grammars** | structure extraction — **bundled**, no setup |
 | **An agent harness** | the MCP server (`yigraf mcp`) reaches any MCP host; Claude Code & Codex also get push hooks; any agent can drive the CLI |
-| **MCP SDK** *(optional, `[mcp]` extra)* | only needed to run `yigraf mcp` (the pull channel); the CLI + hooks work without it |
+| **MCP SDK** | **bundled** (core dep) — powers `yigraf mcp`, the universal pull channel `yigraf install` wires by default |
 | **An embeddings backend** *(optional, `[embeddings]` extra)* | semantic recall of memory/intent by meaning; **falls back to lexical** retrieval if absent — never required |
 
 ## Quickstart

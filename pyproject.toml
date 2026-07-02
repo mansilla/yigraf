@@ -1,6 +1,6 @@
 [project]
 name = "yigraf"
-version = "0.1.10"
+version = "0.1.11"
 description = "A harness primitive for AI coding agents: one connected graph over code, intent, plan, and memory — legible (token-cheap retrieval) and enforceable (intent↔code drift checks)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -46,21 +46,20 @@ dependencies = [
     "tree-sitter-swift>=0.7,<0.9",
     "tree-sitter-bash>=0.23,<0.25",
     "tree-sitter-sql>=0.3,<0.4",
+    # The MCP SDK is a core dependency, not an extra: `yigraf mcp` is the universal pull channel every
+    # host speaks, and `yigraf install` wires it by default (full power out of the box). It's a single
+    # small pure-Python package — nothing like the torch weight that keeps embeddings opt-in below.
+    "mcp>=1.2",
 ]
 
 [project.optional-dependencies]
-# Scoped semantic recall over memory+intent (M8, docs/retrieval-design.md §10). Optional by design:
-# with this extra uninstalled, retrieval degrades gracefully to the lexical/IDF seeder (= v0).
-# numpy is the brute-force cosine index; sentence-transformers is the default local bge-small backend.
+# Scoped semantic recall over memory+intent (M8, docs/retrieval-design.md §10). Kept an extra ON
+# PURPOSE (mem:005): the sentence-transformers backend pulls torch (~1GB), too heavy to force on every
+# install for an enhancement. Absent it, retrieval degrades gracefully to the lexical/IDF seeder (= v0);
+# `yigraf install` detects the missing backend and prints the one-line command to turn it on.
 embeddings = [
     "numpy>=1.24",
     "sentence-transformers>=2.2",
-]
-# Host-agnostic pull channel: run yigraf as an MCP server (`yigraf mcp`) so any MCP-capable host
-# (Codex, Antigravity, Cursor, Claude Code, …) can pull the graph as tool calls. Optional by design —
-# the CLI + Claude Code hooks work without it; `yigraf mcp` guides to install this extra if absent.
-mcp = [
-    "mcp>=1.2",
 ]
 
 [project.urls]

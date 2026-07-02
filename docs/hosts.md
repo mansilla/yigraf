@@ -62,7 +62,7 @@ yigraf install-antigravity         # writes .agents/rules/yigraf.md + the AGENTS
 - Prints the `mcpServers` entry to add via Antigravity's MCP editor (Agent panel → MCP Servers → raw
   config), in `~/.gemini/antigravity/mcp_config.json` *or* `~/.gemini/config/mcp_config.json` (the path
   is version-specific, so yigraf prints it rather than auto-writing a global config).
-- Needs the optional `[mcp]` extra (`uv pip install -e '.[mcp]'`).
+- The MCP SDK is a core dependency — nothing extra to install.
 
 ## Why not a custom hook per host?
 

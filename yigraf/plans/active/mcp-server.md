@@ -2,7 +2,7 @@
 edges:
   task:mcp-server/1:
     implements:
-    - anchor: 7844ed2d117974b6d706a91c93885d0d277fa064fda8ad847008aac05a6d1c3e
+    - anchor: fc0e73f1453ef4f7a4646f4d6dde677162894337304a88ca726d57cf0d6f2a14
       anchor_algo: astnorm-v1
       sym: sym:src/yigraf/mcp_server.py#run
     - anchor: cf9e4deafdad0b3e765f4048719aaee63f85d8a28a53daa887096432feaf25a4

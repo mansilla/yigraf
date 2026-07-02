@@ -2194,9 +2194,10 @@ wheels = [
 
 [[package]]
 name = "yigraf"
-version = "0.1.9"
+version = "0.1.10"
 source = { editable = "." }
 dependencies = [
+    { name = "mcp" },
     { name = "networkx" },
     { name = "pyyaml" },
     { name = "tree-sitter" },
@@ -2225,9 +2226,6 @@ embeddings = [
     { name = "numpy", version = "2.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "sentence-transformers" },
 ]
-mcp = [
-    { name = "mcp" },
-]
 
 [package.dev-dependencies]
 dev = [
@@ -2236,7 +2234,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.2" },
+    { name = "mcp", specifier = ">=1.2" },
     { name = "networkx", specifier = ">=3.4" },
     { name = "numpy", marker = "extra == 'embeddings'", specifier = ">=1.24" },
     { name = "pyyaml", specifier = ">=6.0" },
@@ -2260,7 +2258,7 @@ requires-dist = [
     { name = "tree-sitter-typescript", specifier = ">=0.23,<0.25" },
     { name = "typer", specifier = ">=0.12" },
 ]
-provides-extras = ["embeddings", "mcp"]
+provides-extras = ["embeddings"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8.0" }]
