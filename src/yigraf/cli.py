@@ -23,8 +23,8 @@ from yigraf.drift import compute_drift
 from yigraf.extract import build_graph, symbol_content_hash
 from yigraf.graph import from_node_link, write_graph
 from yigraf.languages import available_extractors, extension_map
-from yigraf.hooks import (detect_hosts, install_antigravity, install_claude_hooks,
-                          install_codex_hooks, install_post_commit_hook)
+from yigraf.hooks import (_write_agents_block, detect_hosts, install_antigravity,
+                          install_claude_hooks, install_codex_hooks, install_post_commit_hook)
 from yigraf.scaffold import WORKSPACE_DIRNAME, init_workspace
 
 _TASK_ID = re.compile(r"^task:(.+)/(\d+)$")
@@ -516,8 +516,8 @@ def mcp_cmd(
     """Run yigraf as an MCP server (stdio) — the host-agnostic pull channel (int:mcp-server).
 
     Any MCP host (Codex, Antigravity, Cursor, Claude Code, …) can then pull the graph as tool calls:
-    `context` (the governing slice) and `status`. See docs/mcp.md for per-host config. Needs the
-    optional `[mcp]` extra; without it this prints an install hint and exits non-zero.
+    `context` (the governing slice) and `status`. See docs/mcp.md for per-host config. The MCP SDK is
+    a core dependency, so this always runs.
     """
     from yigraf import mcp_server  # lazy: keep the SDK import off every other command's path
     raise typer.Exit(code=mcp_server.run(repo))
@@ -696,7 +696,6 @@ def _print_mcp_config(repo: Path) -> None:
         "command": sys.executable,
         "args": ["-m", "yigraf", "mcp", "--repo", str(Path(repo).resolve())]}}}
     typer.echo(json.dumps(cfg, indent=2))
-    typer.echo("(needs the optional [mcp] extra: `uv pip install -e '.[mcp]'`)")
 
 
 @app.command(name="install")
@@ -705,27 +704,51 @@ def install_cmd(
     host: str = typer.Option("auto", "--host",
                              help="auto | claude | codex | antigravity | mcp (default: auto-detect)."),
 ) -> None:
-    """Detect the agent host and wire yigraf's best channel — push hooks where available, else MCP.
+    """Wire yigraf's full power by default — the host-agnostic channel every repo gets — plus any
+    detected host's native push hooks layered on top.
 
-    ``auto`` detects Claude Code / Codex / Antigravity by their config markers and wires each; if none of
-    the three is found (or ``--host`` names an unsupported host like ``mcp``/``cursor``), it falls back to
-    the universal MCP server, which works with any MCP host. One command, the right channel.
+    The **generic** channel installs unconditionally, because it works regardless of agent host: the
+    post-commit rebuild hook + graph.json merge driver (keep graph.json fresh across commits/merges),
+    the AGENTS.md instruction block (any agent reads it), and the MCP pull server (the universal
+    channel every MCP host speaks). Then ``auto`` detects Claude Code / Codex / Antigravity and layers
+    each host's native hooks over that; ``--host`` forces one. Only the heavy embeddings backend stays
+    opt-in — install detects it's missing and prints the one-line command to turn it on.
     """
-    _require_workspace(path)
+    workspace = _require_workspace(path)
+    config = load_config(workspace / "config.yaml")
+
+    # --- Generic channel (host-independent) — always on -------------------------------------------
+    typer.echo("== generic (every host) ==")
+    try:
+        r = install_post_commit_hook(path)
+        if r.installed:
+            typer.echo(f"  post-commit → {r.path} (rebuilds graph.json on commit)")
+            typer.echo("  merge-driver → " + ("registered (merge=yigraf-graph)" if r.merge_driver
+                       else "skipped — git config unavailable; graph.json uses a plain 3-way merge"))
+        else:
+            typer.echo(f"  post-commit → left your existing non-yigraf hook at {r.path} untouched")
+    except FileNotFoundError:
+        typer.echo("  post-commit → skipped (not a git repository)")
+    typer.echo(f"  AGENTS.md   → {_write_agents_block(path / 'AGENTS.md')} (host-agnostic instructions)")
+    typer.echo("  MCP pull server (works with any MCP host):")
+    _print_mcp_config(path)
+
+    # --- Capability check: embeddings (opt-in, but loudly offered — never a silent degrade) -------
+    if not embeddings.backend_available(config):
+        typer.echo("\n⚠ semantic recall is OFF — retrieval is lexical-only. Turn it on with:")
+        typer.echo("    uv pip install 'yigraf[embeddings]'   # local bge-small, pulls ~1GB torch")
+        typer.echo("  (Optional — yigraf works without it, just with weaker recall.)")
+
+    # --- Host-specific push channels (layered on top of the generic channel above) ----------------
     choice = host.lower()
     if choice == "auto":
         targets = detect_hosts(path)
-        typer.echo(f"Detected host(s): {', '.join(targets)}" if targets
-                   else "No supported host detected (Claude Code / Codex / Antigravity).")
+        typer.echo("\nDetected host(s): " + (", ".join(targets) if targets
+                   else "none (Claude Code / Codex / Antigravity) — the generic MCP channel covers you"))
     elif choice in ("claude", "codex", "antigravity"):
         targets = [choice]
-    else:  # "mcp" or any unrecognized host name → universal fallback
+    else:  # "mcp" or any unrecognized host name → generic MCP channel above is all that's needed
         targets = []
-
-    if not targets:
-        typer.echo("→ Using the universal MCP server (works with any MCP host).\n")
-        _print_mcp_config(path)
-        return
 
     for h in targets:
         typer.echo(f"\n== {h} ==")
@@ -740,8 +763,7 @@ def install_cmd(
         elif h == "antigravity":
             r = install_antigravity(path)
             typer.echo(f"  rule → {r.rule_path}  ·  AGENTS → {r.agents_path}")
-            typer.echo("  add the yigraf MCP server via Antigravity's MCP editor:")
-            _print_mcp_config(path)
+            typer.echo("  add the yigraf MCP server (config above) via Antigravity's MCP editor.")
 
 
 # --- Claude Code hook entry points (invoked by the hooks above; read event JSON on stdin) ----------

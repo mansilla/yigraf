@@ -27,9 +27,11 @@ locator comes back as guidance text, not an error.
 ## Prerequisites
 
 ```bash
-uv pip install -e '.[mcp]'      # from a checkout    (or: pip install 'yigraf[mcp]')
 yigraf init && yigraf build     # the repo needs a built graph
 ```
+
+The MCP SDK ships as a core dependency, so there's nothing extra to install — `yigraf install` wires
+the pull channel by default.
 
 The server picks its repo from (in order): the tool call's `repo` arg › `$YIGRAF_REPO` › the process
 cwd. Pin a repo with `--repo /abs/path` or `YIGRAF_REPO`. If `yigraf` isn't on the host's PATH, use an
@@ -90,7 +92,7 @@ push-based channel. Add the MCP server only if you also want the agent to pull `
 yigraf mcp --repo .      # should block, serving on stdio (Ctrl-C to stop)
 ```
 
-A quick wire check (with the `[mcp]` extra installed):
+A quick wire check:
 
 ```python
 import asyncio, sys, os
@@ -115,5 +117,6 @@ asyncio.run(main())
   model load.
 - **Stdio only writes the protocol to stdout.** Diagnostics (HF download notice, model-load progress)
   go to stderr — anything on stdout would corrupt the MCP stream.
-- **Optional extra, fail-soft.** Without `[mcp]`, `yigraf mcp` prints an install hint and exits non-zero
-  (mirrors the embeddings extra, `mem:005`). A missing workspace returns guidance text, not an error.
+- **Core dependency, always available.** The MCP SDK ships with yigraf and `yigraf install` wires the
+  pull channel by default — full power out of the box. A missing workspace returns guidance text, not an
+  error. (Only the heavy embeddings backend stays opt-in — `mem:005` — since it pulls ~1GB of torch.)

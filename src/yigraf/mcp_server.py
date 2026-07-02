@@ -6,8 +6,8 @@ them all with a single implementation. This is the pull channel: the agent *asks
 hook *pushing* it). Per the A-series eval pull is the weaker channel, but on a host with no lifecycle
 hook (e.g. the Antigravity IDE) it's the only one — so it's how those hosts get yigraf at all.
 
-Optional by design (mirrors ``mem:005``): the ``[mcp]`` extra carries the SDK; absent it, ``yigraf mcp``
-prints an install hint and exits non-zero rather than crashing. The CLI + Claude Code hooks never need it.
+The MCP SDK is a core dependency (not an extra): ``yigraf mcp`` is the universal pull channel every host
+speaks, and ``yigraf install`` wires it by default — so this module's import always resolves.
 
 Read tools (``context``, ``status``) run **in-process** so the structure graph + the embedding model
 stay **warm** across calls in a session — a second ``context`` query doesn't re-pay the cold build/model
@@ -29,12 +29,6 @@ from yigraf import status as status_mod
 from yigraf.config import load_config
 from yigraf.extract import build_graph
 from yigraf.scaffold import WORKSPACE_DIRNAME
-
-INSTALL_HINT = (
-    "yigraf mcp needs the optional [mcp] extra. Install it with:\n"
-    "  uv pip install -e '.[mcp]'      # from a checkout\n"
-    "  pip install 'yigraf[mcp]'       # from PyPI"
-)
 
 
 def _resolve_root(repo: str | os.PathLike | None) -> Path:
@@ -155,7 +149,7 @@ def run_supersede(repo: str | None, old_id: str, statement: str, why: str = "",
 
 def build_server(default_repo: str | None = None):
     """Construct the FastMCP server with yigraf's read + write tools. Imports the SDK lazily."""
-    from mcp.server.fastmcp import FastMCP  # ImportError here ⇒ the [mcp] extra isn't installed
+    from mcp.server.fastmcp import FastMCP  # core dep; imported lazily to keep it off other CLI paths
 
     server = FastMCP("yigraf")
 
@@ -248,11 +242,7 @@ def build_server(default_repo: str | None = None):
 def run(repo: str | os.PathLike | None = None) -> int:
     """Run the stdio MCP server, blocking until the client disconnects. Returns a process exit code."""
     default_repo = _resolve_root(repo)
-    try:
-        server = build_server(str(default_repo))
-    except ImportError:
-        print(INSTALL_HINT, file=sys.stderr)
-        return 1
+    server = build_server(str(default_repo))
     os.environ.setdefault("YIGRAF_REPO", str(default_repo))  # so tool calls omitting repo resolve here
     server.run()  # stdio transport by default
     return 0

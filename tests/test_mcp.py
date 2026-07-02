@@ -1,8 +1,8 @@
-"""yigraf MCP server (int:mcp-server) — the verbs-as-functions, tool registration, graceful absence.
+"""yigraf MCP server (int:mcp-server) — the verbs-as-functions and the tool registration surface.
 
-The ``run_context``/``run_status`` functions need no SDK (they're the CLI verbs as plain functions);
-``build_server`` + the tool surface need the ``[mcp]`` extra and are skipped when it's absent — so the
-suite passes either way, the same fallback discipline the embeddings suite proves.
+The MCP SDK is a core dependency (``yigraf install`` wires the pull channel by default), so
+``build_server`` and the tool surface are always importable; the ``run_*`` functions are the CLI verbs
+as plain functions and need no SDK at all.
 """
 import asyncio
 from pathlib import Path
@@ -45,15 +45,6 @@ def test_resolve_root_prefers_arg_then_env(tmp_path: Path, monkeypatch):
     assert mcp_server._resolve_root(None).name == "from_env"
 
 
-def test_run_guides_when_sdk_absent(monkeypatch, capsys):
-    """`yigraf mcp` without the [mcp] extra prints an install hint and exits non-zero — never crashes."""
-    def _no_sdk(_default):
-        raise ImportError("No module named 'mcp'")
-    monkeypatch.setattr(mcp_server, "build_server", _no_sdk)
-    assert mcp_server.run(".") == 1
-    assert "[mcp] extra" in capsys.readouterr().err
-
-
 def _linked_repo(tmp_path: Path) -> Path:
     """A built repo with a plan task ready to link/remember against."""
     root = _repo(tmp_path)
@@ -90,7 +81,7 @@ def test_multi_expands_repeatable_options():
 
 def test_build_server_registers_all_tools(tmp_path: Path):
     import pytest
-    pytest.importorskip("mcp")  # the [mcp] extra; skip cleanly when absent
+    pytest.importorskip("mcp")  # core dep; this guards only a deps-not-synced editable checkout
     server = mcp_server.build_server(str(_repo(tmp_path)))
     names = {t.name for t in asyncio.run(server.list_tools())}
     assert {"context", "status", "link", "remember", "note_constraint", "supersede"} <= names

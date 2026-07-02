@@ -120,6 +120,25 @@ def get_embedder(config: dict):
         return None
 
 
+def backend_available(config: dict) -> bool:
+    """Whether the semantic backend's deps are importable — a cheap probe that never loads the model.
+
+    Distinct from ``get_embedder``, which instantiates (and may download) the model. ``yigraf install``
+    uses this to decide whether to nudge the user toward the ``[embeddings]`` extra without paying a
+    model load: a missing extra ⇒ ``False`` ⇒ the install prints the one-line turn-on command.
+    """
+    if np is None:
+        return False
+    backend = _emb_config(config).get("backend", "local")
+    if backend in (None, "none") or backend != "local":
+        return False
+    try:
+        import sentence_transformers  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 def _embed_query_text(query: str, name: str) -> str:
     return (_BGE_QUERY_INSTRUCTION + query) if "bge" in name.lower() else query
 
