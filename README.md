@@ -55,24 +55,46 @@ queryable graph and re-surfaces the relevant piece exactly when the agent needs 
 | **Tree-sitter grammars** | structure extraction — **bundled**, no setup |
 | **An agent harness** | the MCP server (`yigraf mcp`) reaches any MCP host; Claude Code & Codex also get push hooks; any agent can drive the CLI |
 | **MCP SDK** | **bundled** (core dep) — powers `yigraf mcp`, the universal pull channel `yigraf install` wires by default |
-| **An embeddings backend** *(optional, `[embeddings]` extra)* | semantic recall of memory/intent by meaning; **falls back to lexical** retrieval if absent — never required |
+| **An embeddings backend** | **bundled** (core dep, fastembed/ONNX — no torch) — semantic recall of memory/intent by meaning, **on by default**; **falls back to lexical** retrieval if disabled |
 
-## Quickstart
+## Quickstart — just tell your agent
+
+yigraf is a tool *for agents*, so the install is too. In any repo, tell your coding agent:
+
+> **"Please install github.com/mansilla/yigraf in this project."**
+
+Your agent should then run the plan probe, **show you a menu**, and only wire what you pick:
 
 ```bash
-# 1. install (now on PyPI)
-pip install yigraf
+yigraf install --plan          # inspect the host + repo, print the menu, apply NOTHING
+yigraf install --plan --json   # same, machine-readable (the agent parses this)
+```
 
-# 2. in your repo: create the workspace and index the code
+The plan reports your environment (Python, git, detected hosts), the **core capabilities** you get
+for free (**including semantic recall** — the lightweight fastembed backend is bundled, no torch), and
+any **optional plugins** with their real cost — so *you* decide, before anything is installed. Then the
+agent applies your choice:
+
+```bash
+pip install yigraf                  # or: pipx / uv tool install  (see Installation)
+# full power out of the box — semantic recall included; no extras needed for it
 cd your-repo
-yigraf init
-yigraf build
+yigraf init                         # create the yigraf/ workspace
+yigraf build                        # index the code into the graph
+yigraf install                      # wire the host(s): auto-detects Claude Code / Codex / Antigravity, else MCP
+```
 
-# 3. wire it into your agent host — auto-detects Claude Code / Codex / Antigravity, else MCP
-yigraf install
-# target one explicitly with: yigraf install --host claude|codex|antigravity|mcp
+> **Agent recipe** (what a well-behaved agent does when asked to install yigraf):
+> 1. Install the CLI (`pipx`/`uv tool` preferred; **do not** add yigraf to `requirements.txt` — it's a
+>    dev/agent tool, not a runtime dependency), then `yigraf init && yigraf build`.
+> 2. Run `yigraf install --plan --json` and **present the menu to the human** — core capabilities
+>    (semantic recall is on by default), detected hosts, and any optional plugin with its cost.
+> 3. Let the human confirm; install any chosen extras; then run `yigraf install` to wire the hosts.
+> 4. Never silently install a heavy plugin (the torch backend) or silently disable a core one — surface it.
 
-# 4. use it
+Then use it:
+
+```bash
 yigraf context "session expiry"          # a scoped, token-cheap slice for a topic
 yigraf intent session-expiry -s "The system SHALL expire a session after 30m idle."
 yigraf link task:auth/1 sym:src/auth/session.py#refresh   # anchor a task to its code
@@ -88,13 +110,43 @@ nothing else to set up. For a CLI you use across repos, an isolated install (pip
 **Any platform — pick one:**
 
 ```bash
-pip install yigraf                 # into the current environment
+pip install yigraf                 # into the current environment (semantic recall included)
 pipx install yigraf                # isolated CLI (recommended)
 uv tool install yigraf             # isolated CLI, via uv
 
-# with semantic recall (numpy + sentence-transformers):
-pip install "yigraf[embeddings]"
+# optional: the torch/sentence-transformers backend (Apple-Silicon MPS or exact fp32) — NOT
+# needed for semantic recall, which is already on by default:
+pip install "yigraf[embeddings-torch]"
 ```
+
+### Capabilities & plugins (the menu)
+
+Everything in the **core** block ships with a plain `pip install yigraf` — no extras, no setup,
+semantic recall included. The one plugin is opt-in because it carries a real cost; `yigraf install
+--plan` prints this same menu tailored to your machine so you (via your agent) can choose.
+
+| | Capability | Included? | Cost / note |
+|---|---|:---:|---|
+| **core** | Structure index (16 languages, tree-sitter) | ✓ default | grammars bundled |
+| **core** | Intent + plan authoring, intent↔code **drift** | ✓ default | — |
+| **core** | Memory (decisions + *why*) | ✓ default | — |
+| **core** | Token-cheap `yigraf context` retrieval | ✓ default | — |
+| **core** | MCP server + host push hooks | ✓ default | `mcp` SDK is a core dep |
+| **core** | **Semantic recall** (fastembed / ONNX) | ✓ default | onnxruntime ~68MB, **no torch**; downloads a small model from HuggingFace on first use |
+| *plugin* | Torch embeddings backend (`[embeddings-torch]`) | opt-in | pulls **torch ~1GB+**; only for MPS throughput / exact fp32 |
+
+**About semantic recall and HuggingFace.** Semantic recall lets you find memory/intent *by meaning*
+instead of keywords, and it's **on by default** — the bundled **fastembed** backend runs the
+`bge-small` model on ONNX Runtime (~68 MB, no torch). On first `yigraf build` it downloads that small
+model from the **HuggingFace Hub** — that's the only reason HuggingFace is ever involved, and the
+one-time "unauthenticated Hugging Face Hub" notice you may see is harmless (set `HF_TOKEN` only if you
+hit download rate limits). Set `embeddings.backend: none` in `yigraf/config.yaml` to disable it —
+retrieval then **degrades gracefully to lexical recall** (nothing breaks, search is just keyword-based).
+
+The `[embeddings-torch]` plugin swaps in the `sentence-transformers` (torch) backend. You do **not**
+need it for semantic recall — install it only for Apple-Silicon MPS throughput on large corpora or the
+exact fp32 model, then set `embeddings.backend: sentence-transformers`. Measured cosine agreement
+between the two backends on this workload is ≈0.9999, so retrieval quality is effectively identical.
 
 ### macOS
 

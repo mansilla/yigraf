@@ -2,7 +2,8 @@
 
 Architecture tests run with no model (they inject vectors / a ``semantic_match`` dict, exercising the
 fusion + index plumbing deterministically). The real-recall and dedup tests are marked ``embeddings``
-and need the ``[embeddings]`` extra installed — skipped otherwise, so the suite is backend-independent.
+(deselected by default; run with ``pytest -m embeddings``) and use whichever model backend is present
+— fastembed (the core default) or sentence-transformers — so the suite stays backend-independent.
 """
 import importlib.util
 from pathlib import Path
@@ -15,11 +16,12 @@ from yigraf.cli import app
 from yigraf.config import default_config
 from yigraf.graph import empty_graph
 
-np = pytest.importorskip("numpy")  # the numpy index layer is part of the [embeddings] extra
+np = pytest.importorskip("numpy")  # numpy ships with the fastembed core dep
 
 runner = CliRunner()
-_HAVE_ST = importlib.util.find_spec("sentence_transformers") is not None
-needs_model = pytest.mark.skipif(not _HAVE_ST, reason="needs the [embeddings] extra (sentence-transformers)")
+_HAVE_MODEL = (importlib.util.find_spec("fastembed") is not None
+               or importlib.util.find_spec("sentence_transformers") is not None)
+needs_model = pytest.mark.skipif(not _HAVE_MODEL, reason="needs a model backend (fastembed or sentence-transformers)")
 
 
 # --------------------------------------------------------------------------------------------------

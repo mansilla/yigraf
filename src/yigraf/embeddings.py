@@ -5,19 +5,23 @@ Per ``docs/retrieval-design.md`` §10, we embed **only** the memory + intent nod
 is tiny and a query is a single numpy matmul (exact, sub-millisecond). Two layers, kept separate:
 
 - the **model** (text → vector): a pluggable backend, default **local ``bge-small-en-v1.5``** (CPU,
-  no API key, version-pinned, downloaded on first use);
+  no API key, version-pinned, downloaded on first use). The default backend is **fastembed** (ONNX
+  Runtime) — bundled in core, so semantic recall works out of the box without a torch install. The
+  heavier ``sentence-transformers`` (torch) backend stays available behind the ``[embeddings-torch]``
+  extra for anyone who wants Apple-Silicon MPS throughput or the exact fp32 model; measured cosine
+  agreement between the two on this task is ≈0.9999 (fastembed's default artifact is fp16, not int8).
 - the **index** (vectors + nearest-neighbour): a plain numpy matrix + id map under the gitignored
   ``yigraf/index/``, brute-force cosine — no FAISS/vector-DB at this scale (§10).
 
 **Everything degrades gracefully.** If numpy or the model backend is unavailable, the embedder is
 ``None``, the index stays empty, and retrieval falls back to the lexical/IDF seeder (= v0). Semantic
-recall is an enhancement, never a hard dependency — so this module is import-safe with the
-``[embeddings]`` extra uninstalled, and every public function returns an empty/None result instead of
-raising when a backend is missing.
+recall is on by default but never a *hard* dependency — this module is import-safe even with no
+backend present, and every public function returns an empty/None result instead of raising.
 """
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,10 +29,18 @@ from typing import Any
 
 import networkx as nx
 
-try:  # numpy is part of the optional [embeddings] extra; absence ⇒ lexical-only fallback.
+try:  # numpy ships with the fastembed core dep; absence ⇒ lexical-only fallback (kept for safety).
     import numpy as np
 except ImportError:  # pragma: no cover - exercised only in a lexical-only environment
     np = None  # type: ignore
+
+#: The default model backend. ``fastembed`` (ONNX) is bundled in core so semantic recall is on out of
+#: the box; ``sentence-transformers`` is the opt-in torch backend. ``local`` is a back-compat alias
+#: for the default local backend (older configs wrote ``backend: local`` meaning sentence-transformers;
+#: it now resolves to fastembed — the vectors agree to ≈0.9999, so an existing index stays valid).
+_DEFAULT_BACKEND = "fastembed"
+_FASTEMBED_BACKENDS = frozenset({"fastembed", "local"})
+_ST_BACKENDS = frozenset({"sentence-transformers", "sentence_transformers"})
 
 #: Embedded families (retrieval-design §10 — we never embed code; Graphify's IDF already nails that).
 _EMBED_FAMILIES = frozenset({"memory", "intent"})
@@ -72,12 +84,30 @@ def _text_hash(text: str) -> str:
 
 
 # --------------------------------------------------------------------------------------------------
-# Model layer (pluggable; local sentence-transformers default)
+# Model layer (pluggable; fastembed default, sentence-transformers opt-in)
 # --------------------------------------------------------------------------------------------------
 
 
+class _FastEmbedEmbedder:
+    """The default local backend: ``fastembed`` (ONNX Runtime, no torch), model ``bge-small-en-v1.5``."""
+
+    def __init__(self, model: Any, name: str) -> None:
+        self._model = model
+        self.name = name
+
+    def encode(self, texts: list[str]) -> "np.ndarray":
+        # fastembed.embed yields a generator of (dim,) vectors, L2-normalized by default; we
+        # re-normalize defensively so a plain dot product == cosine downstream (index + dedup).
+        vecs = np.asarray(list(self._model.embed(list(texts))), dtype="float32")
+        if vecs.size == 0:
+            return vecs
+        norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        return vecs / norms
+
+
 class _LocalEmbedder:
-    """A local ``sentence-transformers`` backend (default ``bge-small-en-v1.5``)."""
+    """The opt-in ``sentence-transformers`` (torch) backend, default ``bge-small-en-v1.5``."""
 
     def __init__(self, model: Any, name: str) -> None:
         self._model = model
@@ -96,47 +126,76 @@ def model_name(config: dict) -> str:
     return _emb_config(config).get("model", "BAAI/bge-small-en-v1.5")
 
 
-def get_embedder(config: dict):
-    """Load the configured embedding backend, or ``None`` if unavailable (⇒ lexical fallback).
+def _load_fastembed(name: str):
+    try:
+        from fastembed import TextEmbedding
+    except ImportError:  # pragma: no cover - only when fastembed core dep is somehow absent
+        return None
+    try:
+        return _FastEmbedEmbedder(TextEmbedding(model_name=name), name)
+    except Exception:  # pragma: no cover - network/model-load failure ⇒ degrade, never crash
+        return None
 
-    Never raises: a missing extra, an offline first-run download failure, or an unknown backend all
-    resolve to ``None`` so the caller silently degrades to the v0 lexical seeder.
-    """
-    if np is None:
-        return None
-    backend = _emb_config(config).get("backend", "local")
-    if backend in (None, "none"):
-        return None
-    if backend != "local":
-        return None  # ollama/openai/voyage backends are post-M8 (retrieval-design §10) — degrade.
+
+def _load_sentence_transformers(name: str):
     try:
         from sentence_transformers import SentenceTransformer
     except ImportError:
         return None
     try:
-        name = model_name(config)
         return _LocalEmbedder(SentenceTransformer(name), name)
     except Exception:  # pragma: no cover - network/model-load failure ⇒ degrade, never crash
         return None
 
 
+def get_embedder(config: dict):
+    """Load the configured embedding backend, or ``None`` if unavailable (⇒ lexical fallback).
+
+    Default backend is ``fastembed`` (bundled). ``sentence-transformers`` is the opt-in torch backend;
+    ``local`` is a back-compat alias for the default. Never raises: a missing dep, an offline first-run
+    download failure, or an unknown backend all resolve to ``None`` so the caller degrades to lexical.
+    """
+    if np is None:
+        return None
+    backend = _emb_config(config).get("backend", _DEFAULT_BACKEND)
+    if backend in (None, "none"):
+        return None
+    name = model_name(config)
+    if backend in _FASTEMBED_BACKENDS:
+        return _load_fastembed(name)
+    if backend in _ST_BACKENDS:
+        return _load_sentence_transformers(name)
+    return None  # ollama/openai/voyage backends are post-M8 (retrieval-design §10) — degrade.
+
+
 def backend_available(config: dict) -> bool:
-    """Whether the semantic backend's deps are importable — a cheap probe that never loads the model.
+    """Whether the configured backend's deps are importable — a cheap probe that never loads the model.
 
     Distinct from ``get_embedder``, which instantiates (and may download) the model. ``yigraf install``
-    uses this to decide whether to nudge the user toward the ``[embeddings]`` extra without paying a
-    model load: a missing extra ⇒ ``False`` ⇒ the install prints the one-line turn-on command.
+    uses this to report semantic-recall status in its plan without paying a model load. The default
+    (fastembed) is a core dep, so this is normally ``True`` out of the box.
     """
     if np is None:
         return False
-    backend = _emb_config(config).get("backend", "local")
-    if backend in (None, "none") or backend != "local":
+    backend = _emb_config(config).get("backend", _DEFAULT_BACKEND)
+    if backend in (None, "none"):
         return False
-    try:
-        import sentence_transformers  # noqa: F401
-    except ImportError:
-        return False
-    return True
+    if backend in _FASTEMBED_BACKENDS:
+        return importlib.util.find_spec("fastembed") is not None
+    if backend in _ST_BACKENDS:
+        return importlib.util.find_spec("sentence_transformers") is not None
+    return False
+
+
+def status(config: dict) -> dict:
+    """Semantic-recall status for ``yigraf install --plan`` — configured backend, whether it's active,
+    and whether the opt-in torch backend is importable. Pure inspection; never loads a model."""
+    backend = _emb_config(config).get("backend", _DEFAULT_BACKEND)
+    return {
+        "backend": backend,
+        "active": backend not in (None, "none") and backend_available(config),
+        "torch_available": importlib.util.find_spec("sentence_transformers") is not None,
+    }
 
 
 def _embed_query_text(query: str, name: str) -> str:

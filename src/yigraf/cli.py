@@ -698,11 +698,112 @@ def _print_mcp_config(repo: Path) -> None:
     typer.echo(json.dumps(cfg, indent=2))
 
 
+def _build_install_plan(path: Path, config: dict, host: str) -> dict:
+    """Inspect the host + repo and return the menu of what *would* be wired — the data an agent shows
+    the human before touching anything.
+
+    Pure inspection: reads the environment (Python, git, detected hosts, whether the embeddings backend
+    is importable) and never mutates. ``install --plan`` renders this; ``install`` applies it. Keeping
+    the two on one source of truth means the menu can't drift from what the installer actually does.
+    """
+    choice = host.lower()
+    detected = detect_hosts(path)
+    if choice == "auto":
+        push_targets = detected
+    elif choice in ("claude", "codex", "antigravity"):
+        push_targets = [choice]
+    else:  # "mcp" / unknown → generic MCP channel only
+        push_targets = []
+
+    emb = embeddings.status(config)
+    py = sys.version_info
+    return {
+        "yigraf_version": __version__,
+        "environment": {
+            "python": f"{py.major}.{py.minor}.{py.micro}",
+            "python_ok": (py.major, py.minor) >= (3, 11),
+            "git_repo": (Path(path) / ".git").is_dir(),
+        },
+        "hosts": {"detected": detected, "target": choice, "push_targets": push_targets},
+        # The generic channel is host-independent and always wired — it works with any agent.
+        "generic_channel": [
+            "post-commit hook — rebuilds graph.json on every commit (+ graph.json merge driver)",
+            "AGENTS.md instruction block — any agent reads it",
+            "MCP pull server (`yigraf mcp`) — the universal channel every MCP host speaks",
+        ],
+        # Capabilities the human chooses from. Core is always on; plugins carry their real cost so the
+        # decision is deliberate, not a surprise mid-install.
+        "capabilities": {
+            "core": [
+                "structure index — tree-sitter parsing, 16 languages (bundled, no setup)",
+                "intent & plan authoring + intent↔code drift detection",
+                "memory (decisions + the why) with lexical recall",
+                "token-cheap `yigraf context` retrieval",
+                f"semantic recall — {'ON' if emb['active'] else 'OFF'} "
+                f"(backend: {emb['backend']}; fastembed/ONNX, no torch) — downloads a small "
+                f"bge-small model from HuggingFace on first use",
+            ],
+            "plugins": [
+                {
+                    "name": "embeddings-torch",
+                    "enabled": emb["backend"] in ("sentence-transformers", "sentence_transformers")
+                               and emb["torch_available"],
+                    "enables": "swap semantic recall onto the torch/sentence-transformers backend "
+                               "(Apple-Silicon MPS throughput or the exact fp32 model)",
+                    "cost": "pulls torch (~1GB+); semantic recall already works without it",
+                    "fallback": "the default fastembed backend (semantic recall is on regardless)",
+                    "enable_cmd": "pip install 'yigraf[embeddings-torch]'  "
+                                  "# then set embeddings.backend: sentence-transformers",
+                },
+            ],
+        },
+    }
+
+
+def _render_plan(plan: dict) -> None:
+    """Human/agent-readable rendering of the install plan (the menu to present before applying)."""
+    env = plan["environment"]
+    typer.echo(f"yigraf {plan['yigraf_version']} — install plan (nothing applied yet)\n")
+    typer.echo("Environment:")
+    typer.echo(f"  Python {env['python']} " + ("✓" if env["python_ok"] else "✗ (needs ≥ 3.11)"))
+    typer.echo("  git repo " + ("✓ (drift anchoring enabled)" if env["git_repo"]
+               else "— none (drift/maturity degrade gracefully)"))
+    hosts = plan["hosts"]
+    typer.echo("  detected host(s): " + (", ".join(hosts["detected"]) or "none"))
+
+    typer.echo("\nWill wire (generic — every host, always on):")
+    for item in plan["generic_channel"]:
+        typer.echo(f"  • {item}")
+    if hosts["push_targets"]:
+        typer.echo("\nWill wire (native push hooks):")
+        for h in hosts["push_targets"]:
+            typer.echo(f"  • {h}")
+
+    typer.echo("\nCore capabilities (included):")
+    for item in plan["capabilities"]["core"]:
+        typer.echo(f"  ✓ {item}")
+
+    typer.echo("\nOptional plugins (your call):")
+    for p in plan["capabilities"]["plugins"]:
+        state = "ON" if p["enabled"] else "OFF"
+        typer.echo(f"  [{state}] {p['name']} — {p['enables']}")
+        typer.echo(f"        cost: {p['cost']}")
+        typer.echo(f"        without it: {p['fallback']}")
+        if not p["enabled"]:
+            typer.echo(f"        turn on: {p['enable_cmd']}")
+
+    typer.echo("\nTo apply the above: `yigraf install`  (add plugins first if you want them).")
+
+
 @app.command(name="install")
 def install_cmd(
     path: Path = typer.Argument(Path("."), help="Repo root to wire up."),
     host: str = typer.Option("auto", "--host",
                              help="auto | claude | codex | antigravity | mcp (default: auto-detect)."),
+    plan: bool = typer.Option(False, "--plan",
+                              help="Inspect only: print the menu of what would be wired, apply nothing."),
+    as_json: bool = typer.Option(False, "--json",
+                                 help="With --plan, emit the plan as JSON (for an agent to parse)."),
 ) -> None:
     """Wire yigraf's full power by default — the host-agnostic channel every repo gets — plus any
     detected host's native push hooks layered on top.
@@ -711,11 +812,20 @@ def install_cmd(
     post-commit rebuild hook + graph.json merge driver (keep graph.json fresh across commits/merges),
     the AGENTS.md instruction block (any agent reads it), and the MCP pull server (the universal
     channel every MCP host speaks). Then ``auto`` detects Claude Code / Codex / Antigravity and layers
-    each host's native hooks over that; ``--host`` forces one. Only the heavy embeddings backend stays
-    opt-in — install detects it's missing and prints the one-line command to turn it on.
+    each host's native hooks over that; ``--host`` forces one. Semantic recall is on by default (the
+    fastembed backend is bundled in core); the heavier torch backend stays opt-in.
     """
     workspace = _require_workspace(path)
     config = load_config(workspace / "config.yaml")
+
+    # --- Plan mode: inspect the host, print the menu, apply nothing (the agent shows this first) ---
+    if plan:
+        built = _build_install_plan(path, config, host)
+        if as_json:
+            typer.echo(json.dumps(built, indent=2))
+        else:
+            _render_plan(built)
+        return
 
     # --- Generic channel (host-independent) — always on -------------------------------------------
     typer.echo("== generic (every host) ==")
@@ -733,11 +843,19 @@ def install_cmd(
     typer.echo("  MCP pull server (works with any MCP host):")
     _print_mcp_config(path)
 
-    # --- Capability check: embeddings (opt-in, but loudly offered — never a silent degrade) -------
-    if not embeddings.backend_available(config):
-        typer.echo("\n⚠ semantic recall is OFF — retrieval is lexical-only. Turn it on with:")
-        typer.echo("    uv pip install 'yigraf[embeddings]'   # local bge-small, pulls ~1GB torch")
-        typer.echo("  (Optional — yigraf works without it, just with weaker recall.)")
+    # --- Capability check: semantic recall (fastembed core → on by default; warn only if degraded) -
+    emb = embeddings.status(config)
+    if emb["active"]:
+        typer.echo(f"\n✓ semantic recall is ON (backend: {emb['backend']}; the bge-small model "
+                   "downloads from HuggingFace on first build).")
+    else:
+        typer.echo("\n⚠ semantic recall is OFF — retrieval is lexical-only.")
+        if emb["backend"] in ("none", None):
+            typer.echo("  (embeddings.backend is 'none' in yigraf/config.yaml — set it to 'fastembed' "
+                       "to turn it on.)")
+        else:
+            typer.echo("    pip install fastembed   # the default backend is bundled in core; "
+                       "reinstall yigraf if it's missing")
 
     # --- Host-specific push channels (layered on top of the generic channel above) ----------------
     choice = host.lower()

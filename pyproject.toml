@@ -1,6 +1,6 @@
 [project]
 name = "yigraf"
-version = "0.1.11"
+version = "0.1.12"
 description = "A harness primitive for AI coding agents: one connected graph over code, intent, plan, and memory — legible (token-cheap retrieval) and enforceable (intent↔code drift checks)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -48,17 +48,23 @@ dependencies = [
     "tree-sitter-sql>=0.3,<0.4",
     # The MCP SDK is a core dependency, not an extra: `yigraf mcp` is the universal pull channel every
     # host speaks, and `yigraf install` wires it by default (full power out of the box). It's a single
-    # small pure-Python package — nothing like the torch weight that keeps embeddings opt-in below.
+    # small pure-Python package.
     "mcp>=1.2",
+    # Semantic recall over memory+intent (M8, docs/retrieval-design.md §10) — now CORE, on by default.
+    # fastembed runs the same bge-small model on ONNX Runtime (~68MB) instead of torch (~1GB+), with
+    # measured ≈0.9999 cosine parity on this task (its default artifact is fp16, not int8). That makes
+    # "full power out of the box" affordable — no torch tax. Reverses mem:005 (which rejected core
+    # embeddings *specifically because of torch*); fastembed sidesteps that. Absent it, retrieval
+    # degrades gracefully to the lexical/IDF seeder (= v0). numpy powers the brute-force cosine index.
+    "fastembed>=0.5",
+    "numpy>=1.24",
 ]
 
 [project.optional-dependencies]
-# Scoped semantic recall over memory+intent (M8, docs/retrieval-design.md §10). Kept an extra ON
-# PURPOSE (mem:005): the sentence-transformers backend pulls torch (~1GB), too heavy to force on every
-# install for an enhancement. Absent it, retrieval degrades gracefully to the lexical/IDF seeder (= v0);
-# `yigraf install` detects the missing backend and prints the one-line command to turn it on.
-embeddings = [
-    "numpy>=1.24",
+# The opt-in torch backend for semantic recall. Not needed for semantic recall (fastembed is core and
+# on by default) — install this only for Apple-Silicon MPS throughput on large corpora or the exact
+# fp32 model. Selected via `embeddings.backend: sentence-transformers` in yigraf/config.yaml.
+embeddings-torch = [
     "sentence-transformers>=2.2",
 ]
 
@@ -82,4 +88,7 @@ packages = ["src/yigraf"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# Deselect the model-backed tests by default (fastembed is core, so they'd otherwise download a model
+# on every run) — keeps the default suite fast + offline. Run them with `pytest -m embeddings`.
+addopts = '-q -m "not embeddings"'
+markers = ["embeddings: exercises the real embedding backend (downloads a model)"]
