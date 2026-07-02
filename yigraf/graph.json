@@ -1417,6 +1417,46 @@
     },
     {
       "confidence": "EXTRACTED",
+      "relation": "serves",
+      "source": "mem:029",
+      "target": "int:token-cheap-context"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "supersedes",
+      "source": "mem:029",
+      "target": "mem:005"
+    },
+    {
+      "anchor": "d773341e72cb5611287c4478c97cb1bea4a26d0dbea793d2284c43ee49abfb3b",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:029",
+      "target": "sym:src/yigraf/embeddings.py#get_embedder"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "serves",
+      "source": "mem:030",
+      "target": "int:multi-host"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "supersedes",
+      "source": "mem:030",
+      "target": "mem:027"
+    },
+    {
+      "anchor": "98ccdb837c62f5c40c442659e66bb66a3823cc9fad2cdf55f09894511bac35af",
+      "anchor_algo": "astnorm-v1",
+      "confidence": "EXTRACTED",
+      "relation": "concerns",
+      "source": "mem:030",
+      "target": "sym:src/yigraf/cli.py#install_cmd"
+    },
+    {
+      "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:scripts/eval/judge.py",
       "target": "sym:scripts/eval/judge.py#EnforcementScore"
@@ -1737,6 +1777,12 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:src/yigraf/cli.py",
+      "target": "sym:src/yigraf/cli.py#_build_install_plan"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/cli.py",
       "target": "sym:src/yigraf/cli.py#_capture_memory"
     },
     {
@@ -1816,6 +1862,12 @@
       "relation": "contains",
       "source": "module:src/yigraf/cli.py",
       "target": "sym:src/yigraf/cli.py#_record_injection"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/cli.py",
+      "target": "sym:src/yigraf/cli.py#_render_plan"
     },
     {
       "confidence": "EXTRACTED",
@@ -2145,6 +2197,12 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#_FastEmbedEmbedder"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
       "target": "sym:src/yigraf/embeddings.py#_LocalEmbedder"
     },
     {
@@ -2158,6 +2216,18 @@
       "relation": "contains",
       "source": "module:src/yigraf/embeddings.py",
       "target": "sym:src/yigraf/embeddings.py#_embed_query_text"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#_load_fastembed"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#_load_sentence_transformers"
     },
     {
       "confidence": "EXTRACTED",
@@ -2230,6 +2300,12 @@
       "relation": "contains",
       "source": "module:src/yigraf/embeddings.py",
       "target": "sym:src/yigraf/embeddings.py#semantic_scores"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:src/yigraf/embeddings.py",
+      "target": "sym:src/yigraf/embeddings.py#status"
     },
     {
       "confidence": "EXTRACTED",
@@ -4958,6 +5034,18 @@
     {
       "confidence": "EXTRACTED",
       "relation": "contains",
+      "source": "module:tests/test_multihost.py",
+      "target": "sym:tests/test_multihost.py#test_install_plan_inspects_without_applying"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "module:tests/test_multihost.py",
+      "target": "sym:tests/test_multihost.py#test_install_plan_json_is_machine_readable"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
       "source": "module:tests/test_status.py",
       "target": "sym:tests/test_status.py#_repo"
     },
@@ -5973,7 +6061,19 @@
       "confidence": "EXTRACTED",
       "relation": "calls",
       "source": "sym:src/yigraf/cli.py#install_cmd",
+      "target": "sym:src/yigraf/cli.py#_build_install_plan"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/cli.py#install_cmd",
       "target": "sym:src/yigraf/cli.py#_print_mcp_config"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/cli.py#install_cmd",
+      "target": "sym:src/yigraf/cli.py#_render_plan"
     },
     {
       "confidence": "EXTRACTED",
@@ -6248,6 +6348,18 @@
     {
       "confidence": "EXTRACTED",
       "relation": "contains",
+      "source": "sym:src/yigraf/embeddings.py#_FastEmbedEmbedder",
+      "target": "sym:src/yigraf/embeddings.py#_FastEmbedEmbedder.__init__"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "sym:src/yigraf/embeddings.py#_FastEmbedEmbedder",
+      "target": "sym:src/yigraf/embeddings.py#_FastEmbedEmbedder.encode"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "contains",
       "source": "sym:src/yigraf/embeddings.py#_LocalEmbedder",
       "target": "sym:src/yigraf/embeddings.py#_LocalEmbedder.__init__"
     },
@@ -6256,6 +6368,18 @@
       "relation": "contains",
       "source": "sym:src/yigraf/embeddings.py#_LocalEmbedder",
       "target": "sym:src/yigraf/embeddings.py#_LocalEmbedder.encode"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#_load_fastembed",
+      "target": "sym:src/yigraf/embeddings.py#_FastEmbedEmbedder"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#_load_sentence_transformers",
+      "target": "sym:src/yigraf/embeddings.py#_LocalEmbedder"
     },
     {
       "confidence": "EXTRACTED",
@@ -6273,13 +6397,19 @@
       "confidence": "EXTRACTED",
       "relation": "calls",
       "source": "sym:src/yigraf/embeddings.py#get_embedder",
-      "target": "sym:src/yigraf/embeddings.py#_LocalEmbedder"
+      "target": "sym:src/yigraf/embeddings.py#_emb_config"
     },
     {
       "confidence": "EXTRACTED",
       "relation": "calls",
       "source": "sym:src/yigraf/embeddings.py#get_embedder",
-      "target": "sym:src/yigraf/embeddings.py#_emb_config"
+      "target": "sym:src/yigraf/embeddings.py#_load_fastembed"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#get_embedder",
+      "target": "sym:src/yigraf/embeddings.py#_load_sentence_transformers"
     },
     {
       "confidence": "EXTRACTED",
@@ -6382,6 +6512,18 @@
       "relation": "calls",
       "source": "sym:src/yigraf/embeddings.py#semantic_scores",
       "target": "sym:src/yigraf/embeddings.py#load_index"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#status",
+      "target": "sym:src/yigraf/embeddings.py#_emb_config"
+    },
+    {
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "source": "sym:src/yigraf/embeddings.py#status",
+      "target": "sym:src/yigraf/embeddings.py#backend_available"
     },
     {
       "confidence": "EXTRACTED",
@@ -10398,7 +10540,7 @@
       "target": "sym:src/yigraf/cli.py#_edited_file"
     },
     {
-      "anchor": "1b4675a69cacd5e82a622af19038966217128cc6443ca1fcce81adf53755cd47",
+      "anchor": "98ccdb837c62f5c40c442659e66bb66a3823cc9fad2cdf55f09894511bac35af",
       "anchor_algo": "astnorm-v1",
       "confidence": "EXTRACTED",
       "relation": "implements",
@@ -10880,7 +11022,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "a2b36b765920682089c06cab2b1e6d313c76aa9187bb7bb24d5a08d1dd6e82a2",
+      "content_hash": "7c567990da40891672213a76840e70e05e9b487c12a89cc3f75247ca47d30e5d",
       "family": "structure",
       "id": "file:src/yigraf/cli.py",
       "imports": [
@@ -10910,13 +11052,13 @@
       "source_range": [
         0,
         0,
-        882,
+        1000,
         0
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "c9b8e273f61c967852366928e8e856226a6ea0331d35a06f7d79ff381fddd3a4",
+      "content_hash": "ac1801831f2a5907375b0bd5ad9944a92e9b4bc08a4a4e30956151d019c85c34",
       "family": "structure",
       "id": "file:src/yigraf/config.py",
       "imports": [
@@ -10932,7 +11074,7 @@
       "source_range": [
         0,
         0,
-        143,
+        145,
         0
       ]
     },
@@ -10983,12 +11125,13 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "f9e6a7cceda807de79da59d1fa14b3deca760b7c7627864f52592a1e9e16c22a",
+      "content_hash": "a12329053ee1b258951d38f56bae1e849f558966cd3bc7505c3072354b3deabb",
       "family": "structure",
       "id": "file:src/yigraf/embeddings.py",
       "imports": [
         "dataclasses",
         "hashlib",
+        "importlib.util",
         "json",
         "networkx",
         "pathlib",
@@ -11001,7 +11144,7 @@
       "source_range": [
         0,
         0,
-        316,
+        375,
         0
       ]
     },
@@ -11464,7 +11607,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "5b7da43ed484c83fb2b7c3e6081234708f564dd22c598417ebf1c1cefe0f5d0d",
+      "content_hash": "7b76a794e0c332bae6d3fab9ea1f147c2b3d5aa95c0eac6da3dbdf1b2a163541",
       "family": "structure",
       "id": "file:tests/conftest.py",
       "imports": [
@@ -11478,7 +11621,7 @@
       "source_range": [
         0,
         0,
-        24,
+        39,
         0
       ]
     },
@@ -11690,7 +11833,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "d63ecc72b5f7adda2427481a7e93c696d75aef45adc04f678a8203cefa150ece",
+      "content_hash": "8801e8bf1560cad9c31cd314444b03a72af9b1359f23d33ef055bedce99ec632",
       "family": "structure",
       "id": "file:tests/test_embeddings.py",
       "imports": [
@@ -11710,7 +11853,7 @@
       "source_range": [
         0,
         0,
-        130,
+        132,
         0
       ]
     },
@@ -11959,7 +12102,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "224034d508f5a3b1f309f69aa18ed6d12c6a64109b699751f7f6d592b77663c1",
+      "content_hash": "c49a8daedbf99dd0b88a1aa724ed4ee309cc016ae887d28a0135c28e7b6d3f74",
       "family": "structure",
       "id": "file:tests/test_multihost.py",
       "imports": [
@@ -11976,7 +12119,7 @@
       "source_range": [
         0,
         0,
-        105,
+        128,
         0
       ]
     },
@@ -12250,7 +12393,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 31,
+      "survival": 33,
       "why": "the two drift-bearing relations differ only in source family + dangling-attr name; folding them into _DRIFT_RELATIONS means rename re-anchoring, the SHA cache, and soft/hard detection are written once"
     },
     {
@@ -12267,7 +12410,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 31,
+      "survival": 33,
       "why": "memory-model \u00a75 option A: cheapest, deterministic, EXTRACTED confidence, mirrors the v0 implements pattern we already trust; add distillation (option B) only once links prove valuable"
     },
     {
@@ -12284,7 +12427,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 31,
+      "survival": 33,
       "why": "only memory carries supersedes edges, so stamping superseded_in:0 on every structure node would bloat graph.json; retrieval reads the counter with a 0 default"
     },
     {
@@ -12301,7 +12444,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 30,
+      "survival": 32,
       "why": "we embed tens-to-thousands of short statements, not the codebase, so N is tiny; a query is one matmul (exact, sub-ms). FAISS/hnswlib add a heavy native dep that buys nothing until N is very large"
     },
     {
@@ -12311,14 +12454,14 @@
       "id": "mem:005",
       "kind": "decision",
       "label": "the embedding backend is an optional extra with graceful lexical fallback, never a hard dependency",
-      "maturity": "settled",
+      "maturity": "working",
       "promotable": false,
       "source_file": "memory/005-the-embedding-backend-is-an-optional.md",
       "statement": "the embedding backend is an optional extra with graceful lexical fallback, never a hard dependency",
       "status": "active",
-      "superseded_in": 0,
+      "superseded_in": 1,
       "supersedes_out": 0,
-      "survival": 30,
+      "survival": 32,
       "why": "no host exposes an embedding endpoint to a hook, so embeddings are yigraf's own responsibility; making them required would break the zero-config promise \u2014 absent backend degrades to the v0 lexical seeder"
     },
     {
@@ -12335,7 +12478,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 28,
+      "survival": 30,
       "why": "DESIGN R1/R2/R3 scope v0 to local state so graph.json stays fully recomputable (no query-time writes, trivial merges, CI-reproducible); the accumulated/shared/merge-reconciled counter model (Model G) needs a cloud service + API for teams to share artifacts, which is v1 Enterprise paid-plan work"
     },
     {
@@ -12352,7 +12495,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 28,
+      "survival": 30,
       "why": "R2 wants maturity branch-cadence-independent and identical on every clone/CI; deriving it from git history (intro commit .. HEAD) makes it recomputable and merge-safe, so no per-session survival counter is stored or reconciled"
     },
     {
@@ -12369,7 +12512,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 28,
+      "survival": 30,
       "why": "R3: history must stay auditable, so churn (superseded_in>0 \u2227 refs_in=0) is moved out of the active glob rather than removed; usage is machine-local sidecar state, not authoritative, so GC must not depend on it"
     },
     {
@@ -12386,7 +12529,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 26,
+      "survival": 28,
       "why": "the per-node fan-out (~2N git calls, on the hot PostToolUse path) was a \ud83d\udd34 perf caveat; _survival_map batches all paths into 2 calls (one topo-order log for commit order + one batched --diff-filter=A --name-status for intros) and the result is memoized by HEAD in the structure cache, since an edit never moves HEAD \u2014 so the hook path is 1 rev-parse and 0 walks. Survival stays byte-identical so graph.json is still recomputable"
     },
     {
@@ -12403,7 +12546,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 24,
+      "survival": 26,
       "why": "the interpreter path is per-machine; settings.local.json is Claude Code's designated per-machine file and a self-contained .claude/.gitignore keeps it out of git \u2014 symmetric with the post-commit git hook, which already bakes the abs path into the never-committed .git/hooks/. This keeps the run-without-the-venv-on-PATH property while never committing a machine path."
     },
     {
@@ -12420,7 +12563,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 23,
+      "survival": 25,
       "why": "yigraf's read path is push (hooks inject) but its write path is pull (link/remember are opt-in), so an undisciplined agent silently starves the graph; making the decay legible in context+SessionStart lets the agent self-correct, while staying advisory (like R9c reconcile) honors fail-open/silence-as-feature"
     },
     {
@@ -12437,7 +12580,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 17,
+      "survival": 19,
       "why": "the status surface targets the human principal, but the PostToolUse injection spends the AGENT's context/token budget \u2014 folding vanity stats there would violate design-law #2/#4 (output is for the agent's context; silence is a feature). A statusline is a separate UI region that costs the agent zero tokens, so it informs the user without taxing the agent's attention."
     },
     {
@@ -12454,7 +12597,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 17,
+      "survival": 19,
       "why": "no host hands a CLI its context-window usage (mirrors mem:005 for embeddings), so reading it can't live in the host-agnostic core without coupling yigraf to one host's transcript format. Making it an optional injected param keeps compute_status pure and lets a per-host adapter fill it; a host that can't supply it just omits the ctx segment and the rest still renders."
     },
     {
@@ -12471,7 +12614,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 17,
+      "survival": 19,
       "why": "write_graph is deterministic (sort_keys=True), so a byte-equal canonical projection is an exact freshness signal with nothing written anywhere. Stamping the build-HEAD into graph.json would make every query/edit dirty git and write volatile state into the committed projection \u2014 violating R6/mem:006 (files are truth; graph.json is a recomputable projection)."
     },
     {
@@ -12488,7 +12631,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 17,
+      "survival": 19,
       "why": ""
     },
     {
@@ -12505,7 +12648,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 12,
+      "survival": 14,
       "why": "verified host research: the Antigravity IDE has NO lifecycle-hook/context-injection system (Google staff confirmed), while every target host speaks MCP. A push-hook-per-host strategy would leave Antigravity with nothing; MCP is the one channel they all share, so it's the portable floor. Push hooks remain the stronger per-host channel where they exist (Claude Code, Codex)."
     },
     {
@@ -12522,7 +12665,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 12,
+      "survival": 14,
       "why": "an MCP server is long-lived for the session, so holding the structure graph and the bge-small model warm means the 2nd+ context call skips the cold build/model-load; a subprocess-proxy would re-pay that ~1-2s every call. Cost: ~10 lines of context orchestration duplicated from cli.context (acceptable for an adapter)."
     },
     {
@@ -12539,7 +12682,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 11,
+      "survival": 13,
       "why": "writes are rare and already rebuild the graph, so the per-call process cost is negligible \u2014 and shelling out reuses the CLI's dedup guard, anchoring, and exit-0 'did you mean' guidance verbatim, so the MCP write path can't drift from the CLI's. Reads stay in-process for warmth (mem:017). _run_cli returns stdout (the agent-facing text) and folds in stderr only on failure, so model-load progress never pollutes a result."
     },
     {
@@ -12556,7 +12699,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 10,
+      "survival": 12,
       "why": "Codex's hook contract mirrors Claude Code's (same tool_name/tool_input/cwd in, hookSpecificOutput.additionalContext out), so generalizing _edited_file to also parse apply_patch's '*** Update File:' line is the only new logic \u2014 the handlers and output envelope are shared. The exact edit-tool name + hooks.json schema are version-sensitive, so PostToolUse stays best-effort and silent on a mismatch (R8 fail-open); SessionStart is the reliable win. Codex paths are repo-relative, so they're anchored to root before resolving."
     },
     {
@@ -12573,7 +12716,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 10,
+      "survival": 12,
       "why": "verified: the Antigravity IDE has no lifecycle-hook/context-injection system, so there is no push channel to wire \u2014 MCP (pull) + an always-on rule that instructs the agent to call the MCP tools is the substitute. The global mcp_config.json path is version-specific (~/.gemini/antigravity/ vs ~/.gemini/config/), so auto-writing it risks the wrong location; printing the snippet for the in-app MCP editor is safer and is an outward/global change the user should apply deliberately."
     },
     {
@@ -12590,7 +12733,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 7,
+      "survival": 9,
       "why": "the user shouldn't have to know which install-X command matches their host. Markers (.claude/.codex/.agents in repo, or ~/.claude / ~/.codex / ~/.gemini on the machine) are a zero-config signal of which hosts are present; wiring ALL detected ones is more useful than guessing a single 'the' host on a multi-tool machine. MCP is the universal floor, so any unrecognized/other host degrades to printing the MCP config \u2014 consistent with 'MCP is the bet'. detect_hosts takes an injectable home for deterministic tests."
     },
     {
@@ -12607,7 +12750,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 6,
+      "survival": 8,
       "why": "Design law #2: the styled render is a human-facing TTY flourish, but _plain is the byte-stable channel pipes/--json/tests/agent-injection depend on (test asserts startswith 'yigraf '), so the brand animation lives only in _pretty and SPIN[0]='Y' keeps the color test green"
     },
     {
@@ -12624,7 +12767,7 @@
       "status": "active",
       "superseded_in": 1,
       "supersedes_out": 0,
-      "survival": 5,
+      "survival": 7,
       "why": "the hooks speak into the agent's context, but the [Yigraf] brand + graph health is the human's ambient surface and was previously never wired by any install path, so a README install never saw it; wiring it on install makes it always-on. Non-clobbering: a foreign statusLine is kept (kept-foreign), only an absent or yigraf-owned one is set/refreshed \u2014 same abs-interpreter-in-settings.local.json approach as the hooks (mem:010)"
     },
     {
@@ -12648,7 +12791,7 @@
       "status": "active",
       "superseded_in": 1,
       "supersedes_out": 1,
-      "survival": 4,
+      "survival": 6,
       "why": "shipping the adapter (not just 'yigraf status --color') means the context-window gauge is available to everyone, not only on a machine with a hand-written adapter. jq is made optional so a missing jq degrades to the bar-without-gauge instead of breaking the statusline (fail-open). The script bakes this clone's interpreter path (like the hooks) so it's gitignored and per-machine; ownership is recognized by 'yigraf-statusline' OR the old 'yigraf status' string so an upgrade refreshes in place; a foreign statusLine is still kept"
     },
     {
@@ -12665,7 +12808,7 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 1,
-      "survival": 3,
+      "survival": 5,
       "why": "the bash+jq adapter only showed the ctx gauge where jq was installed and never ran on Windows; since yigraf is already a Python program, the adapter command parses Claude Code's stdin event + transcript with stdlib json (zero deps) so the gauge is universal. mem:013 is still honored: the transcript parse lives in this host-specific command (_claude_ctx), never in the agnostic compute_status core. Ownership recognizes the old bash 'yigraf-statusline' and plain 'yigraf status' wiring so an upgrade refreshes in place and deletes the retired .sh; a foreign statusLine is still kept"
     },
     {
@@ -12675,14 +12818,14 @@
       "id": "mem:026",
       "kind": "decision",
       "label": "yigraf self-checks PyPI for a newer release at most once a day, caches it in the gitignored .local sidecar, and surfaces an \u2b06<version> marker on the statusline (+ a one-line update notice in a TTY) \u2014 the network fetch lives in update.refresh(), never in compute_status",
-      "maturity": "working",
+      "maturity": "settled",
       "promotable": false,
       "source_file": "memory/026-yigraf-self-checks-pypi-for-a.md",
       "statement": "yigraf self-checks PyPI for a newer release at most once a day, caches it in the gitignored .local sidecar, and surfaces an \u2b06<version> marker on the statusline (+ a one-line update notice in a TTY) \u2014 the network fetch lives in update.refresh(), never in compute_status",
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 1,
+      "survival": 3,
       "why": "the user wanted a daily update check that asks before updating; with no cloud environment a scheduled Routine had nothing to fire into, so the check is built into yigraf on-use: refresh() is throttled to 1x/day and fail-open (offline/slow PyPI never blocks the statusline), and stamps checked_at even on failure so it won't re-hit the network every refresh. It rides the human ambient surface (statusline), not a hook injection \u2014 an update is the human's concern, not the agent's (design law #4). compute_status only does a pure .local read (update.available); the network call is isolated in refresh() and invoked solely by the human-facing status/statusline commands, so mem:013's 'core reads no host API' still holds (the sidecar is an on-disk artifact like the embedding index)"
     },
     {
@@ -12697,9 +12840,9 @@
       "source_file": "memory/027-yigraf-install-wires-full-power-by.md",
       "statement": "yigraf install wires full power by default: the generic host-independent channel (post-commit rebuild hook + graph.json merge driver + AGENTS.md + the MCP pull server) installs unconditionally, then detected hosts (Claude/Codex/Antigravity) layer their native push hooks on top; only the heavy embeddings backend stays opt-in, offered loudly (never silently degraded)",
       "status": "active",
-      "superseded_in": 0,
+      "superseded_in": 1,
       "supersedes_out": 0,
-      "survival": 0,
+      "survival": 1,
       "why": "real-project testing showed MCP, embeddings, and the git hooks each needed a separate explicit install, so a fresh install silently shipped the weak version \u2014 install now delivers everything host-agnostic by default and treats a missing capability as agent-actionable guidance, not a silent lexical fallback (design law #1)"
     },
     {
@@ -12716,8 +12859,42 @@
       "status": "active",
       "superseded_in": 0,
       "supersedes_out": 0,
-      "survival": 0,
+      "survival": 1,
       "why": "it's a single small pure-Python package and the universal pull channel every host speaks, so gating it behind a [mcp] extra only produced silent 'no MCP' installs; unlike embeddings (mem:005) there's no torch-weight argument to keep it optional"
+    },
+    {
+      "alternatives": "keep embeddings an opt-in extra (mem:005): unnecessary now that fastembed removes the torch tax that motivated it",
+      "confidence": "EXTRACTED",
+      "family": "memory",
+      "id": "mem:029",
+      "kind": "decision",
+      "label": "semantic recall is a core dependency, on by default, via the fastembed (ONNX) backend",
+      "maturity": "working",
+      "promotable": false,
+      "source_file": "memory/029-semantic-recall-is-a-core-dependency.md",
+      "statement": "semantic recall is a core dependency, on by default, via the fastembed (ONNX) backend",
+      "status": "active",
+      "superseded_in": 0,
+      "supersedes_out": 1,
+      "survival": 0,
+      "why": "the reason embeddings stayed opt-in was torch (~1GB); fastembed runs the same bge-small model on ONNX Runtime (~68MB, no torch) with measured ~0.9999 cosine parity on our memory/intent task, so full power by default is now affordable \u2014 sentence-transformers stays available behind [embeddings-torch] for MPS/fp32"
+    },
+    {
+      "alternatives": "re-anchor mem:027 unchanged: its 'only the embeddings backend stays opt-in' clause is now false",
+      "confidence": "EXTRACTED",
+      "family": "memory",
+      "id": "mem:030",
+      "kind": "decision",
+      "label": "yigraf install wires full power by default and is agent-driven: the generic host-independent channel (post-commit rebuild + graph.json merge driver + AGENTS.md + MCP pull server) AND semantic recall (fastembed, core) all ship unconditionally; detected hosts layer native push hooks on top; only the torch embeddings backend stays opt-in. 'yigraf install --plan[--json]' prints the capability menu first so the human chooses before anything is applied",
+      "maturity": "working",
+      "promotable": false,
+      "source_file": "memory/030-yigraf-install-wires-full-power-by.md",
+      "statement": "yigraf install wires full power by default and is agent-driven: the generic host-independent channel (post-commit rebuild + graph.json merge driver + AGENTS.md + MCP pull server) AND semantic recall (fastembed, core) all ship unconditionally; detected hosts layer native push hooks on top; only the torch embeddings backend stays opt-in. 'yigraf install --plan[--json]' prints the capability menu first so the human chooses before anything is applied",
+      "status": "active",
+      "superseded_in": 0,
+      "supersedes_out": 1,
+      "survival": 0,
+      "why": "extends mem:027 after semantic recall became core (mem:029): 'full power by default' now includes semantic recall, so the only opt-in left is the torch backend; added --plan so an agent can probe, present the menu, and apply only what the human picks"
     },
     {
       "confidence": "EXTRACTED",
@@ -12865,7 +13042,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "a2b36b765920682089c06cab2b1e6d313c76aa9187bb7bb24d5a08d1dd6e82a2",
+      "content_hash": "7c567990da40891672213a76840e70e05e9b487c12a89cc3f75247ca47d30e5d",
       "family": "structure",
       "id": "module:src/yigraf/cli.py",
       "kind": "module",
@@ -12875,13 +13052,13 @@
       "source_range": [
         0,
         0,
-        882,
+        1000,
         0
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "c9b8e273f61c967852366928e8e856226a6ea0331d35a06f7d79ff381fddd3a4",
+      "content_hash": "ac1801831f2a5907375b0bd5ad9944a92e9b4bc08a4a4e30956151d019c85c34",
       "family": "structure",
       "id": "module:src/yigraf/config.py",
       "kind": "module",
@@ -12891,7 +13068,7 @@
       "source_range": [
         0,
         0,
-        143,
+        145,
         0
       ]
     },
@@ -12929,7 +13106,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "f9e6a7cceda807de79da59d1fa14b3deca760b7c7627864f52592a1e9e16c22a",
+      "content_hash": "a12329053ee1b258951d38f56bae1e849f558966cd3bc7505c3072354b3deabb",
       "family": "structure",
       "id": "module:src/yigraf/embeddings.py",
       "kind": "module",
@@ -12939,7 +13116,7 @@
       "source_range": [
         0,
         0,
-        316,
+        375,
         0
       ]
     },
@@ -13201,7 +13378,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "5b7da43ed484c83fb2b7c3e6081234708f564dd22c598417ebf1c1cefe0f5d0d",
+      "content_hash": "7b76a794e0c332bae6d3fab9ea1f147c2b3d5aa95c0eac6da3dbdf1b2a163541",
       "family": "structure",
       "id": "module:tests/conftest.py",
       "kind": "module",
@@ -13211,7 +13388,7 @@
       "source_range": [
         0,
         0,
-        24,
+        39,
         0
       ]
     },
@@ -13361,7 +13538,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "d63ecc72b5f7adda2427481a7e93c696d75aef45adc04f678a8203cefa150ece",
+      "content_hash": "8801e8bf1560cad9c31cd314444b03a72af9b1359f23d33ef055bedce99ec632",
       "family": "structure",
       "id": "module:tests/test_embeddings.py",
       "kind": "module",
@@ -13371,7 +13548,7 @@
       "source_range": [
         0,
         0,
-        130,
+        132,
         0
       ]
     },
@@ -13553,7 +13730,7 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "224034d508f5a3b1f309f69aa18ed6d12c6a64109b699751f7f6d592b77663c1",
+      "content_hash": "c49a8daedbf99dd0b88a1aa724ed4ee309cc016ae887d28a0135c28e7b6d3f74",
       "family": "structure",
       "id": "module:tests/test_multihost.py",
       "kind": "module",
@@ -13563,7 +13740,7 @@
       "source_range": [
         0,
         0,
-        105,
+        128,
         0
       ]
     },
@@ -14743,6 +14920,23 @@
     },
     {
       "confidence": "EXTRACTED",
+      "content_hash": "cd22db34a93bc2aa5898f1d7d3575498ef7cbc26155a9becfb9f27c65de633a0",
+      "family": "structure",
+      "id": "sym:src/yigraf/cli.py#_build_install_plan",
+      "kind": "function",
+      "label": "_build_install_plan",
+      "language": "python",
+      "signature": "def _build_install_plan(path: Path, config: dict, host: str) -> dict:",
+      "source_file": "src/yigraf/cli.py",
+      "source_range": [
+        700,
+        0,
+        759,
+        5
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
       "content_hash": "7a80f0dda2611eb2da91daa9c77415690a74469e5d750cd35a32475b5015535d",
       "family": "structure",
       "id": "sym:src/yigraf/cli.py#_capture_memory",
@@ -14803,9 +14997,9 @@
       "signature": "def _edited_file(data: dict) -> str | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        805,
+        923,
         0,
-        823,
+        941,
         15
       ]
     },
@@ -14854,9 +15048,9 @@
       "signature": "def _hook_graph(root: Path):",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        788,
+        906,
         0,
-        794,
+        912,
         24
       ]
     },
@@ -14905,9 +15099,9 @@
       "signature": "def _post_tool_use(data: dict) -> dict | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        826,
+        944,
         0,
-        850,
+        968,
         101
       ]
     },
@@ -14981,6 +15175,23 @@
     },
     {
       "confidence": "EXTRACTED",
+      "content_hash": "6fd03ea13debb1d8d9fb03010165b9a4268c31281e45f117a7a3bf67c398deb5",
+      "family": "structure",
+      "id": "sym:src/yigraf/cli.py#_render_plan",
+      "kind": "function",
+      "label": "_render_plan",
+      "language": "python",
+      "signature": "def _render_plan(plan: dict) -> None:",
+      "source_file": "src/yigraf/cli.py",
+      "source_range": [
+        762,
+        0,
+        794,
+        95
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
       "content_hash": "4a42e57854c75038c855c2321d179943c789698d5404b0d2af642a94a220ff6c",
       "family": "structure",
       "id": "sym:src/yigraf/cli.py#_report_capture",
@@ -15041,9 +15252,9 @@
       "signature": "def _run_hook(handler) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        775,
+        893,
         0,
-        785,
+        903,
         28
       ]
     },
@@ -15058,9 +15269,9 @@
       "signature": "def _session_start(data: dict) -> dict | None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        853,
+        971,
         0,
-        864,
+        982,
         102
       ]
     },
@@ -15194,9 +15405,9 @@
       "signature": "def hook_post_tool_use() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        867,
+        985,
         0,
-        870,
+        988,
         29
       ]
     },
@@ -15211,9 +15422,9 @@
       "signature": "def hook_session_start() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        873,
+        991,
         0,
-        876,
+        994,
         29
       ]
     },
@@ -15270,18 +15481,18 @@
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "1b4675a69cacd5e82a622af19038966217128cc6443ca1fcce81adf53755cd47",
+      "content_hash": "98ccdb837c62f5c40c442659e66bb66a3823cc9fad2cdf55f09894511bac35af",
       "family": "structure",
       "id": "sym:src/yigraf/cli.py#install_cmd",
       "kind": "function",
       "label": "install_cmd",
       "language": "python",
-      "signature": "def install_cmd( path: Path = typer.Argument(Path(\".\"), help=\"Repo root to wire up.\"), host: str = typer.Option(\"auto\", \"--host\", help=\"auto | claude | codex | antigravity | mcp (default: auto-detect).\"), ) -> None:",
+      "signature": "def install_cmd( path: Path = typer.Argument(Path(\".\"), help=\"Repo root to wire up.\"), host: str = typer.Option(\"auto\", \"--host\", help=\"auto | claude | codex | antigravity | mcp (default: auto-detect).\"), plan: bool = typer.Option(False, \"--plan\", help=\"Inspect only: print the menu of what would be wired, apply nothing.\"), as_json: bool = typer.Option(False, \"--json\", help=\"With --plan, emit the plan as JSON (for an agent to parse).\"), ) -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        700,
+        797,
         0,
-        765,
+        883,
         98
       ]
     },
@@ -15364,9 +15575,9 @@
       "signature": "def main() -> None:",
       "source_file": "src/yigraf/cli.py",
       "source_range": [
-        879,
+        997,
         0,
-        881,
+        999,
         9
       ]
     },
@@ -15500,9 +15711,9 @@
       "signature": "def _deep_merge(base: dict[str, Any], over: dict[str, Any]) -> dict[str, Any]:",
       "source_file": "src/yigraf/config.py",
       "source_range": [
-        120,
+        122,
         0,
-        127,
+        129,
         14
       ]
     },
@@ -15517,9 +15728,9 @@
       "signature": "def default_config() -> dict[str, Any]:",
       "source_file": "src/yigraf/config.py",
       "source_range": [
-        115,
-        0,
         117,
+        0,
+        119,
         40
       ]
     },
@@ -15534,9 +15745,9 @@
       "signature": "def load_config(path: Path) -> dict[str, Any]:",
       "source_file": "src/yigraf/config.py",
       "source_range": [
-        130,
+        132,
         0,
-        142,
+        144,
         14
       ]
     },
@@ -15891,9 +16102,9 @@
       "signature": "class EmbeddingIndex:",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        154,
+        213,
         0,
-        174,
+        233,
         23
       ]
     },
@@ -15908,9 +16119,9 @@
       "signature": "def query(self, qvec: \"np.ndarray\") -> dict[str, float]:",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        163,
+        222,
         4,
-        168,
+        227,
         66
       ]
     },
@@ -15925,10 +16136,61 @@
       "signature": "def vector(self, node_id: str) -> \"np.ndarray | None\":",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        170,
+        229,
         4,
-        174,
+        233,
         23
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "a3df069a49966826830fd0af75b33f9f080ca93ff668be4d81e0ff84e4786cf7",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#_FastEmbedEmbedder",
+      "kind": "class",
+      "label": "_FastEmbedEmbedder",
+      "language": "python",
+      "signature": "class _FastEmbedEmbedder:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        90,
+        0,
+        105,
+        27
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "a2e15b38e6242f5f774e52e14ac5372df7c2a54bf213805c7abd3cc8f36404e8",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#_FastEmbedEmbedder.__init__",
+      "kind": "method",
+      "label": "_FastEmbedEmbedder.__init__",
+      "language": "python",
+      "signature": "def __init__(self, model: Any, name: str) -> None:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        93,
+        4,
+        95,
+        24
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "157e184f5641adfc1a48d6dd1eea3d7fe25b94c07d5ab3a22d7c6bfa8b4a8c67",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#_FastEmbedEmbedder.encode",
+      "kind": "method",
+      "label": "_FastEmbedEmbedder.encode",
+      "language": "python",
+      "signature": "def encode(self, texts: list[str]) -> \"np.ndarray\": # fastembed.embed yields a generator of (dim,) vectors, L2-normalized by default; we # re-normalize defensively so a plain dot product == cosine downstream (index + dedup).",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        97,
+        4,
+        105,
+        27
       ]
     },
     {
@@ -15942,9 +16204,9 @@
       "signature": "class _LocalEmbedder:",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        78,
+        108,
         0,
-        87,
+        117,
         98
       ]
     },
@@ -15959,9 +16221,9 @@
       "signature": "def __init__(self, model: Any, name: str) -> None:",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        81,
+        111,
         4,
-        83,
+        113,
         24
       ]
     },
@@ -15976,9 +16238,9 @@
       "signature": "def encode(self, texts: list[str]) -> \"np.ndarray\": # normalize_embeddings=True \u21d2 cosine similarity is a plain dot product downstream.",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        85,
+        115,
         4,
-        87,
+        117,
         98
       ]
     },
@@ -15993,9 +16255,9 @@
       "signature": "def _emb_config(config: dict) -> dict:",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        90,
+        120,
         0,
-        91,
+        121,
         75
       ]
     },
@@ -16010,10 +16272,44 @@
       "signature": "def _embed_query_text(query: str, name: str) -> str:",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        141,
+        200,
         0,
-        142,
+        201,
         79
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "c5136bd76864152c144997bf4c029d5211e89453cc4e2ab1b28e64fb820e53aa",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#_load_fastembed",
+      "kind": "function",
+      "label": "_load_fastembed",
+      "language": "python",
+      "signature": "def _load_fastembed(name: str):",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        128,
+        0,
+        136,
+        19
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "894c1de5e58b5bcdc7e7887b63a157275fdca51724cea312902b741ca656d86e",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#_load_sentence_transformers",
+      "kind": "function",
+      "label": "_load_sentence_transformers",
+      "language": "python",
+      "signature": "def _load_sentence_transformers(name: str):",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        139,
+        0,
+        147,
+        19
       ]
     },
     {
@@ -16027,9 +16323,9 @@
       "signature": "def _memory_targets(graph: nx.DiGraph, mem_id: str) -> set[str]:",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        313,
+        372,
         0,
-        315,
+        374,
         59
       ]
     },
@@ -16044,9 +16340,9 @@
       "signature": "def _save_index(root: Path, model: str, ids: list[str], matrix: \"np.ndarray\", text_hash: dict[str, str]) -> None:",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        200,
+        259,
         0,
-        207,
+        266,
         101
       ]
     },
@@ -16061,15 +16357,15 @@
       "signature": "def _text_hash(text: str) -> str:",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        69,
+        81,
         0,
-        70,
+        82,
         59
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "f4736b50d03d3998c02d9d5fc58f144b4f8dfa8f43b778ef9eab6a5903d51d50",
+      "content_hash": "3593c3a81b8514771c1379c7133b671e9cda1c6da1849d6f762bda6f35cce84f",
       "family": "structure",
       "id": "sym:src/yigraf/embeddings.py#backend_available",
       "kind": "function",
@@ -16078,15 +16374,15 @@
       "signature": "def backend_available(config: dict) -> bool:",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        122,
+        170,
         0,
-        138,
-        15
+        186,
+        16
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "847c43c6c2c79bf1601a2f5fd4c91cfff59b9a8a95be115a0af28d044b96fc06",
+      "content_hash": "d773341e72cb5611287c4478c97cb1bea4a26d0dbea793d2284c43ee49abfb3b",
       "family": "structure",
       "id": "sym:src/yigraf/embeddings.py#get_embedder",
       "kind": "function",
@@ -16095,10 +16391,10 @@
       "signature": "def get_embedder(config: dict):",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        98,
+        150,
         0,
-        119,
-        19
+        167,
+        97
       ]
     },
     {
@@ -16112,9 +16408,9 @@
       "signature": "def index_dir(root: Path) -> Path:",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        150,
+        209,
         0,
-        151,
+        210,
         42
       ]
     },
@@ -16129,9 +16425,9 @@
       "signature": "def load_index(root: Path, config: dict) -> EmbeddingIndex | None:",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        177,
+        236,
         0,
-        197,
+        256,
         19
       ]
     },
@@ -16146,9 +16442,9 @@
       "signature": "def model_name(config: dict) -> str:",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        94,
+        124,
         0,
-        95,
+        125,
         69
       ]
     },
@@ -16163,9 +16459,9 @@
       "signature": "def most_similar_memory(root: Path, graph: nx.DiGraph, config: dict, text: str, scope: set[str]) -> tuple[str, float] | None:",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        279,
+        338,
         0,
-        310,
+        369,
         15
       ]
     },
@@ -16180,9 +16476,9 @@
       "signature": "def node_text(attrs: dict) -> str | None:",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        44,
+        56,
         0,
-        66,
+        78,
         27
       ]
     },
@@ -16197,9 +16493,9 @@
       "signature": "def refresh_index(root: Path, graph: nx.DiGraph, config: dict) -> bool:",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        210,
+        269,
         0,
-        256,
+        315,
         15
       ]
     },
@@ -16214,10 +16510,27 @@
       "signature": "def semantic_scores(root: Path, graph: nx.DiGraph, config: dict, query: str) -> dict[str, float]:",
       "source_file": "src/yigraf/embeddings.py",
       "source_range": [
-        264,
+        323,
         0,
-        276,
+        335,
         75
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "f7efb5a6d4e74890a77b4d3a32c646b28fab16b8838e3b2af74b9444bbc0d0ab",
+      "family": "structure",
+      "id": "sym:src/yigraf/embeddings.py#status",
+      "kind": "function",
+      "label": "status",
+      "language": "python",
+      "signature": "def status(config: dict) -> dict:",
+      "source_file": "src/yigraf/embeddings.py",
+      "source_range": [
+        189,
+        0,
+        197,
+        5
       ]
     },
     {
@@ -21008,15 +21321,15 @@
       "signature": "def _disable_embeddings(request, monkeypatch):",
       "source_file": "tests/conftest.py",
       "source_range": [
-        18,
+        33,
         0,
-        23,
+        38,
         72
       ]
     },
     {
       "confidence": "EXTRACTED",
-      "content_hash": "a0056091b8999eed9873196c8df88c4428d09646783ec64890feec77a3ea4c75",
+      "content_hash": "f7b8593e657d719cc60d8bd960187f50d99806c9760ebbfd6d8ed0b0f6a4656b",
       "family": "structure",
       "id": "sym:tests/conftest.py#pytest_configure",
       "kind": "function",
@@ -21025,9 +21338,9 @@
       "signature": "def pytest_configure(config):",
       "source_file": "tests/conftest.py",
       "source_range": [
-        12,
+        26,
         0,
-        15,
+        30,
         5
       ]
     },
@@ -23218,9 +23531,9 @@
       "signature": "def _repo_with_symbol(tmp_path: Path) -> Path:",
       "source_file": "tests/test_embeddings.py",
       "source_range": [
-        88,
+        90,
         0,
-        94,
+        96,
         19
       ]
     },
@@ -23235,9 +23548,9 @@
       "signature": "def test_dedup_guard_blocks_a_near_duplicate_then_new_forces(tmp_path: Path):",
       "source_file": "tests/test_embeddings.py",
       "source_range": [
-        114,
+        116,
         0,
-        129,
+        131,
         32
       ]
     },
@@ -23252,9 +23565,9 @@
       "signature": "def test_index_save_load_and_query_round_trip(tmp_path: Path):",
       "source_file": "tests/test_embeddings.py",
       "source_range": [
-        39,
+        41,
         0,
-        49,
+        51,
         81
       ]
     },
@@ -23269,9 +23582,9 @@
       "signature": "def test_load_index_rejects_a_model_mismatch(tmp_path: Path):",
       "source_file": "tests/test_embeddings.py",
       "source_range": [
-        52,
+        54,
         0,
-        58,
+        60,
         96
       ]
     },
@@ -23286,9 +23599,9 @@
       "signature": "def test_no_backend_means_pure_lexical(tmp_path: Path): # With the embedder disabled (autouse fixture), the semantic path yields no scores \u2192 v0 behavior.",
       "source_file": "tests/test_embeddings.py",
       "source_range": [
-        75,
+        77,
         0,
-        80,
+        82,
         86
       ]
     },
@@ -23303,9 +23616,9 @@
       "signature": "def test_node_text_scopes_to_memory_and_intent():",
       "source_file": "tests/test_embeddings.py",
       "source_range": [
-        29,
+        31,
         0,
-        36,
+        38,
         55
       ]
     },
@@ -23320,9 +23633,9 @@
       "signature": "def test_real_semantic_recall_ranks_a_paraphrase(tmp_path: Path):",
       "source_file": "tests/test_embeddings.py",
       "source_range": [
-        97,
+        99,
         0,
-        111,
+        113,
         62
       ]
     },
@@ -23337,9 +23650,9 @@
       "signature": "def test_semantic_match_seeds_a_node_lexical_would_miss():",
       "source_file": "tests/test_embeddings.py",
       "source_range": [
-        61,
+        63,
         0,
-        72,
+        74,
         101
       ]
     },
@@ -25466,6 +25779,40 @@
         0,
         104,
         83
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "3805860eb74be2d749aeaaae4591d95fb3c270d9439f3b957e0849e4431819b7",
+      "family": "structure",
+      "id": "sym:tests/test_multihost.py#test_install_plan_inspects_without_applying",
+      "kind": "function",
+      "label": "test_install_plan_inspects_without_applying",
+      "language": "python",
+      "signature": "def test_install_plan_inspects_without_applying(tmp_path: Path):",
+      "source_file": "tests/test_multihost.py",
+      "source_range": [
+        109,
+        0,
+        115,
+        85
+      ]
+    },
+    {
+      "confidence": "EXTRACTED",
+      "content_hash": "cdfb251d72063e6af85a11a758b13fc834db4992c2a61e56ffbca7dcbcb1b624",
+      "family": "structure",
+      "id": "sym:tests/test_multihost.py#test_install_plan_json_is_machine_readable",
+      "kind": "function",
+      "label": "test_install_plan_json_is_machine_readable",
+      "language": "python",
+      "signature": "def test_install_plan_json_is_machine_readable(tmp_path: Path):",
+      "source_file": "tests/test_multihost.py",
+      "source_range": [
+        118,
+        0,
+        127,
+        90
       ]
     },
     {

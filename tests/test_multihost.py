@@ -103,3 +103,26 @@ def test_install_mcp_and_unknown_host_fall_back_to_mcp(tmp_path: Path):
         out = runner.invoke(app, ["install", str(tmp_path), "--host", host])
         assert out.exit_code == 0 and "mcpServers" in out.stdout and "yigraf" in out.stdout
     assert not (tmp_path / ".codex").exists()  # fallback wires nothing host-native
+
+
+# ── `install --plan`: inspect + present the menu, apply nothing ─────────────────────────────────────
+
+def test_install_plan_inspects_without_applying(tmp_path: Path):
+    runner.invoke(app, ["init", str(tmp_path)])
+    out = runner.invoke(app, ["install", str(tmp_path), "--plan"])
+    assert out.exit_code == 0
+    assert "install plan" in out.stdout and "semantic recall" in out.stdout  # the menu is shown
+    # Plan mode is pure inspection: it must not wire any host-native config.
+    assert not (tmp_path / ".codex").exists() and not (tmp_path / ".claude").exists()
+
+
+def test_install_plan_json_is_machine_readable(tmp_path: Path):
+    runner.invoke(app, ["init", str(tmp_path)])
+    out = runner.invoke(app, ["install", str(tmp_path), "--plan", "--json"])
+    assert out.exit_code == 0
+    doc = json.loads(out.stdout)  # an agent parses this to build the menu
+    assert doc["environment"]["python_ok"] is True
+    # Semantic recall is now a core capability (on by default), not an opt-in plugin.
+    assert any("semantic recall" in c for c in doc["capabilities"]["core"])
+    names = [p["name"] for p in doc["capabilities"]["plugins"]]
+    assert "embeddings-torch" in names  # the torch backend is the remaining opt-in plugin

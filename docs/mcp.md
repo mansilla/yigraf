@@ -119,4 +119,5 @@ asyncio.run(main())
   go to stderr — anything on stdout would corrupt the MCP stream.
 - **Core dependency, always available.** The MCP SDK ships with yigraf and `yigraf install` wires the
   pull channel by default — full power out of the box. A missing workspace returns guidance text, not an
-  error. (Only the heavy embeddings backend stays opt-in — `mem:005` — since it pulls ~1GB of torch.)
+  error. (Semantic recall is core too — the fastembed backend is bundled, no torch — see `mem:005`; only
+  the opt-in `[embeddings-torch]` backend pulls torch.)
