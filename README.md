@@ -36,8 +36,9 @@ queryable graph and re-surfaces the relevant piece exactly when the agent needs 
 - **Drift detection** — when anchored code changes, yigraf surfaces *"re-verify this still holds, then
   re-link or supersede."* A pure rename re-anchors automatically; a body change is honest drift. (This is
   the part that makes yigraf governance, not just an index.)
-- **Memory** — capture decisions + the reasoning behind them; recall by **meaning** (optional embeddings)
-  or lexically; a decision earns `settled` after surviving K commits un-superseded; `gc` archives churn.
+- **Memory** — capture decisions + the reasoning behind them; recall by **meaning** (semantic recall,
+  on by default) or lexically; a decision earns `settled` after surviving K commits un-superseded; `gc`
+  archives churn.
 - **Token-cheap retrieval** — `yigraf context "<topic>"` returns a scoped, budgeted slice (locators +
   signatures, not file dumps) — measured ≈2.5× cheaper than reading the file.
 - **Agent integration (any host)** — an **MCP server** (`yigraf mcp`) exposes the graph as tools
@@ -46,51 +47,43 @@ queryable graph and re-surfaces the relevant piece exactly when the agent needs 
   edit and re-inject the plan after a reset. The `yigraf` CLI works with any agent. See
   [`docs/hosts.md`](docs/hosts.md).
 
-### Requirements (and what each is for)
+### Requirements
+
+Just Python and (ideally) git — everything else is bundled (see [Installation](#installation)).
 
 | Requirement | Why |
 |---|---|
 | **Python ≥ 3.11** | yigraf runs as a Python CLI |
-| **A git repo** | drift anchoring and git-derived maturity read git history (degrades gracefully without git) |
-| **Tree-sitter grammars** | structure extraction — **bundled**, no setup |
-| **An agent harness** | the MCP server (`yigraf mcp`) reaches any MCP host; Claude Code & Codex also get push hooks; any agent can drive the CLI |
-| **MCP SDK** | **bundled** (core dep) — powers `yigraf mcp`, the universal pull channel `yigraf install` wires by default |
-| **An embeddings backend** | **bundled** (core dep, fastembed/ONNX — no torch) — semantic recall of memory/intent by meaning, **on by default**; **falls back to lexical** retrieval if disabled |
+| **A git repo** *(recommended)* | drift anchoring and git-derived maturity read git history — degrades gracefully without it |
+| **An agent host** | any MCP host via `yigraf mcp`; Claude Code & Codex also get push hooks; or drive the `yigraf` CLI from any agent |
 
 ## Quickstart — just tell your agent
 
-yigraf is a tool *for agents*, so the install is too. In any repo, tell your coding agent:
+yigraf is a tool *for agents*, so installing it is a job for your agent. In any repo, say:
 
 > **"Please install github.com/mansilla/yigraf in this project."**
 
-Your agent should then run the plan probe, **show you a menu**, and only wire what you pick:
+A well-behaved agent will install the CLI, run `yigraf install --plan` to **show you the capability
+menu**, let you choose, then wire it into your host — without touching your `requirements.txt` (yigraf
+is a dev/agent tool, not a runtime dependency). Semantic recall is on by default, so "full power" needs
+no extra steps.
+
+Prefer to do it by hand? The same four steps:
 
 ```bash
-yigraf install --plan          # inspect the host + repo, print the menu, apply NOTHING
-yigraf install --plan --json   # same, machine-readable (the agent parses this)
-```
-
-The plan reports your environment (Python, git, detected hosts), the **core capabilities** you get
-for free (**including semantic recall** — the lightweight fastembed backend is bundled, no torch), and
-any **optional plugins** with their real cost — so *you* decide, before anything is installed. Then the
-agent applies your choice:
-
-```bash
-pip install yigraf                  # or: pipx / uv tool install  (see Installation)
-# full power out of the box — semantic recall included; no extras needed for it
+pip install yigraf          # or: pipx install yigraf / uv tool install yigraf
 cd your-repo
-yigraf init                         # create the yigraf/ workspace
-yigraf build                        # index the code into the graph
-yigraf install                      # wire the host(s): auto-detects Claude Code / Codex / Antigravity, else MCP
+yigraf init                 # create the yigraf/ workspace
+yigraf build                # index the code into the graph
+yigraf install              # wire your agent host — auto-detects Claude Code / Codex / Antigravity, else MCP
 ```
 
-> **Agent recipe** (what a well-behaved agent does when asked to install yigraf):
-> 1. Install the CLI (`pipx`/`uv tool` preferred; **do not** add yigraf to `requirements.txt` — it's a
->    dev/agent tool, not a runtime dependency), then `yigraf init && yigraf build`.
-> 2. Run `yigraf install --plan --json` and **present the menu to the human** — core capabilities
->    (semantic recall is on by default), detected hosts, and any optional plugin with its cost.
-> 3. Let the human confirm; install any chosen extras; then run `yigraf install` to wire the hosts.
-> 4. Never silently install a heavy plugin (the torch backend) or silently disable a core one — surface it.
+Preview what `install` will wire, without applying anything (add `--json` for the machine-readable form
+an agent parses):
+
+```bash
+yigraf install --plan
+```
 
 Then use it:
 
@@ -104,49 +97,16 @@ yigraf drift                             # report any intent↔code drift
 
 ## Installation
 
-yigraf is on **PyPI**. It needs **Python ≥ 3.11**; the tree-sitter grammars are bundled, so there's
-nothing else to set up. For a CLI you use across repos, an isolated install (pipx or `uv tool`) is nicest.
-
-**Any platform — pick one:**
+yigraf is on **PyPI** and needs only **Python ≥ 3.11**. Everything else is bundled — the tree-sitter
+grammars (16 languages), the MCP server, and semantic recall (fastembed / ONNX, **no torch**) — so one
+install gives you full power out of the box. For a CLI you use across repos, an isolated install (pipx
+or `uv tool`) is nicest.
 
 ```bash
-pip install yigraf                 # into the current environment (semantic recall included)
+pip install yigraf                 # into the current environment
 pipx install yigraf                # isolated CLI (recommended)
 uv tool install yigraf             # isolated CLI, via uv
-
-# optional: the torch/sentence-transformers backend (Apple-Silicon MPS or exact fp32) — NOT
-# needed for semantic recall, which is already on by default:
-pip install "yigraf[embeddings-torch]"
 ```
-
-### Capabilities & plugins (the menu)
-
-Everything in the **core** block ships with a plain `pip install yigraf` — no extras, no setup,
-semantic recall included. The one plugin is opt-in because it carries a real cost; `yigraf install
---plan` prints this same menu tailored to your machine so you (via your agent) can choose.
-
-| | Capability | Included? | Cost / note |
-|---|---|:---:|---|
-| **core** | Structure index (16 languages, tree-sitter) | ✓ default | grammars bundled |
-| **core** | Intent + plan authoring, intent↔code **drift** | ✓ default | — |
-| **core** | Memory (decisions + *why*) | ✓ default | — |
-| **core** | Token-cheap `yigraf context` retrieval | ✓ default | — |
-| **core** | MCP server + host push hooks | ✓ default | `mcp` SDK is a core dep |
-| **core** | **Semantic recall** (fastembed / ONNX) | ✓ default | onnxruntime ~68MB, **no torch**; downloads a small model from HuggingFace on first use |
-| *plugin* | Torch embeddings backend (`[embeddings-torch]`) | opt-in | pulls **torch ~1GB+**; only for MPS throughput / exact fp32 |
-
-**About semantic recall and HuggingFace.** Semantic recall lets you find memory/intent *by meaning*
-instead of keywords, and it's **on by default** — the bundled **fastembed** backend runs the
-`bge-small` model on ONNX Runtime (~68 MB, no torch). On first `yigraf build` it downloads that small
-model from the **HuggingFace Hub** — that's the only reason HuggingFace is ever involved, and the
-one-time "unauthenticated Hugging Face Hub" notice you may see is harmless (set `HF_TOKEN` only if you
-hit download rate limits). Set `embeddings.backend: none` in `yigraf/config.yaml` to disable it —
-retrieval then **degrades gracefully to lexical recall** (nothing breaks, search is just keyword-based).
-
-The `[embeddings-torch]` plugin swaps in the `sentence-transformers` (torch) backend. You do **not**
-need it for semantic recall — install it only for Apple-Silicon MPS throughput on large corpora or the
-exact fp32 model, then set `embeddings.backend: sentence-transformers`. Measured cosine agreement
-between the two backends on this workload is ≈0.9999, so retrieval quality is effectively identical.
 
 ### macOS
 
@@ -180,6 +140,19 @@ uv sync                  # create the venv + install deps (incl. dev tools)
 uv run yigraf --help
 uv run pytest
 ```
+
+### Semantic recall (optional tuning)
+
+Semantic recall is **on by default** via the bundled fastembed backend — nothing to install. Two knobs,
+in `yigraf/config.yaml` under `embeddings.backend`:
+
+- **`none`** — turn it off; retrieval falls back to lexical (keyword) search.
+- **`sentence-transformers`** — swap onto the torch backend (`pip install "yigraf[embeddings-torch]"`).
+  Only worth it for Apple-Silicon MPS throughput or the exact fp32 model; the two backends agree to
+  ≈0.9999 cosine, so quality is effectively identical.
+
+On the first `yigraf build`, the small `bge-small` model downloads from the HuggingFace Hub (the only
+time HF is involved; the one-time "unauthenticated Hub" notice is harmless).
 
 ## How yigraf works
 
