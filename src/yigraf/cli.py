@@ -398,6 +398,64 @@ def supersede(
 
 
 @app.command()
+def reaffirm(
+    mem_id: str = typer.Argument(..., help="The memory id to reaffirm, e.g. mem:022."),
+    concerns: list[str] = typer.Option(None, "--concerns", help="Re-anchor only these symbols (default: all the node's concerns)."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Re-verify a decision still holds and re-stamp its ``concerns`` anchors to the current code.
+
+    The honest counterpart to ``supersede``: when a symbol a memory ``concerns`` is edited, drift fires
+    ("body changed since anchored") to force a re-verify — but if the decision still holds, there was no
+    mind-change to ``supersede`` and re-``remember`` would only duplicate. ``reaffirm`` records the
+    re-verification by re-stamping the anchor to the symbol's current content, clearing the drift
+    in-place (edit-in-place is safe here: no claim changes, only the anchor advances). Mirrors how
+    ``link`` re-stamps a task's ``implements`` anchor — the same fix, for a memory's ``concerns`` edge.
+    """
+    workspace = _require_workspace(repo)
+    path = memory.find_memory(repo, mem_id)
+    if path is None:
+        _guidance(f"No memory node with id {mem_id} to reaffirm. "
+                  f'Find the decision you mean with `yigraf context "<topic>"`.')
+    node = memory.read_memory(path)
+    if not node.concerns:
+        _guidance(f"{mem_id} concerns no symbol, so it carries no anchor to reaffirm "
+                  f"(only a `concerns sym:...` edge drifts). Nothing to do.")
+
+    only = set(concerns or [])
+    if only:
+        unknown = only - {c.sym for c in node.concerns}
+        if unknown:
+            _guidance(f"{mem_id} doesn't concern {', '.join(sorted(unknown))}. "
+                      f"It concerns: {', '.join(c.sym for c in node.concerns)}.")
+
+    config = load_config(workspace / "config.yaml")
+    restamped, gone = [], []
+    for c in node.concerns:
+        if only and c.sym not in only:
+            continue
+        fresh = symbol_content_hash(repo, c.sym, config)
+        if fresh is None:  # a gone symbol is hard drift, not a reaffirm — keep its anchor for rename match
+            gone.append(c.sym)
+            continue
+        if fresh != c.anchor:
+            restamped.append(c.sym)
+        c.anchor, c.anchor_algo = fresh, ANCHOR_ALGO
+
+    path.write_text(memory.render_memory(node), encoding="utf-8")
+    _rebuild(repo)
+
+    if restamped:
+        typer.echo(f"Reaffirmed {mem_id}: re-anchored {', '.join(restamped)} to current code — drift cleared.")
+    elif not gone:
+        typer.echo(f"Reaffirmed {mem_id}: anchors already matched the current code (no drift to clear).")
+    if gone:
+        typer.echo(f"⚠ {mem_id} concerns {', '.join(gone)}, which no longer resolve(s) in the source — "
+                   f"reaffirm can't re-anchor a gone symbol. If the decision moved, "
+                   f'`yigraf supersede {mem_id} "<restated>" --concerns <new-sym>`.')
+
+
+@app.command()
 def context(
     query: str = typer.Argument(..., help="What to look up, e.g. \"session expiry\"."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),

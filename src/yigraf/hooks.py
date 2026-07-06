@@ -143,6 +143,7 @@ plus the rejected option is enough; capture at the *conclusion*, not mid-thinkin
 - A correction or rule → `yigraf note-constraint "<rule>" --concerns sym:<path>#<name>` (flagged as a
   candidate to promote into an enforced check).
 - Changed your mind? Never edit a decision in place — `yigraf supersede mem:<id> "<new decision>" --why "<what changed>"`. The old one stays as a rejected alternative.
+- Decision still holds after you edited the code it governs? `yigraf reaffirm mem:<id>` — re-stamps the anchor and clears the drift (the honest counterpart to `supersede`: don't re-`remember`, that duplicates).
 
 A `--concerns` link is **anchored** like `implements`: edit that code later and yigraf surfaces a
 "re-verify this decision still holds" reconcile. That's the payoff — the next agent to touch the code
@@ -157,8 +158,9 @@ sees the decision and its rationale without reading the history.
 You don't poll for drift — `yigraf context` and the edit hook surface it for you: soft drift (a linked
 symbol's body changed) or hard drift (it's gone), for both `implements` (task→code) and `concerns`
 (decision→code) links. A pure rename auto-re-anchors. When drift surfaces, re-verify the code still
-satisfies the spec/decision, then `yigraf link` (or re-`remember` / `supersede` the decision) to
-re-anchor. (`yigraf drift` exits non-zero on drift — that's the commit/CI gate, not something you poll.)
+satisfies the spec/decision, then re-anchor: `yigraf link task:<id> sym:…` for a task's `implements`,
+`yigraf reaffirm mem:<id>` for a decision's `concerns` that still holds (or `supersede` it if your mind
+changed). (`yigraf drift` exits non-zero on drift — that's the commit/CI gate, not something you poll.)
 """
 
 _AGENTS_BLOCK = f"""{_AGENTS_START}
@@ -393,7 +395,8 @@ constraints, rejected alternatives). yigraf is wired as an MCP server; use its t
   intents, the active plan, implementing signatures, prior decisions and their *why*, and any drift to
   re-verify. Don't re-derive intent or re-read what the graph already encodes.
 - **After** finishing a task, call `link` to name the symbols it implements, and `remember` the
-  non-obvious decisions (with `why` and `concerns`). Changed your mind? `supersede` the old decision.
+  non-obvious decisions (with `why` and `concerns`). Changed your mind? `supersede` the old decision;
+  edited code a decision governs but it still holds? `reaffirm` it to clear the drift.
   A correction/rule → `note_constraint`.
 - `status` gives a one-line health check (scale, drift, freshness).
 

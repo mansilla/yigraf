@@ -74,6 +74,14 @@ def test_remember_captures_a_decision(tmp_path: Path):
     assert "Loading weights" not in out and "HF Hub" not in out
 
 
+def test_reaffirm_re_anchors_through_mcp(tmp_path: Path):
+    root = _linked_repo(tmp_path)
+    mcp_server.run_remember(str(root), "refresh stays immutable", concerns=["sym:auth/session.py#refresh"])
+    (root / "auth" / "session.py").write_text("def refresh(token):\n    return token + 1\n")  # drift
+    out = mcp_server.run_reaffirm(str(root), "mem:001")
+    assert "re-anchored" in out and "drift cleared" in out
+
+
 def test_multi_expands_repeatable_options():
     assert mcp_server._multi("--serves", ["int:a", "int:b"]) == ["--serves", "int:a", "--serves", "int:b"]
     assert mcp_server._multi("--concerns", None) == []
@@ -84,4 +92,4 @@ def test_build_server_registers_all_tools(tmp_path: Path):
     pytest.importorskip("mcp")  # core dep; this guards only a deps-not-synced editable checkout
     server = mcp_server.build_server(str(_repo(tmp_path)))
     names = {t.name for t in asyncio.run(server.list_tools())}
-    assert {"context", "status", "link", "remember", "note_constraint", "supersede"} <= names
+    assert {"context", "status", "link", "remember", "note_constraint", "supersede", "reaffirm"} <= names

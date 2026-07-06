@@ -11,7 +11,7 @@ speaks, and ``yigraf install`` wires it by default — so this module's import a
 
 Read tools (``context``, ``status``) run **in-process** so the structure graph + the embedding model
 stay **warm** across calls in a session — a second ``context`` query doesn't re-pay the cold build/model
-load. Write tools (``remember``/``link``/``note_constraint``/``supersede``) run the matching CLI verb in a
+load. Write tools (``remember``/``link``/``note_constraint``/``supersede``/``reaffirm``) run the matching CLI verb in a
 **subprocess** (arg-list, no shell): writes are rare and already rebuild the graph, and shelling out
 reuses the CLI's dedup guard, anchoring, and exit-0 "did you mean" guidance verbatim — so the MCP write
 path can't drift from the CLI's (``mem:018``). This completes the agent loop (context → link → remember)
@@ -147,6 +147,10 @@ def run_supersede(repo: str | None, old_id: str, statement: str, why: str = "",
     return _run_cli("supersede", args, repo)
 
 
+def run_reaffirm(repo: str | None, mem_id: str, concerns: list[str] | None = None) -> str:
+    return _run_cli("reaffirm", [mem_id] + _multi("--concerns", concerns), repo)
+
+
 def build_server(default_repo: str | None = None):
     """Construct the FastMCP server with yigraf's read + write tools. Imports the SDK lazily."""
     from mcp.server.fastmcp import FastMCP  # core dep; imported lazily to keep it off other CLI paths
@@ -235,6 +239,21 @@ def build_server(default_repo: str | None = None):
             serves/concerns/rejected/type: as for `remember`.
         """
         return run_supersede(repo or default_repo, old_id, statement, why, serves, concerns, rejected, type)
+
+    @server.tool()
+    def reaffirm(mem_id: str, concerns: list[str] | None = None, repo: str | None = None) -> str:
+        """Re-verify a decision still holds and re-anchor its `concerns` to current code, clearing drift.
+
+        The honest counterpart to `supersede`: when code a memory governs is edited, drift asks you to
+        re-verify the decision. If it still holds (no mind-change), call this to re-stamp the anchor and
+        clear the drift — don't `supersede` (that records a change that didn't happen) or re-`remember`
+        (that duplicates).
+
+        Args:
+            mem_id: the memory to reaffirm, e.g. "mem:022".
+            concerns: re-anchor only these symbols (default: all the node's concerns).
+        """
+        return run_reaffirm(repo or default_repo, mem_id, concerns)
 
     return server
 

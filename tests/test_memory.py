@@ -147,6 +147,55 @@ def test_deleting_concerned_code_is_hard_concerns_drift(tmp_path: Path):
     assert [i.kind for i in items] == ["hard"] and items[0].locator == SYM
 
 
+def test_reaffirm_re_anchors_and_clears_concerns_drift(tmp_path: Path):
+    """The honest counterpart to supersede: re-verify holds, re-stamp the anchor, drift clears in place."""
+    root = _repo(tmp_path)
+    _remember(root, "refresh keeps the token immutable", concerns=[SYM])
+    (root / SRC).write_text("def refresh(token):\n    return token + 1\n")  # body changed → soft drift
+    graph, _ = build_graph(root, default_config())
+    assert [i.kind for i in compute_drift(graph) if i.relation == "concerns"] == ["soft"]
+
+    out = _run(["reaffirm", "mem:001", "--repo", str(root)])
+    assert "re-anchored" in out.output and SYM in out.output
+
+    graph, _ = build_graph(root, default_config())
+    assert [i for i in compute_drift(graph) if i.relation == "concerns"] == []  # drift cleared
+    # the anchor now equals the *current* body hash, and the edge/claim is otherwise unchanged
+    assert graph.edges["mem:001", SYM]["anchor"] == graph.nodes[SYM]["content_hash"]
+    assert graph.nodes["mem:001"]["statement"] == "refresh keeps the token immutable"
+    assert graph.nodes["mem:001"]["status"] == "active"  # no supersede, no new node
+    assert memory.find_memory(root, "mem:002") is None
+
+
+def test_reaffirm_is_a_noop_when_there_is_no_drift(tmp_path: Path):
+    root = _repo(tmp_path)
+    _remember(root, "refresh keeps the token immutable", concerns=[SYM])
+    out = _run(["reaffirm", "mem:001", "--repo", str(root)])
+    assert "already matched" in out.output
+
+
+def test_reaffirm_unknown_memory_guides_and_exits_zero(tmp_path: Path):
+    root = _repo(tmp_path)
+    result = runner.invoke(app, ["reaffirm", "mem:999", "--repo", str(root)])
+    assert result.exit_code == 0 and "No memory node with id mem:999" in result.output
+
+
+def test_reaffirm_without_concerns_has_nothing_to_do(tmp_path: Path):
+    root = _repo(tmp_path)
+    _remember(root, "a decision that governs no specific symbol", serves=["int:session-expiry"])
+    result = runner.invoke(app, ["reaffirm", "mem:001", "--repo", str(root)])
+    assert result.exit_code == 0 and "concerns no symbol" in result.output
+
+
+def test_reaffirm_cannot_re_anchor_a_gone_symbol(tmp_path: Path):
+    """A deleted symbol is hard drift, not a reaffirm case — guide toward supersede, don't crash."""
+    root = _repo(tmp_path)
+    _remember(root, "refresh keeps the token immutable", concerns=[SYM])
+    (root / SRC).write_text("def unrelated():\n    return 0\n")  # refresh is gone
+    out = _run(["reaffirm", "mem:001", "--repo", str(root)])
+    assert "no longer resolve" in out.output and "supersede" in out.output
+
+
 def test_superseded_memory_does_not_drift_on_concerned_code_change(tmp_path: Path):
     root = _repo(tmp_path)
     _remember(root, "refresh keeps the token immutable", concerns=[SYM])

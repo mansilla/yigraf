@@ -34,8 +34,9 @@ queryable graph and re-surfaces the relevant piece exactly when the agent needs 
 - **Intent & plan** — author specs and task plans as Markdown; link a task to the symbols that implement
   it, **anchored** to their current content.
 - **Drift detection** — when anchored code changes, yigraf surfaces *"re-verify this still holds, then
-  re-link or supersede."* A pure rename re-anchors automatically; a body change is honest drift. (This is
-  the part that makes yigraf governance, not just an index.)
+  re-link, reaffirm, or supersede."* A pure rename re-anchors automatically; a body change is honest
+  drift you clear by re-anchoring: `link` a task, `reaffirm` a decision that still holds, `supersede`
+  one that changed. (This is the part that makes yigraf governance, not just an index.)
 - **Memory** — capture decisions + the reasoning behind them; recall by **meaning** (semantic recall,
   on by default) or lexically; a decision earns `settled` after surviving K commits un-superseded; `gc`
   archives churn.
