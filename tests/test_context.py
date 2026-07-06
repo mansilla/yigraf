@@ -173,6 +173,24 @@ def test_done_task_that_is_linked_is_not_a_gap(tmp_path: Path):
     assert "is done but names no implementing symbol" not in _session(root).text
 
 
+def test_fully_done_plan_is_not_reinjected_as_active_at_session_start(tmp_path: Path):
+    """A plan with all boxes checked is finished work — it must drop out of the SessionStart seed set
+    (design law #4) rather than re-cost the agent context on every /clear."""
+    root = _repo(tmp_path)
+    plan = root / "yigraf" / "plans" / "active" / "auth.md"
+    plan.write_text(plan.read_text().replace("- [ ] {#1}", "- [x] {#1}"))  # last (only) box checked
+    text = _session(root).text
+    assert "task:auth/1" not in text  # the done task no longer surfaces as active work
+    # the governing intent is still seeded, so the session slice is not empty
+    assert "int:session-expiry" in text
+
+
+def test_plan_with_open_work_is_still_reinjected(tmp_path: Path):
+    """Guard the other side: a plan still holding an open task remains an active seed."""
+    root = _repo(tmp_path)  # auth/1 is left todo by _repo
+    assert "task:auth/1" in _session(root).text
+
+
 def test_capture_gap_is_scoped_to_the_query_in_context(tmp_path: Path):
     """`context` reports a gap only inside the query's neighborhood (like drift), not globally."""
     root = _repo(tmp_path)

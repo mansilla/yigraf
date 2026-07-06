@@ -509,24 +509,51 @@ def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict,
                    root=root, config=config)
 
 
+def _plan_has_open_work(graph: nx.DiGraph, plan_id: str) -> bool:
+    """True when a plan still owns at least one un-checked (``todo``) task — the *derived* "active" test.
+
+    A plan whose tasks are all ``done`` is finished work. Re-injecting it as "the active plan" on every
+    ``/clear`` would spend the agent's context budget re-surfacing history it has already shipped — a
+    design-law #4 violation ("silence is a feature"). Completion is derived from the checkboxes (files
+    are truth, R6): checking the last box retires the plan from the SessionStart seed set with no manual
+    move into ``completed/`` required. A plan with no tasks yet is likewise not "active work".
+    """
+    return any(
+        graph.nodes[t].get("state") != "done"
+        for _, t, e in graph.out_edges(plan_id, data=True)
+        if e.get("relation") == "contains"
+    )
+
+
 def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None = None,
                     root: Path | None = None) -> ContextResult | None:
     """SessionStart re-injection (R8): the active plan + governing intents + any drift.
 
     Seeds from every intent and **active** plan node, traverses to the implementing code, and renders
     so a flow interrupted by ``/clear`` resumes instead of restarting. ``None`` (silent) if there are
-    no intents or active plans yet.
+    no intents or active plans yet. "Active" is a plan not in the ``completed/`` phase **and** still
+    holding open work (:func:`_plan_has_open_work`); a plan whose boxes are all checked drops out of the
+    seed set so a finished milestone stops costing the agent context on every reset. Its tasks are not
+    seeded directly — an active plan reaches them over its ``contains`` edges during traversal.
     """
     budget = budget_tokens or config.get("retrieval", {}).get("query_token_budget", 4000)
     seeds = sorted(
         n for n, a in graph.nodes(data=True)
-        if a.get("family") == "intent" or (a.get("family") == "plan" and a.get("phase") != "completed")
+        if a.get("family") == "intent"
+        or (a.get("family") == "plan" and a.get("kind") == "plan"
+            and a.get("phase") != "completed" and _plan_has_open_work(graph, n))
     )
     if not seeds:
         return None
 
     hops = _traverse(graph, seeds, config)
     ranked = _rank(graph, hops, {}, config)
+    # Orient on what's *left*, not a ledger of shipped work: drop done tasks from the render so a
+    # part-done plan shows only its open steps, and a done task pulled in via its (still-governing)
+    # intent's `tracks` edge doesn't re-cost context (design law #4). Drift/capture-gap lines are
+    # computed below over the full graph, so a done task that drifted or is unlinked still surfaces.
+    ranked = [n for n in ranked
+              if not (graph.nodes[n].get("kind") == "task" and graph.nodes[n].get("state") == "done")]
 
     drift_lines: list[str] = []
     drifted_edges: set[tuple[str, str]] = set()

@@ -49,6 +49,26 @@ def test_open_tasks_counted(tmp_path: Path):
     assert s.tasks_open == s.tasks_total == 1
 
 
+def test_all_done_renders_a_check_not_a_bare_count(tmp_path: Path):
+    """Total>0 with zero open must read as 'all done' (✓), distinct from an empty '0 task'."""
+    root = _repo(tmp_path)
+    plan = root / "yigraf" / "plans" / "active" / "auth.md"
+    plan.write_text(plan.read_text().replace("- [ ] {#1}", "- [x] {#1}"))
+    s = _summary(root)
+    assert s.tasks_total == 1 and s.tasks_open == 0
+    assert "1 task ✓" in s.render_line()  # the "you're clear" signal, not a bare "1 task"
+    assert "/0 open" not in s.render_line()
+    assert " ✓" in s.render_line(color=True, icon=status.SPIN[0])
+
+
+def test_empty_and_all_done_render_differently(tmp_path: Path):
+    """The whole point: 'no plans yet' (0 task) and 'all done' (N task ✓) must not look identical."""
+    assert runner.invoke(app, ["init", str(tmp_path)]).exit_code == 0
+    assert runner.invoke(app, ["build", str(tmp_path)]).exit_code == 0
+    empty = _summary(tmp_path)
+    assert empty.tasks_total == 0 and "0 task" in empty.render_line() and "✓" not in empty.render_line()
+
+
 def test_freshness_fresh_then_stale_then_absent(tmp_path: Path):
     root = _repo(tmp_path)
     assert _summary(root).freshness == "fresh"

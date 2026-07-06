@@ -90,7 +90,15 @@ class StatusSummary:
         return self._pretty(icon) if color else self._plain(icon or "yigraf")
 
     def _plain(self, brand: str) -> str:
-        tasks = f"{self.tasks_total} task" + (f"/{self.tasks_open} open" if self.tasks_open else "")
+        # Three distinct states, because "all done" and "no plans yet" both zero out `tasks_open` and
+        # would otherwise render the same bare count: `/N open` (work remains) · ` ✓` (all done, total>0)
+        # · plain `0 task` (empty — no plan authored). The ✓ is the "you're clear" signal.
+        if not self.tasks_total:
+            tasks = "0 task"
+        elif self.tasks_open:
+            tasks = f"{self.tasks_total} task/{self.tasks_open} open"
+        else:
+            tasks = f"{self.tasks_total} task ✓"
         parts = [f"{brand} {self.symbols} sym", f"{self.intents} int", tasks, f"{self.decisions} dec",
                  f"⚠ {self.drifting} drift" if self.drifting else "no drift", self.freshness]
         if self.semantic:
@@ -110,7 +118,8 @@ class StatusSummary:
             brand + " " + kv(self.symbols, "sym"),
             kv(self.intents, "int"),
             _c(str(self.tasks_total), "1") + _c(" task", "2")
-            + (_c(f"/{self.tasks_open}", "33") + _c(" open", "2") if self.tasks_open else ""),
+            + (_c(f"/{self.tasks_open}", "33") + _c(" open", "2") if self.tasks_open
+               else _c(" ✓", "32") if self.tasks_total else ""),
             kv(self.decisions, "dec"),
             _c(f"⚠ {self.drifting} drift", "1;33") if self.drifting else _c("✓ clear", "32"),
             {"fresh": _c("● fresh", "32"), "stale": _c("○ stale", "33")}.get(
