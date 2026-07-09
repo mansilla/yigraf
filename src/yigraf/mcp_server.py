@@ -130,11 +130,13 @@ def run_remember(repo: str | None, statement: str, why: str = "", serves: list[s
 
 def run_note_constraint(repo: str | None, rule: str, concerns: list[str] | None = None,
                         why: str = "", serves: list[str] | None = None,
-                        grounding: str | None = None) -> str:
+                        rejected: str | None = None, grounding: str | None = None) -> str:
     args = [rule] + _multi("--concerns", concerns)
     if why:
         args += ["--why", why]
     args += _multi("--serves", serves)
+    if rejected:
+        args += ["--rejected", rejected]
     if grounding:
         args += ["--grounding", grounding]
     return _run_cli("note-constraint", args, repo)
@@ -249,8 +251,8 @@ def build_server(default_repo: str | None = None):
 
     @server.tool()
     def note_constraint(rule: str, concerns: list[str] | None = None, why: str = "",
-                        serves: list[str] | None = None, grounding: str | None = None,
-                        repo: str | None = None) -> str:
+                        serves: list[str] | None = None, rejected: str | None = None,
+                        grounding: str | None = None, repo: str | None = None) -> str:
         """Capture a constraint/rule governing code (flagged as a candidate to promote to a check).
 
         Args:
@@ -258,9 +260,10 @@ def build_server(default_repo: str | None = None):
             concerns: symbols it governs, e.g. ["sym:path.py#fn"] (anchored).
             why: why the rule exists.
             serves: intent/plan ids it serves.
+            rejected: the ruled-out alternative + why (a constraint often exists *because* one was).
             grounding: inferred|docs|empirical (default inferred) — see `remember`.
         """
-        return run_note_constraint(repo or default_repo, rule, concerns, why, serves, grounding)
+        return run_note_constraint(repo or default_repo, rule, concerns, why, serves, rejected, grounding)
 
     @server.tool()
     def supersede(old_id: str, statement: str, why: str = "", serves: list[str] | None = None,

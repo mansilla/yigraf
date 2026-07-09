@@ -290,6 +290,30 @@ def _capture_gaps(graph: nx.DiGraph, scope: set[str] | None = None) -> list[str]
     return sorted(lines)
 
 
+def _implemented_open_tasks(graph: nx.DiGraph, drifted_edges: set[tuple[str, str]],
+                            scope: set[str] | None = None) -> list[str]:
+    """Open tasks whose implementing symbols already exist and are current — the "done but not closed"
+    signal, the mirror of :func:`_capture_gaps` (E#14, sibling of the mem:011 capture-gap).
+
+    An agent that finishes a task and ``link``s its symbols but never checks the box leaves it seeding
+    as active work on every SessionStart. Surfacing it lets the agent reconcile the plan. Host-agnostic
+    and advisory — never a gate (R8/R9c "surface, don't block"), and mirroring open tasks into a host's
+    native task list is left to a per-host adapter, never core (int:multi-host). We skip a task whose
+    implements edge *drifted*: that's mid-change work, and drift already surfaces it — no double signal.
+    """
+    lines: list[str] = []
+    for node_id, attrs in graph.nodes(data=True):
+        if attrs.get("family") != "plan" or attrs.get("kind") != "task" or attrs.get("state") == "done":
+            continue
+        if scope is not None and node_id not in scope:
+            continue
+        impl = [d for _, d, a in graph.out_edges(node_id, data=True) if a.get("relation") == "implements"]
+        if impl and not any((node_id, d) in drifted_edges for d in impl):
+            lines.append(f"  ⚠ {node_id} is open but its implementing symbol(s) exist and are current "
+                         f"({', '.join(sorted(impl))}) — if the work is done, check its box.")
+    return sorted(lines)
+
+
 #: Structure kinds whose source is a meaningful slice (a whole file/module is not — skip those).
 _SOURCE_KINDS = frozenset({"function", "method", "class", "type"})
 
@@ -335,14 +359,16 @@ def _source_block(graph: nx.DiGraph, node_id: str, root: Path, max_lines: int) -
 def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[str],
             reconcile_lines: list[str], budget_tokens: int, root: Path | None = None,
             config: dict | None = None, capture_lines: list[str] | None = None,
-            relevance_note: str | None = None, scores: dict[str, float] | None = None) -> ContextResult:
+            relevance_note: str | None = None, scores: dict[str, float] | None = None,
+            task_reconcile_lines: list[str] | None = None) -> ContextResult:
     capture_lines = capture_lines or []
+    task_reconcile_lines = task_reconcile_lines or []
     char_budget = budget_tokens * 3  # Graphify's ≈3:1 char:token estimate (retrieval-design §9)
     rcfg = (config or {}).get("retrieval", {})
     # A3: top-ranked symbols render as verbatim source when the knob is on AND we know the repo root.
     source_mode = rcfg.get("render", "signature_only") == "source_for_seeds" and root is not None
     max_src, max_src_lines = rcfg.get("source_max_symbols", 3), rcfg.get("source_max_lines", 40)
-    reserved = "\n".join(drift_lines + reconcile_lines + capture_lines)
+    reserved = "\n".join(drift_lines + reconcile_lines + capture_lines + task_reconcile_lines)
     out = [f'Context for "{query}":', ""]
     if relevance_note:  # C#8: a one-line honesty banner when nothing matched the query strongly
         out.extend([relevance_note, ""])
@@ -390,6 +416,10 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
     if capture_lines:
         out.append("⚠ Capture gaps:")
         out.extend(capture_lines)
+        out.append("")
+    if task_reconcile_lines:
+        out.append("⚠ Task reconcile:")
+        out.extend(task_reconcile_lines)
         out.append("")
 
     elided = len(renderable) - rendered
@@ -581,8 +611,10 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
 
     reconcile = _verified_reconcile(graph, drifted_edges)
     capture = _capture_gaps(graph)  # global: SessionStart is the orientation dashboard for graph health
+    task_reconcile = _implemented_open_tasks(graph, drifted_edges)
     return _render(graph, ranked, "active plan & governing intents", sorted(drift_lines), reconcile,
-                   budget, root=root, config=config, capture_lines=capture)
+                   budget, root=root, config=config, capture_lines=capture,
+                   task_reconcile_lines=task_reconcile)
 
 
 def _merge_seeds(lex_match: dict[str, float], sem_match: dict[str, float], config: dict) -> list[str]:
@@ -664,7 +696,9 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
 
     reconcile_lines = _verified_reconcile(graph, drifted_edges)
     capture_lines = _capture_gaps(graph, scope=in_scope)  # scoped to the query's neighborhood, like drift
+    task_reconcile = _implemented_open_tasks(graph, drifted_edges, scope=in_scope)
     scores = {n: sem_match[n] for n in hops if n in sem_match} if show_scores else None
     return _render(graph, ranked, query, sorted(drift_lines), reconcile_lines, budget,
                    root=root, config=config, capture_lines=capture_lines,
-                   relevance_note=_relevance_note(sem_match, query, config), scores=scores)
+                   relevance_note=_relevance_note(sem_match, query, config), scores=scores,
+                   task_reconcile_lines=task_reconcile)

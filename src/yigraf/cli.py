@@ -56,30 +56,40 @@ def _symbol_suggestion(graph, target: str) -> str:
     return f' Run `yigraf context "{name}"` to find its locator.'
 
 
-def _anchor_or_guide(repo: Path, config: dict, target: str) -> tuple[str, str]:
-    """Stamp the ``(anchor, algo)`` for a ``sym:`` or ``file:`` target; unresolved → guidance, exit 0.
+def _anchor(repo: Path, config: dict, target: str) -> tuple[str | None, str | None]:
+    """Resolve ``(anchor, algo)`` for a ``sym:``/``file:`` target, or ``(None, None)`` if it isn't in
+    the source *yet* (a legitimate forward-reference — the caller decides whether that's fatal).
 
-    A ``file:<path>[:L<a>-L<b>]`` target (friend-review #12) hashes the file bytes (or line slice) with
-    ``FILE_ANCHOR_ALGO`` — for infra/glue files with no code symbol. A ``sym:`` target keeps the astnorm
-    anchor. The returned algo travels with the anchor so drift compares like against like.
+    Still hard-guides (exit 0) on the whole-file-on-indexed-code misuse: that's a design error, not a
+    forward-reference — the anchor would collide with the extractor's own file node and never drift.
+    A ``file:`` line-slice or an infra/glue file hashes bytes with ``FILE_ANCHOR_ALGO``; a ``sym:``
+    keeps the astnorm anchor. The algo travels with the anchor so drift compares like against like.
     """
     if target.startswith("file:"):
         relpath, start, _end = parse_file_target(target)
-        # A whole-file file: anchor on an *indexed* code file would collide with the extractor's own
-        # astnorm file node and silently never drift — steer to a symbol or a line range instead. A
-        # line range (start set) is fine: it's a distinct node the extractor never made.
         if start is None and Path(relpath).suffix in extension_map(available_extractors(config)):
             _guidance(f"{relpath} is indexed as code, so a whole-file `file:` anchor would silently "
                       f"never drift. Anchor a symbol (sym:{relpath}#<name>) or a line range "
                       f"(file:{relpath}:L<a>-L<b>) instead. `file:` is for infra/glue with no symbols.")
         anchor = file_content_hash(repo, target)
-        if anchor is not None:
-            return anchor, FILE_ANCHOR_ALGO
+        return (anchor, FILE_ANCHOR_ALGO) if anchor is not None else (None, None)
+    anchor = symbol_content_hash(repo, target, config)
+    return (anchor, ANCHOR_ALGO) if anchor is not None else (None, None)
+
+
+def _anchor_or_guide(repo: Path, config: dict, target: str) -> tuple[str, str]:
+    """Stamp the ``(anchor, algo)`` for a ``sym:``/``file:`` target; unresolved → guidance, exit 0.
+
+    The hard-resolve used by ``link``: an implements edge must name code that exists (a task can't
+    implement a symbol that isn't there yet). Memory ``concerns`` uses the soft :func:`_anchor` instead,
+    because a decision legitimately governs code about to be written (D#3 — forward-refs never block).
+    """
+    anchor, algo = _anchor(repo, config, target)
+    if anchor is not None:
+        return anchor, algo
+    if target.startswith("file:"):
         _guidance(f"Couldn't find the file for {target} — expected file:<path>[:L<a>-L<b>] relative to "
                   f"the repo root. Check the path exists and is spelled relative to {repo}.")
-    anchor = symbol_content_hash(repo, target, config)
-    if anchor is not None:
-        return anchor, ANCHOR_ALGO
     graph, _ = build_graph(repo, config)
     _guidance(f"Couldn't find {target} in the current source." + _symbol_suggestion(graph, target))
 
@@ -358,28 +368,44 @@ def link(
     _rebuild(repo)
 
 
-def _resolve_concerns(repo: Path, workspace: Path, syms: list[str]) -> list[memory.Concern]:
-    """Resolve each ``--concerns`` symbol to a :class:`Concern` with a stamped anchor (or exit)."""
-    config = load_config(workspace / "config.yaml")
+def _resolve_concerns(repo: Path, config: dict, graph, syms: list[str]) -> tuple[list[memory.Concern], list[str]]:
+    """Resolve each ``--concerns`` locator to a :class:`Concern`, soft-warning on a forward-reference.
+
+    A malformed locator (not ``sym:``/``file:``) is still a hard guide — that's a wrong *form*, not a
+    forward-reference. But a well-formed locator that doesn't resolve in the current source is a
+    legitimate forward-reference (a decision governing code about to be written), so we create a
+    *dangling* concern (anchor ``None``) and return a warning instead of blocking (D#3). The edge is
+    live and traversable now; ``reaffirm`` stamps its anchor once the code lands.
+    """
     concerns: list[memory.Concern] = []
+    warnings: list[str] = []
     for sym in syms:
         if not (sym.startswith("sym:") or sym.startswith("file:")):
             _guidance(f"--concerns must be a symbol (sym:<path>#<name>) or a file "
                       f"(file:<path>[:L<a>-L<b>], for infra/glue with no symbol), got: {sym}")
-        anchor, algo = _anchor_or_guide(repo, config, sym)
+        anchor, algo = _anchor(repo, config, sym)
         concerns.append(memory.Concern(sym=sym, anchor=anchor, anchor_algo=algo))
-    return concerns
+        if anchor is None:
+            warnings.append(f"⚠ no such symbol {sym} in the current source — creating a dangling "
+                            f"concerns edge (it governs once the code lands; `reaffirm <mem-id>` to "
+                            f"anchor it)." + _symbol_suggestion(graph, sym))
+    return concerns, warnings
 
 
-def _dedup_guard(repo: Path, config: dict, statement: str, why: str,
+def _serves_warnings(graph, serves: list[str]) -> list[str]:
+    """Soft-warn on a ``--serves`` id absent from the graph — a dangling edge, never a block (D#3)."""
+    return [f"⚠ no such node {t} — creating a dangling serves edge (a forward-reference is fine; it "
+            f"resolves when the intent/plan is created)." for t in serves if t not in graph]
+
+
+def _dedup_guard(repo: Path, config: dict, graph, statement: str, why: str,
                  concerns: list[memory.Concern], serves: list[str]) -> None:
     """Advisory write-time near-duplicate check (capture-flow §4); no-op without an embedding backend.
 
-    Builds the current graph + asks the index for the most similar *active* memory node sharing a
-    serves/concerns target; over the ``dup_cosine`` threshold ⇒ refuse (point at it; suggest supersede
-    or ``--new``). Cheap when there's no backend (returns immediately) — dedup is then trivially skipped.
+    Asks the index for the most similar *active* memory node sharing a serves/concerns target; over the
+    ``dup_cosine`` threshold ⇒ refuse (point at it; suggest supersede or ``--new``). Cheap when there's
+    no backend (returns immediately) — dedup is then trivially skipped. Reuses the caller's ``graph``.
     """
-    graph, _ = build_graph(repo, config)
     text = statement + (f"\n{why}" if why else "")
     scope = set(serves) | {c.sym for c in concerns}
     hit = embeddings.most_similar_memory(repo, graph, config, text, scope)
@@ -405,10 +431,13 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
                   f"inferred = a reasoned assertion; docs = distilled from written rationale; "
                   f"empirical = confirmed by a live observation (a spike/test/prod signal).")
 
-    concerns = _resolve_concerns(repo, workspace, concern_syms)
+    config = load_config(workspace / "config.yaml")
+    graph, _ = build_graph(repo, config)  # built once, reused for concern/serves resolution + dedup
+    concerns, warnings = _resolve_concerns(repo, config, graph, concern_syms)
+    warnings += _serves_warnings(graph, serves)
     # A supersede is a deliberate mind-change (it *should* resemble its predecessor) → skip the guard.
     if not supersedes and not force_new:
-        _dedup_guard(repo, load_config(workspace / "config.yaml"), statement, why, concerns, serves)
+        _dedup_guard(repo, config, graph, statement, why, concerns, serves)
     seq = memory.next_seq(repo)
     slug = memory.slugify(statement)
     node = memory.Memory(
@@ -419,6 +448,8 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
     dest = memory.memory_path(repo, seq, slug)
     dest.write_text(memory.render_memory(node), encoding="utf-8")
     _rebuild(repo)
+    for w in warnings:  # soft-warn AFTER capture — the edge is written; these guide, never block (D#3)
+        typer.echo(w)
     return node
 
 
@@ -459,6 +490,7 @@ def note_constraint(
     concerns: list[str] = typer.Option(None, "--concerns", help="A symbol this constrains, sym:<path>#<name> (repeatable, anchored)."),
     why: str = typer.Option("", "--why", help="Why the constraint holds (optional)."),
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
+    rejected: str = typer.Option(None, "--rejected", help="The ruled-out alternative + why (a constraint often exists *because* one was rejected)."),
     grounding: str = typer.Option(None, "--grounding", help=f"How the belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred). empirical = confirmed by a live observation."),
     new: bool = typer.Option(False, "--new", help="Capture even if it looks like a near-duplicate (skip the dedup guard)."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
@@ -466,7 +498,7 @@ def note_constraint(
     """Capture a constraint memory (flagged promotable to an enforced check; capture-flow §0a)."""
     workspace = _require_workspace(repo)
     node = _capture_memory(repo, workspace, statement=rule, type_="constraint", why=why,
-                           serves=serves or [], concern_syms=concerns or [], rejected=None,
+                           serves=serves or [], concern_syms=concerns or [], rejected=rejected,
                            supersedes=[], promotable=True, force_new=new, grounding=grounding)
     _report_capture(node)
 
@@ -485,6 +517,10 @@ def supersede(
 ) -> None:
     """Record a mind-change: a new memory node with a supersedes edge to the old one (never edit-in-place)."""
     workspace = _require_workspace(repo)
+    if old_id.startswith("int:"):  # wrong verb for an intent reversal — hand them the right recipe (D#5)
+        _guidance(f"{old_id} is an intent, not a memory — `supersede` reverses a *decision*. To reverse "
+                  f"an intent's contract, use `yigraf supersede-intent {old_id[len('int:'):]} <new-slug> "
+                  f'-s "<new SHALL/MUST>" --why "<why the premise changed>"`.')
     if memory.find_memory(repo, old_id) is None:
         _guidance(f"No memory node with id {old_id} to supersede. "
                   f'Find the decision you mean with `yigraf context "<topic>"`.')
@@ -639,6 +675,59 @@ def context(
     _record_injection(repo, graph, result)  # a surfacing is a soft usage signal (sidecar, not graph.json)
     typer.echo(result.text, nl=False)
     typer.echo(f"[~{result.token_estimate} tokens · {result.nodes_rendered}/{result.nodes_total} nodes shown]")
+
+
+def _verb_catalog() -> list[dict]:
+    """Introspect the CLI into ``[{verb, summary, args, options}]`` — the source for the cheatsheet.
+
+    Derived from the live click command tree, so it can never drift from the real verbs/flags (D#5).
+    The universal ``--repo`` and click's ``--help`` are dropped (noise for an orchestrator prompt).
+    Params are classified by ``param_type_name`` (``argument``/``option``) rather than isinstance —
+    typer's ``TyperArgument``/``TyperOption`` don't subclass click's Argument/Option cleanly.
+    """
+    group = typer.main.get_command(app)
+    verbs: list[dict] = []
+    for name, cmd in sorted(group.commands.items()):
+        if getattr(cmd, "hidden", False):
+            continue
+        summary = (cmd.help or "").strip().split("\n", 1)[0]
+        args, options = [], []
+        for p in cmd.params:
+            if p.name == "repo" or "--help" in getattr(p, "opts", []):
+                continue
+            if getattr(p, "param_type_name", "") == "argument":
+                args.append(f"<{p.name}>" if p.required else f"[{p.name}]")
+            else:
+                options.append({"flag": (p.opts or [f"--{p.name}"])[0],
+                                "help": (p.help or "").strip(), "required": bool(p.required)})
+        verbs.append({"verb": name, "summary": summary, "args": args, "options": options})
+    return verbs
+
+
+@app.command()
+def cheatsheet(
+    as_json: bool = typer.Option(False, "--json", help="Emit as JSON (for an orchestrator to parse programmatically)."),
+) -> None:
+    """Emit the verb/flag list an orchestrator can paste into a subagent's prompt (D#5).
+
+    Assume the agent calling yigraf guesses its surface: this is the compact, always-in-sync map of
+    every verb, its arguments, and its flags. Text by default; ``--json`` for a machine consumer. Every
+    verb also takes ``--repo <path>`` (default: cwd), omitted here for brevity.
+    """
+    verbs = _verb_catalog()
+    if as_json:
+        typer.echo(json.dumps({"verbs": verbs}, indent=2))
+        return
+    lines = ["yigraf verbs — every verb also takes --repo <path> (default: cwd).", ""]
+    for v in verbs:
+        sig = " ".join(["yigraf", v["verb"], *v["args"]])
+        lines.append(sig)
+        lines.append(f"    {v['summary']}")
+        for o in v["options"]:
+            req = " (required)" if o["required"] else ""
+            lines.append(f"      {o['flag']}{req}  {o['help']}")
+        lines.append("")
+    typer.echo("\n".join(lines).rstrip())
 
 
 @app.command("status")
