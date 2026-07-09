@@ -55,6 +55,36 @@ DEFAULT_GROUNDING = "inferred"
 ATTESTATIONS = ("agent", "human")
 DEFAULT_ATTESTATION = "agent"
 
+#: Maturity ladder (int:memory-maturity, mem:033) — promoted behaviorally, never by commit-age:
+#: ``proposed`` a candidate distilled from mining/review (int:knowledge-mining, int:review-compound):
+#: near-zero retrieval weight, and it expires unless a real encounter confirms it (GC, task #7). One
+#: survived encounter (an uphold) graduates it to ``working``. ``working`` the tier an agent
+#: ``remember`` lands at — a live belief with no ranking bonus. ``settled`` survived ``≥ maturity_k``
+#: review-encounters un-superseded (the read-time verdict). Only ``proposed``/``working`` are *landed*
+#: (build-recomputable from provenance); ``settled`` is the sidecar-derived read-time verdict.
+MATURITIES = ("proposed", "working", "settled")
+DEFAULT_MATURITY = "working"
+
+#: Provenance ``source`` values whose candidates LAND at ``proposed`` (they must be confirmed by a real
+#: encounter before they carry weight). An agent-asserted ``remember`` (source ``cli``/``mcp``) lands
+#: ``working``; a mined or review-distilled candidate lands ``proposed`` (int:knowledge-mining,
+#: int:review-compound). This is the shared quarantine landing zone the miner + review bridge feed.
+PROPOSED_SOURCES = frozenset({"mined", "review"})
+
+
+def landing_maturity(provenance: Any) -> str:
+    """The tier a memory ENTERS at, derived from its provenance (build-recomputable — provenance is
+    committed truth, so the landed tier never needs a stored counter, R1).
+
+    Mined/review candidates land ``proposed`` (near-zero weight, expiring); an agent-asserted
+    ``remember`` lands ``working``. Promotion *above* the landed tier — the confirm of a proposed
+    candidate, the settle of a working one — is the behavioral read-time verdict
+    (:func:`yigraf.counters.apply_maturity_verdict`), never this.
+    """
+    source = provenance.get("source") if isinstance(provenance, dict) else None
+    return "proposed" if source in PROPOSED_SOURCES else "working"
+
+
 #: Memory node types (graph-design §1 / memory-model §1). ``constraint`` is the promotable one.
 MEMORY_TYPES = (
     "decision",
@@ -304,6 +334,7 @@ def project_into(graph: nx.DiGraph, root: Path) -> None:
             why=memory.why,
             alternatives=memory.alternatives,
             promotable=memory.promotable,
+            provenance=dict(memory.provenance),  # the landing tier is recomputed from this (R1)
             source_file=f"memory/{memory.seq:03d}-{memory.slug}.md",
         )
         _project_memory_edges(graph, memory)

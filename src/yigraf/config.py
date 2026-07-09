@@ -24,9 +24,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # `maturity_uphold_review`, a silent edit-hook survival books `maturity_uphold_edit`. Git-survival
     # is an optional durability floor (0 = off): settled also requires `survival >= maturity_survival_floor`.
     "maturity_k": 3,
+    "maturity_confirm": 1.0,
     "maturity_uphold_review": 1.0,
     "maturity_uphold_edit": 0.25,
     "maturity_survival_floor": 0,
+    # GC expiry (task #7): a `proposed` candidate never confirmed by an encounter is archived once it
+    # has aged this many commits un-referenced. Only the quarantine tier expires by silence — a genuine
+    # working/settled decision never does (mem:033). 0 would expire same-commit; keep a real grace window.
+    "proposed_ttl": 30,
     # Retrieval (M4) — tunables from retrieval-design §9.
     "retrieval": {
         "seeds": 5,
@@ -46,8 +51,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "source_max_lines": 40,
     },
     # Relevance prior weights (graph-design §3). Tuned empirically later.
-    #   w1·log(1+refs_in) + w2·recency(last_seen) + w3·maturity − w4·[superseded_in>0]
-    "relevance": {"w1": 1.0, "w2": 1.0, "w3": 1.0, "w4": 1.0, "half_life_days": 14},
+    #   w1·log(1+refs_in) + w2·recency(last_seen) + w3·maturity − w4·[superseded_in>0] − w5·[proposed]
+    "relevance": {"w1": 1.0, "w2": 1.0, "w3": 1.0, "w4": 1.0, "w5": 3.0, "half_life_days": 14},
     # Embeddings (M8) — scoped semantic recall over memory+intent only (retrieval-design §10).
     # On by default: fastembed (ONNX) is a core dep, so no extra install. Set backend: none to disable
     # (⇒ graceful lexical-only fallback), or sentence-transformers to use the opt-in torch backend.
@@ -85,9 +90,11 @@ ignore:                        # path prefixes skipped when indexing the repo
 
 # --- Maturity (mem:033) — settled = survived review-encounters, read-time from the sidecar ---
 maturity_k: 3                  # accumulated uphold weight (un-superseded) before a memory "settles"
+maturity_confirm: 1.0          # uphold weight that confirms a `proposed` candidate up to `working`
 maturity_uphold_review: 1.0    # uphold booked by a `reaffirm` (an explicit re-verification)
 maturity_uphold_edit: 0.25     # uphold booked by a silent edit-hook survival (no drift on the locus)
 maturity_survival_floor: 0     # optional git-durability gate (commits since intro); 0 = off
+proposed_ttl: 30               # GC archives a never-confirmed `proposed` candidate after this many commits (task #7)
 
 # --- Retrieval (M4) — tunables from docs/retrieval-design.md §9 ---
 retrieval:
@@ -111,11 +118,12 @@ retrieval:
   source_max_lines: 40         # per-symbol source line cap (longer bodies truncated)
 
 # --- Relevance prior (docs/graph-design.md §3) ---
-relevance:                     # w1·log(1+refs_in) + w2·recency + w3·maturity − w4·[superseded_in>0]
+relevance:                     # w1·log(1+refs_in) + w2·recency + w3·maturity − w4·[superseded] − w5·[proposed]
   w1: 1.0
   w2: 1.0
   w3: 1.0
   w4: 1.0
+  w5: 3.0                       # dock for a `proposed` mined/review candidate (near-zero weight until confirmed)
   half_life_days: 14           # recency exp-decay half-life on last_seen (M9 runtime counter)
 
 # --- Embeddings (M8) — scoped semantic recall over memory+intent (docs/retrieval-design.md §10) ---

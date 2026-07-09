@@ -85,3 +85,26 @@ the code). Then:
   a "⚠ Conflict (pending)" line surfaced). Only mark human when the human *actually* chose — the trust
   floor rests on that honesty (you are the scribe, the principal is the source).
 - Default when unsure: **do not ask** — decide, `remember`, and let the human `attest` if they care.
+
+## 7. Compound findings & history into *proposed* candidates
+`remember`/`note-constraint` are for *your own* concluded beliefs (they land `working`, full weight).
+`yigraf propose` is for a **candidate** you distilled but haven't yet proven in action — a review
+finding, or durable reasoning mined from history. A proposed node lands in **quarantine**: near-zero
+retrieval weight (it never pollutes a topic query or outranks confirmed knowledge), but — anchored via
+`--concerns` — it **re-surfaces at the edit hook** the next time that locus is touched. A real encounter
+there (the code edited, the finding not contradicted) **confirms** it up to `working`; a candidate no
+one ever encounters just expires. So over-proposing is *safe* — quarantine + expiry is what lets you
+mine aggressively without poisoning the graph.
+
+- **Review → memory (after `/code-review` or `/security-review`):** for each finding you *confirmed is
+  real and chose to keep*, distil it to a one-line rule and persist it anchored to the reviewed locus,
+  with the anti-pattern as the rejected alternative:
+  `yigraf propose "<the rule, one line>" --from review --concerns sym:<path>#<name> --rejected "<the anti-pattern the finding flagged>"`
+  (defaults to `--type constraint`). Now the next agent to edit that code sees the finding at the moment
+  of action — the same class of bug re-surfaces where it happens, not in a report nobody re-reads.
+- **Mine durable reasoning from history/docs:** to seed a repo's memory from what already exists —
+  **distil, don't scrape** (this is *your* judgment, an LLM task): read commit rationale (`git log`), PR
+  discussion, and design docs, and for each genuine decision + its rejected alternative:
+  `yigraf propose "<the decision>" --from mined --concerns sym:<path>#<name> --rejected "<what was ruled out>" [--origin "commit abc123" | "docs/DESIGN.md"]`.
+  Skip the obvious and the already-captured (`propose` dedups against existing memory). `--origin` leaves
+  an audit trail back to the source.

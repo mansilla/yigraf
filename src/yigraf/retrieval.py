@@ -196,6 +196,8 @@ def _relevance(graph: nx.DiGraph, node_id: str, config: dict, now: float) -> flo
     half_life = config.get("relevance", {}).get("half_life_days", 14)
     score += w.get("w2", 1.0) * counters.recency(attrs.get("last_seen"), now, half_life)
     score += w.get("w3", 1.0) * counters.maturity_weight(attrs)
+    if attrs.get("maturity") == "proposed":
+        score -= w.get("w5", 3.0)  # a mined/review candidate: near-zero weight until an encounter confirms it
     if attrs.get("superseded_in", 0):
         score -= w.get("w4", 1.5)
     return score
@@ -480,15 +482,18 @@ def _memory_line(graph: nx.DiGraph, node_id: str, attrs: dict) -> str:
     """A compact decision line: ``mem:001 [decision·inferred]: <statement> — why: <why> (serves …)``.
 
     The three certainty axes ride the tag so the agent sees a belief's status inline: grounding
-    (``·inferred`` re-verify cue vs ``·empirical``, C#6), maturity (``·settled`` once it survived
-    enough review-encounters, mem:033 — ``working`` is the unshown default), and attestation
-    (``·human`` = human-endorsed trust floor, ``agent`` is the unshown default). ``·superseded`` last.
+    (``·inferred`` re-verify cue vs ``·empirical``, C#6), maturity (``·proposed`` = an unconfirmed
+    mined/review candidate, ``·settled`` once it survived enough review-encounters, mem:033 —
+    ``working`` is the unshown default), and attestation (``·human`` = human-endorsed trust floor,
+    ``agent`` is the unshown default). ``·superseded`` last.
     """
     tag = attrs.get("kind", "memory")
     grounding = attrs.get("grounding")
     if grounding:
         tag += f"·{grounding}"
-    if attrs.get("maturity") == "settled":
+    if attrs.get("maturity") == "proposed":
+        tag += "·proposed"
+    elif attrs.get("maturity") == "settled":
         tag += "·settled"
     if attrs.get("attestation") == "human":
         tag += "·human"
