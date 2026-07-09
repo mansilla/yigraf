@@ -134,18 +134,18 @@ def _survival_for(root: Path, repo_relpaths: list[str], cache) -> dict[str, int]
 
 
 def apply_maturity(graph: nx.DiGraph, root: Path, config: dict, cache=None) -> None:
-    """Stamp git-derived ``survival`` + ``maturity`` on every memory node (recomputed each build).
+    """Stamp git-derived ``survival`` on every memory node and set the ``working`` base (recomputable).
 
-    ``settled`` once ``survival ≥ K`` with ``superseded_in == 0`` (graph-design §3 / DESIGN R2):
-    certainty earned by surviving boundaries, not self-reported, and self-healing — a later
-    supersession reverts the node to ``working`` on the next build. Recomputable, so it lives happily
-    in the committed (recomputable) ``graph.json`` without an accumulating counter or a merge driver.
+    Promotion is no longer git-derived (mem:033 — commit-age treats un-touched code as validated, the
+    "silence is not evidence" fallacy). ``settled`` is now a **read-time verdict** from survived
+    review-encounters in the telemetry sidecar (:func:`apply_maturity_verdict`), so the *promotion*
+    never touches the committed ``graph.json``. This build pass keeps only recomputable state:
+    ``survival`` (git — now an optional durability floor + informational) and the ``working`` base.
 
     Survival is derived in a flat number of git calls — batched across all memory paths and, given a
     ``cache`` (the build path), memoized by ``HEAD`` so an edit-triggered rebuild that hasn't committed
     re-uses the prior survival instead of re-walking history (caveats.md M9 / DESIGN R2).
     """
-    k = int(config.get("maturity_k", 3))
     paths = sorted({
         f"yigraf/{attrs['source_file']}"
         for _, attrs in graph.nodes(data=True)
@@ -156,9 +156,8 @@ def apply_maturity(graph: nx.DiGraph, root: Path, config: dict, cache=None) -> N
         if attrs.get("family") != MEMORY_FAMILY:
             continue
         source = attrs.get("source_file")
-        s = survival.get(f"yigraf/{source}", 0) if source else 0
-        attrs["survival"] = s
-        attrs["maturity"] = "settled" if (s >= k and not attrs.get("superseded_in", 0)) else "working"
+        attrs["survival"] = survival.get(f"yigraf/{source}", 0) if source else 0
+        attrs["maturity"] = "working"  # promotion is the read-time verdict; build stays recomputable
 
 
 # --------------------------------------------------------------------------------------------------
@@ -195,6 +194,8 @@ def apply_telemetry(graph: nx.DiGraph, telemetry: dict[str, dict]) -> None:
             graph.nodes[node_id]["usage"] = entry["usage"]
         if "last_seen" in entry:
             graph.nodes[node_id]["last_seen"] = entry["last_seen"]
+        if "upholds" in entry:  # accumulated survived-encounter weight → the read-time maturity verdict
+            graph.nodes[node_id]["upholds"] = entry["upholds"]
 
 
 def record_injection(root: Path, graph: nx.DiGraph, node_ids: list[str],
@@ -222,12 +223,59 @@ def record_injection(root: Path, graph: nx.DiGraph, node_ids: list[str],
     return bumped
 
 
+def record_uphold(root: Path, graph: nx.DiGraph, node_ids: list[str], weight: float) -> list[str]:
+    """Record a *survived review-encounter*: accumulate ``weight`` into each node's ``upholds`` (mem:033).
+
+    An uphold is a POSITIVE maturity event — a review/edit of a locus that produced no violation or
+    supersede. ``reaffirm`` books a strong uphold (an explicit re-verification); the edit hook books a
+    weak one (silent survival — the code was touched and the governing decision did not drift). It's a
+    machine-local sidecar accumulator, never committed (graph.json stays recomputable), and best-effort.
+    Scoped to memory nodes. Returns the ids actually credited.
+    """
+    if weight <= 0:
+        return []
+    telemetry = load_telemetry(root)
+    credited: list[str] = []
+    for node_id in node_ids:
+        attrs = graph.nodes.get(node_id) if node_id in graph else None
+        if attrs is None or attrs.get("family") != MEMORY_FAMILY:
+            continue
+        entry = telemetry.setdefault(node_id, {})
+        entry["upholds"] = round(float(entry.get("upholds", 0.0)) + weight, 4)
+        credited.append(node_id)
+    if credited:
+        path = telemetry_path(root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(telemetry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return credited
+
+
 def recency(last_seen: int | None, now: float, half_life_days: float) -> float:
     """Exp-decayed recency in ``[0, 1]``: ``1`` just-surfaced, halving every ``half_life_days``."""
     if not last_seen:
         return 0.0
     age_days = max(0.0, (now - last_seen)) / 86400.0
     return 0.5 ** (age_days / max(half_life_days, 1e-9))
+
+
+def apply_maturity_verdict(graph: nx.DiGraph, config: dict) -> None:
+    """The read-time maturity verdict (mem:033): promote ``settled`` from survived-encounter upholds.
+
+    ``settled`` iff accumulated ``upholds ≥ maturity_k`` (behaviorally validated) AND not superseded
+    (deterministic demotion via the committed edge) AND ``survival ≥ maturity_survival_floor`` (an
+    optional git durability gate, default ``0`` ⇒ off). Reads the sidecar-overlaid ``upholds`` stamped
+    by :func:`apply_telemetry`, so it must run on read paths *after* that overlay — never at build time
+    (that would leak machine-local state into the committed graph). Idempotent; safe to call twice.
+    """
+    k = float(config.get("maturity_k", 3))
+    floor = int(config.get("maturity_survival_floor", 0))
+    for _, attrs in graph.nodes(data=True):
+        if attrs.get("family") != MEMORY_FAMILY:
+            continue
+        settled = (float(attrs.get("upholds", 0.0)) >= k
+                   and not attrs.get("superseded_in", 0)
+                   and int(attrs.get("survival", 0)) >= floor)
+        attrs["maturity"] = "settled" if settled else "working"
 
 
 def maturity_weight(attrs: dict) -> float:

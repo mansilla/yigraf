@@ -17,8 +17,18 @@ from typer.testing import CliRunner
 
 from yigraf import counters, retrieval
 from yigraf.cli import app
-from yigraf.config import default_config
+from yigraf.config import default_config, load_config
+from yigraf.extract import build_graph
 from yigraf.graph import read_graph, to_node_link
+
+
+def _read_with_verdict(root: Path):
+    """Read-path graph: overlay the sidecar (usage/last_seen/upholds) + resolve the maturity verdict."""
+    cfg = load_config(root / "yigraf" / "config.yaml")
+    g, _ = build_graph(root, cfg)
+    counters.apply_telemetry(g, counters.load_telemetry(root))
+    counters.apply_maturity_verdict(g, cfg)
+    return g
 
 runner = CliRunner()
 
@@ -73,42 +83,52 @@ def _commit(root: Path, msg: str) -> None:
 # --------------------------------------------------------------------------------------------------
 
 
-def test_apply_maturity_settles_from_git_survival(monkeypatch):
-    monkeypatch.setattr(counters, "_survival_map", lambda root, paths: {p: 3 for p in paths})
-    g = _mem_graph(source_file="memory/001-x.md")
-    counters.apply_maturity(g, Path("."), {"maturity_k": 3})
-    assert g.nodes["mem:001"]["survival"] == 3 and g.nodes["mem:001"]["maturity"] == "settled"
-
-
-def test_apply_maturity_stays_working_below_k(monkeypatch):
-    monkeypatch.setattr(counters, "_survival_map", lambda root, paths: {p: 2 for p in paths})
-    g = _mem_graph(source_file="memory/001-x.md")
-    counters.apply_maturity(g, Path("."), {"maturity_k": 3})
-    assert g.nodes["mem:001"]["maturity"] == "working"
-
-
-def test_superseded_node_never_settles(monkeypatch):
+def test_build_maturity_is_always_working_regardless_of_git_survival(monkeypatch):
+    """mem:033: promotion is no longer git-derived — build stamps survival + the ``working`` base only."""
     monkeypatch.setattr(counters, "_survival_map", lambda root, paths: {p: 99 for p in paths})
-    g = _mem_graph(source_file="memory/001-x.md", superseded_in=1)
+    g = _mem_graph(source_file="memory/001-x.md")
     counters.apply_maturity(g, Path("."), {"maturity_k": 3})
+    assert g.nodes["mem:001"]["survival"] == 99 and g.nodes["mem:001"]["maturity"] == "working"
+
+
+def test_verdict_settles_from_upholds():
+    """The read-time verdict: enough accumulated survived-encounter upholds ⇒ settled (mem:033)."""
+    g = _mem_graph(upholds=3.0, survival=0)
+    counters.apply_maturity_verdict(g, {"maturity_k": 3})
+    assert g.nodes["mem:001"]["maturity"] == "settled"
+
+
+def test_verdict_stays_working_below_the_uphold_threshold():
+    g = _mem_graph(upholds=2.5)
+    counters.apply_maturity_verdict(g, {"maturity_k": 3})
     assert g.nodes["mem:001"]["maturity"] == "working"
 
 
-def test_decision_settles_after_k_commits(tmp_path: Path):
-    """The git-derived done-test: a decision un-superseded across K commits is settled — recomputably."""
-    _git_init(tmp_path)
+def test_verdict_superseded_never_settles():
+    g = _mem_graph(upholds=99, superseded_in=1)
+    counters.apply_maturity_verdict(g, {"maturity_k": 3})
+    assert g.nodes["mem:001"]["maturity"] == "working"
+
+
+def test_verdict_optional_survival_floor_gates_promotion():
+    """With a floor configured, settled also requires git-durability — enough upholds isn't sufficient."""
+    g = _mem_graph(upholds=99, survival=1)
+    counters.apply_maturity_verdict(g, {"maturity_k": 3, "maturity_survival_floor": 5})
+    assert g.nodes["mem:001"]["maturity"] == "working"  # survival 1 < floor 5
+    g2 = _mem_graph(upholds=99, survival=9)
+    counters.apply_maturity_verdict(g2, {"maturity_k": 3, "maturity_survival_floor": 5})
+    assert g2.nodes["mem:001"]["maturity"] == "settled"
+
+
+def test_decision_settles_after_enough_reaffirm_upholds(tmp_path: Path):
+    """The end-to-end done-test: a decision reaffirmed K times is settled at read time (mem:033)."""
     root = _repo(tmp_path)
     _run(["remember", "refresh uses optimistic locking", "--concerns", SYM, "--repo", str(root)])
-    _commit(root, "capture the decision")  # introduces the memory artifact (survival starts at 0)
+    assert _read_with_verdict(root).nodes["mem:001"]["maturity"] == "working"  # no upholds yet
 
-    _run(["build", str(root)])
-    assert _graph(root).nodes["mem:001"]["maturity"] == "working"
-
-    for i in range(3):  # K=3 commits move the branch on past the decision
-        _commit(root, f"later work {i}")
-    _run(["build", str(root)])
-    node = _graph(root).nodes["mem:001"]
-    assert node["survival"] == 3 and node["maturity"] == "settled"
+    for _ in range(3):  # each reaffirm books a strong uphold (~1.0); K=3 ⇒ settled
+        _run(["reaffirm", "mem:001", "--repo", str(root)])
+    assert _read_with_verdict(root).nodes["mem:001"]["maturity"] == "settled"
 
 
 def test_survival_is_head_cached_to_skip_the_walk(tmp_path: Path, monkeypatch):

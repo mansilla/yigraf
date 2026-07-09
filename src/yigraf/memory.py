@@ -46,6 +46,15 @@ CONF = "EXTRACTED"  # agent-asserted at a commit boundary, not inferred
 GROUNDINGS = ("inferred", "docs", "empirical")
 DEFAULT_GROUNDING = "inferred"
 
+#: Attestation axis (int:memory-attestation): *who endorsed* a belief — orthogonal to grounding (how)
+#: and maturity (survived?). ``agent`` is the default (an agent-captured node); ``human`` marks a
+#: principal-endorsed node — a trust floor that ranks it up and makes it **sticky**: an agent
+#: ``supersede`` of a human-attested node is held *pending* (surfaced as a conflict), never applied
+#: silently. The human-facing entry path (a verb) lands with intent-elicitation (task #4); until then
+#: ``attestation: human`` is set in a node's frontmatter (files are truth, R6).
+ATTESTATIONS = ("agent", "human")
+DEFAULT_ATTESTATION = "agent"
+
 #: Memory node types (graph-design §1 / memory-model §1). ``constraint`` is the promotable one.
 MEMORY_TYPES = (
     "decision",
@@ -110,9 +119,14 @@ class Memory:
     serves: list[str] = field(default_factory=list)
     concerns: list[Concern] = field(default_factory=list)
     supersedes: list[str] = field(default_factory=list)
+    # A supersede *held pending* because it targets a human-attested node (int:memory-attestation):
+    # projected as a supersedes edge marked ``pending`` — surfaced as a conflict, not applied (the old
+    # node is NOT demoted) until a human resolves it.
+    pending_supersedes: list[str] = field(default_factory=list)
     status: str = "active"
-    maturity: str = "working"  # working → settled by survival (M9); always working in M7
+    maturity: str = "working"  # working → settled by survived review-encounters at read time (mem:033)
     grounding: str = DEFAULT_GROUNDING  # inferred | docs | empirical (int:memory-grounding, C#6)
+    attestation: str = DEFAULT_ATTESTATION  # agent | human (int:memory-attestation)
     promotable: bool = False  # a constraint flagged as a candidate enforced check (capture-flow §0a)
     provenance: dict = field(default_factory=dict)
 
@@ -170,9 +184,11 @@ def read_memory(path: Path) -> Memory:
         serves=list(meta.get("serves") or []),
         concerns=[_read_concern(e) for e in (meta.get("concerns") or [])],
         supersedes=list(meta.get("supersedes") or []),
+        pending_supersedes=list(meta.get("pending_supersedes") or []),
         status=meta.get("status", "active"),
         maturity=meta.get("maturity", "working"),
         grounding=meta.get("grounding", DEFAULT_GROUNDING),
+        attestation=meta.get("attestation", DEFAULT_ATTESTATION),
         promotable=bool(meta.get("promotable", False)),
         provenance=dict(meta.get("provenance") or {}),
     )
@@ -187,12 +203,15 @@ def render_memory(memory: Memory) -> str:
         "status": memory.status,
         "maturity": memory.maturity,
         "grounding": memory.grounding,
+        "attestation": memory.attestation,
         "serves": list(memory.serves),
         "concerns": [
             {"sym": c.sym, "anchor": c.anchor, "anchor_algo": c.anchor_algo} for c in memory.concerns
         ],
         "supersedes": list(memory.supersedes),
     }
+    if memory.pending_supersedes:
+        meta["pending_supersedes"] = list(memory.pending_supersedes)
     if memory.promotable:
         meta["promotable"] = True
     if memory.provenance:
@@ -280,6 +299,7 @@ def project_into(graph: nx.DiGraph, root: Path) -> None:
             status=memory.status,
             maturity=memory.maturity,
             grounding=memory.grounding,
+            attestation=memory.attestation,
             statement=memory.statement,
             why=memory.why,
             alternatives=memory.alternatives,
@@ -336,6 +356,15 @@ def _project_memory_edges(graph: nx.DiGraph, memory: Memory) -> None:
         else:
             _stash(graph, memory.id, "dangling_supersedes", old)
 
+    # A held-pending supersede (of a human-attested node): projected as a supersedes edge marked
+    # ``pending`` — recompute_counters does NOT count it, so the old node stays authoritative; retrieval
+    # surfaces it as a conflict until a human resolves it (int:memory-attestation).
+    for old in memory.pending_supersedes:
+        if old in graph:
+            graph.add_edge(memory.id, old, relation="supersedes", confidence=CONF, pending=True)
+        else:
+            _stash(graph, memory.id, "dangling_supersedes", old)
+
 
 def _stash(graph: nx.DiGraph, node_id: str, attr: str, value: Any) -> None:
     graph.nodes[node_id].setdefault(attr, []).append(value)
@@ -349,13 +378,18 @@ def recompute_counters(graph: nx.DiGraph) -> None:
     ``superseded_in > 0`` is stale: it sinks in ranking but stays available as a rejected alternative.
     Only memory nodes carry ``supersedes`` edges, so we stamp only them — non-memory nodes keep the
     implicit ``0`` (retrieval reads the counter with a default), keeping ``graph.json`` uncluttered.
+
+    A ``pending`` supersedes edge (of a human-attested node, int:memory-attestation) does NOT count:
+    the target stays authoritative (not demoted) until a human resolves the conflict.
     """
     for node_id, attrs in graph.nodes(data=True):
         if attrs.get("family") != MEMORY_FAMILY:
             continue
         attrs["superseded_in"] = sum(
-            1 for _, _, a in graph.in_edges(node_id, data=True) if a.get("relation") == "supersedes"
+            1 for _, _, a in graph.in_edges(node_id, data=True)
+            if a.get("relation") == "supersedes" and not a.get("pending")
         )
         attrs["supersedes_out"] = sum(
-            1 for _, _, a in graph.out_edges(node_id, data=True) if a.get("relation") == "supersedes"
+            1 for _, _, a in graph.out_edges(node_id, data=True)
+            if a.get("relation") == "supersedes" and not a.get("pending")
         )

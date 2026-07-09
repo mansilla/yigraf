@@ -314,6 +314,24 @@ def _implemented_open_tasks(graph: nx.DiGraph, drifted_edges: set[tuple[str, str
     return sorted(lines)
 
 
+def _pending_conflicts(graph: nx.DiGraph, scope: set[str] | None = None) -> list[str]:
+    """Held-pending supersedes of human-attested nodes (int:memory-attestation) — surfaced, never silent.
+
+    An agent's ``supersede`` of a human-attested decision is captured but NOT applied: the old node
+    stays authoritative and the edge is marked ``pending``. This surfaces the conflict so a human can
+    resolve it (attest the new node to apply, or discard) — the sticky trust floor made legible.
+    """
+    lines: list[str] = []
+    for new_id, old_id, a in graph.edges(data=True):
+        if a.get("relation") != "supersedes" or not a.get("pending"):
+            continue
+        if scope is not None and new_id not in scope and old_id not in scope:
+            continue
+        lines.append(f"  ⚠ {new_id} pending-supersedes human-attested {old_id} — {old_id} still holds; "
+                     f"resolve by attesting {new_id} (human) to apply, or discard {new_id}.")
+    return sorted(lines)
+
+
 #: Structure kinds whose source is a meaningful slice (a whole file/module is not — skip those).
 _SOURCE_KINDS = frozenset({"function", "method", "class", "type"})
 
@@ -360,15 +378,18 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
             reconcile_lines: list[str], budget_tokens: int, root: Path | None = None,
             config: dict | None = None, capture_lines: list[str] | None = None,
             relevance_note: str | None = None, scores: dict[str, float] | None = None,
-            task_reconcile_lines: list[str] | None = None) -> ContextResult:
+            task_reconcile_lines: list[str] | None = None,
+            conflict_lines: list[str] | None = None) -> ContextResult:
     capture_lines = capture_lines or []
     task_reconcile_lines = task_reconcile_lines or []
+    conflict_lines = conflict_lines or []
     char_budget = budget_tokens * 3  # Graphify's ≈3:1 char:token estimate (retrieval-design §9)
     rcfg = (config or {}).get("retrieval", {})
     # A3: top-ranked symbols render as verbatim source when the knob is on AND we know the repo root.
     source_mode = rcfg.get("render", "signature_only") == "source_for_seeds" and root is not None
     max_src, max_src_lines = rcfg.get("source_max_symbols", 3), rcfg.get("source_max_lines", 40)
-    reserved = "\n".join(drift_lines + reconcile_lines + capture_lines + task_reconcile_lines)
+    reserved = "\n".join(drift_lines + reconcile_lines + capture_lines + task_reconcile_lines
+                         + conflict_lines)
     out = [f'Context for "{query}":', ""]
     if relevance_note:  # C#8: a one-line honesty banner when nothing matched the query strongly
         out.extend([relevance_note, ""])
@@ -405,6 +426,10 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
             out.extend(by_family[fam])
             out.append("")
 
+    if conflict_lines:
+        out.append("⚠ Conflict (pending — needs human):")
+        out.extend(conflict_lines)
+        out.append("")
     if drift_lines:
         out.append("⚠ Drift:")
         out.extend(drift_lines)
@@ -451,15 +476,19 @@ def _node_line(graph: nx.DiGraph, node_id: str) -> str:
 def _memory_line(graph: nx.DiGraph, node_id: str, attrs: dict) -> str:
     """A compact decision line: ``mem:001 [decision·inferred]: <statement> — why: <why> (serves …)``.
 
-    The grounding marker (int:memory-grounding, C#6) rides the tag so the agent sees a belief's
-    epistemic status inline: ``·inferred`` is the re-verify cue (a reasoned assertion, not yet
-    confirmed), ``·empirical`` an observation-backed one. It's shown for every memory (certainty is
-    legible, not hidden) and is what ``--grounding`` filters on.
+    The three certainty axes ride the tag so the agent sees a belief's status inline: grounding
+    (``·inferred`` re-verify cue vs ``·empirical``, C#6), maturity (``·settled`` once it survived
+    enough review-encounters, mem:033 — ``working`` is the unshown default), and attestation
+    (``·human`` = human-endorsed trust floor, ``agent`` is the unshown default). ``·superseded`` last.
     """
     tag = attrs.get("kind", "memory")
     grounding = attrs.get("grounding")
     if grounding:
         tag += f"·{grounding}"
+    if attrs.get("maturity") == "settled":
+        tag += "·settled"
+    if attrs.get("attestation") == "human":
+        tag += "·human"
     if attrs.get("superseded_in", 0):
         tag += "·superseded"
     line = f"  {node_id} [{tag}]: {attrs.get('statement') or attrs.get('label', '')}"
@@ -612,9 +641,10 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
     reconcile = _verified_reconcile(graph, drifted_edges)
     capture = _capture_gaps(graph)  # global: SessionStart is the orientation dashboard for graph health
     task_reconcile = _implemented_open_tasks(graph, drifted_edges)
+    conflicts = _pending_conflicts(graph)
     return _render(graph, ranked, "active plan & governing intents", sorted(drift_lines), reconcile,
                    budget, root=root, config=config, capture_lines=capture,
-                   task_reconcile_lines=task_reconcile)
+                   task_reconcile_lines=task_reconcile, conflict_lines=conflicts)
 
 
 def _merge_seeds(lex_match: dict[str, float], sem_match: dict[str, float], config: dict) -> list[str]:
@@ -697,8 +727,9 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
     reconcile_lines = _verified_reconcile(graph, drifted_edges)
     capture_lines = _capture_gaps(graph, scope=in_scope)  # scoped to the query's neighborhood, like drift
     task_reconcile = _implemented_open_tasks(graph, drifted_edges, scope=in_scope)
+    conflicts = _pending_conflicts(graph, scope=in_scope)
     scores = {n: sem_match[n] for n in hops if n in sem_match} if show_scores else None
     return _render(graph, ranked, query, sorted(drift_lines), reconcile_lines, budget,
                    root=root, config=config, capture_lines=capture_lines,
                    relevance_note=_relevance_note(sem_match, query, config), scores=scores,
-                   task_reconcile_lines=task_reconcile)
+                   task_reconcile_lines=task_reconcile, conflict_lines=conflicts)
