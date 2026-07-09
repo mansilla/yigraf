@@ -460,7 +460,10 @@ def _node_line(graph: nx.DiGraph, node_id: str) -> str:
     attrs = graph.nodes[node_id]
     fam, kind = attrs.get("family"), attrs.get("kind")
     if fam == "intent":
-        return f"  {node_id} [{attrs.get('status', '?')}]: {attrs.get('statement') or attrs.get('label', '')}"
+        tag = attrs.get("status", "?")
+        if attrs.get("attestation") == "human":  # a human-endorsed spec — the trust floor, shown inline
+            tag += "·human"
+        return f"  {node_id} [{tag}]: {attrs.get('statement') or attrs.get('label', '')}"
     if fam == "plan" and kind == "task":
         box = "☑" if attrs.get("state") == "done" else "☐"
         suffix = _task_links(graph, node_id)

@@ -166,6 +166,10 @@ def run_reaffirm(repo: str | None, target: str, concerns: list[str] | None = Non
     return _run_cli("reaffirm", args, repo)
 
 
+def run_attest(repo: str | None, target: str) -> str:
+    return _run_cli("attest", [target], repo)
+
+
 def run_supersede_intent(repo: str | None, old_slug: str, new_slug: str, statement: str,
                          why: str = "", scenario: list[str] | None = None,
                          design: str | None = None, type: str = "requirement") -> str:
@@ -301,6 +305,20 @@ def build_server(default_repo: str | None = None):
                 live spike just confirmed the decision).
         """
         return run_reaffirm(repo or default_repo, target, concerns, grounding)
+
+    @server.tool()
+    def attest(target: str, repo: str | None = None) -> str:
+        """Record the principal's endorsement: mark a decision or intent HUMAN-attested (a trust floor).
+
+        Call this ONLY after the principal has actually chosen — capturing a preference-fork you elicited
+        via the host's question UI, or endorsing a decision you flagged for ack. Attesting a memory that
+        pending-supersedes a human-attested node APPLIES the held supersede (the principal accepted it).
+        The trust floor depends on honesty: mark human only when the human genuinely decided.
+
+        Args:
+            target: a memory id "mem:022" or an intent "int:<slug>".
+        """
+        return run_attest(repo or default_repo, target)
 
     @server.tool()
     def supersede_intent(old_slug: str, new_slug: str, statement: str, why: str = "",

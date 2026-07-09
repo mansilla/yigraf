@@ -402,3 +402,47 @@ def test_human_attestation_shows_in_the_memory_line(tmp_path: Path):
     graph, _ = build_graph(root, default_config())
     text = retrieval.context(graph, "endorsed decision refresh", default_config()).text
     assert "·human]" in text or "·human·" in text  # the trust-floor marker rides the tag
+
+
+# --------------------------------------------------------------------------------------------------
+# Elicitation / human-attestation entry (int:intent-elicitation): the `attest` verb.
+# --------------------------------------------------------------------------------------------------
+
+
+def test_attest_marks_a_memory_human(tmp_path: Path):
+    root = _repo(tmp_path)
+    _remember(root, "a decision")
+    res = _run(["attest", "mem:001", "--repo", str(root)])
+    assert "human" in res.output
+    assert _graph(root).nodes["mem:001"]["attestation"] == "human"
+
+
+def test_attest_marks_an_intent_human_and_shows_in_context(tmp_path: Path):
+    """The elicitation capture: the principal's answer is persisted as a human-attested intent (mem:032)."""
+    root = _repo(tmp_path)
+    _run(["attest", "int:session-expiry", "--repo", str(root)])
+    graph, _ = build_graph(root, default_config())
+    assert graph.nodes["int:session-expiry"]["attestation"] == "human"
+    text = retrieval.context(graph, "session expire idle", default_config()).text
+    assert "·human]" in text  # the trust-floor marker rides the intent tag
+
+
+def test_attest_applies_a_pending_supersede_and_demotes_the_old(tmp_path: Path):
+    """The full sticky cycle: human node → agent supersede (pending) → attest the new → applied."""
+    root = _repo(tmp_path)
+    _remember(root, "human-endorsed decision", concerns=[SYM])
+    _run(["attest", "mem:001", "--repo", str(root)])                      # mem:001 human-attested
+    _run(["supersede", "mem:001", "the competing view", "--repo", str(root)])  # mem:002 pending
+    assert _graph(root).nodes["mem:001"].get("superseded_in", 0) == 0     # not demoted yet
+    res = _run(["attest", "mem:002", "--repo", str(root)])                # principal accepts the change
+    assert "Applied the held supersede" in res.output
+    g = _graph(root)
+    assert g.nodes["mem:001"]["superseded_in"] == 1                       # now demoted
+    new = memory.read_memory(memory.find_memory(root, "mem:002"))
+    assert new.supersedes == ["mem:001"] and new.pending_supersedes == []  # pending → applied
+
+
+def test_attest_unknown_target_is_guided(tmp_path: Path):
+    root = _repo(tmp_path)
+    assert "No memory node" in _run(["attest", "mem:404", "--repo", str(root)]).output
+    assert "No intent" in _run(["attest", "int:nope", "--repo", str(root)]).output
