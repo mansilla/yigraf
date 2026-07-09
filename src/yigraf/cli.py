@@ -1271,7 +1271,9 @@ def install_cmd(
     except FileNotFoundError:
         typer.echo("  post-commit → skipped (not a git repository)")
     typer.echo(f"  AGENTS.md   → {_write_agents_block(path / 'AGENTS.md')} (host-agnostic instructions)")
-    typer.echo("  MCP pull server (works with any MCP host):")
+    typer.echo("  MCP pull server — the universal *fallback* channel, printed (not written) for any MCP")
+    typer.echo("  host. If a push-hook host (Claude Code / Codex) is detected below, its hooks ARE your")
+    typer.echo("  channel and you do NOT need to wire this — leave it unless you want redundant pull too:")
     _print_mcp_config(path)
 
     # --- Capability check: semantic recall (fastembed core → on by default; warn only if degraded) -
