@@ -96,11 +96,16 @@ def test_remember_rejects_an_unknown_type(tmp_path: Path):
     assert result.exit_code == 0 and "--type must be one of" in result.output
 
 
-def test_remember_rejects_an_unknown_concerns_symbol(tmp_path: Path):
+def test_remember_soft_warns_and_dangles_an_unknown_concerns_symbol(tmp_path: Path):
+    """D#3: a forward-reference concerns is legitimate — soft-warn + create a dangling edge, never block."""
     root = _repo(tmp_path)
     result = runner.invoke(app, ["remember", "x", "--concerns", "sym:auth/session.py#ghost",
                                  "--repo", str(root)])
-    assert result.exit_code == 0 and "Couldn't find" in result.output
+    assert result.exit_code == 0
+    assert "no such symbol" in result.output and "dangling concerns edge" in result.output
+    assert "Did you mean: sym:auth/session.py#refresh?" in result.output  # still helps a typo
+    node = memory.read_memory(memory.find_memory(root, "mem:001"))  # captured anyway
+    assert node.concerns[0].sym == "sym:auth/session.py#ghost" and node.concerns[0].anchor is None
 
 
 def test_note_constraint_is_a_promotable_constraint(tmp_path: Path):

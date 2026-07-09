@@ -129,3 +129,65 @@ def test_link_rejects_an_unknown_task(tmp_path: Path):
     _run(["plan", "auth", "--repo", str(root), "-t", "Auth", "--task", "do it"])
     result = runner.invoke(app, ["link", "task:auth/9", SYM, "--repo", str(root)])
     assert result.exit_code == 0 and "not a task" in result.output
+
+
+# --------------------------------------------------------------------------------------------------
+# Cluster D+E: cheatsheet, forward-ref soft-warn, note-constraint --rejected, supersede-int guidance,
+# plan/task reconcile.
+# --------------------------------------------------------------------------------------------------
+
+
+def test_cheatsheet_lists_verbs_and_flags(tmp_path: Path):
+    """D#5: an always-in-sync verb/flag map an orchestrator can paste into a subagent prompt."""
+    result = runner.invoke(app, ["cheatsheet"])
+    assert result.exit_code == 0
+    assert "yigraf remember" in result.output and "--concerns" in result.output
+    assert "yigraf context" in result.output and "yigraf reaffirm" in result.output
+
+
+def test_cheatsheet_json_is_machine_readable(tmp_path: Path):
+    import json
+    result = runner.invoke(app, ["cheatsheet", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    verbs = {v["verb"] for v in data["verbs"]}
+    assert {"remember", "context", "link", "supersede"} <= verbs
+    remember = next(v for v in data["verbs"] if v["verb"] == "remember")
+    assert any(o["flag"] == "--grounding" for o in remember["options"])  # introspected, not hand-listed
+
+
+def test_serves_to_missing_node_soft_warns_but_captures(tmp_path: Path):
+    """D#3: --serves a not-yet-existing intent is a legitimate forward-ref → warn + dangling edge."""
+    root = _repo(tmp_path)
+    result = runner.invoke(app, ["remember", "x", "--serves", "int:not-yet", "--repo", str(root)])
+    assert result.exit_code == 0
+    assert "no such node int:not-yet" in result.output and "dangling serves edge" in result.output
+    assert _graph(root).nodes["mem:001"]["dangling_serves"] == ["int:not-yet"]
+
+
+def test_note_constraint_accepts_rejected(tmp_path: Path):
+    """D#4: --rejected on note-constraint (parity with remember) lands as the alternative, not in --why."""
+    root = _repo(tmp_path)
+    _run(["note-constraint", "no blocking IO on the refresh path", "--concerns", SYM,
+          "--rejected", "a background thread — adds a race we can't test", "--repo", str(root)])
+    node = _graph(root).nodes["mem:001"]
+    assert "background thread" in (node.get("alternatives") or "")
+
+
+def test_supersede_on_an_intent_id_hands_the_right_recipe(tmp_path: Path):
+    """D#5: `supersede int:...` is the wrong verb — guide to supersede-intent, exit 0."""
+    root = _repo(tmp_path)
+    result = runner.invoke(app, ["supersede", "int:session-expiry", "new claim", "--repo", str(root)])
+    assert result.exit_code == 0
+    assert "supersede-intent" in result.output and "is an intent, not a memory" in result.output
+
+
+def test_open_task_with_live_implements_surfaces_reconcile(tmp_path: Path):
+    """E#14: an open task whose implementing symbols exist and are current → 'if done, check its box'."""
+    from yigraf import retrieval
+    root = _repo(tmp_path)
+    _run(["plan", "auth", "--repo", str(root), "-t", "Auth", "--task", "do it"])
+    _run(["link", "task:auth/1", SYM, "--repo", str(root)])  # linked but left open (todo)
+    graph, _ = build_graph(root, default_config())
+    text = retrieval.context(graph, "refresh", default_config()).text
+    assert "Task reconcile:" in text and "task:auth/1 is open but its implementing symbol" in text
