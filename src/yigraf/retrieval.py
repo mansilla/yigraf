@@ -334,7 +334,8 @@ def _source_block(graph: nx.DiGraph, node_id: str, root: Path, max_lines: int) -
 
 def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[str],
             reconcile_lines: list[str], budget_tokens: int, root: Path | None = None,
-            config: dict | None = None, capture_lines: list[str] | None = None) -> ContextResult:
+            config: dict | None = None, capture_lines: list[str] | None = None,
+            relevance_note: str | None = None, scores: dict[str, float] | None = None) -> ContextResult:
     capture_lines = capture_lines or []
     char_budget = budget_tokens * 3  # Graphify's ≈3:1 char:token estimate (retrieval-design §9)
     rcfg = (config or {}).get("retrieval", {})
@@ -343,7 +344,9 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
     max_src, max_src_lines = rcfg.get("source_max_symbols", 3), rcfg.get("source_max_lines", 40)
     reserved = "\n".join(drift_lines + reconcile_lines + capture_lines)
     out = [f'Context for "{query}":', ""]
-    used = len(reserved)
+    if relevance_note:  # C#8: a one-line honesty banner when nothing matched the query strongly
+        out.extend([relevance_note, ""])
+    used = len(reserved) + len(relevance_note or "")
     rendered = 0
     src_emitted = 0
 
@@ -359,6 +362,8 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
         used_source = line is not None
         if line is None:
             line = _node_line(graph, node_id)
+        if scores is not None and node_id in scores and not used_source:  # C#8: --scores per-node cosine
+            line += f"  [sim {scores[node_id]:.2f}]"
         if used + len(line) > char_budget:
             break
         by_family.setdefault(fam, []).append(line)
@@ -414,8 +419,17 @@ def _node_line(graph: nx.DiGraph, node_id: str) -> str:
 
 
 def _memory_line(graph: nx.DiGraph, node_id: str, attrs: dict) -> str:
-    """A compact decision line: ``mem:001 [decision]: <statement> — why: <why> (serves …; concerns …)``."""
+    """A compact decision line: ``mem:001 [decision·inferred]: <statement> — why: <why> (serves …)``.
+
+    The grounding marker (int:memory-grounding, C#6) rides the tag so the agent sees a belief's
+    epistemic status inline: ``·inferred`` is the re-verify cue (a reasoned assertion, not yet
+    confirmed), ``·empirical`` an observation-backed one. It's shown for every memory (certainty is
+    legible, not hidden) and is what ``--grounding`` filters on.
+    """
     tag = attrs.get("kind", "memory")
+    grounding = attrs.get("grounding")
+    if grounding:
+        tag += f"·{grounding}"
     if attrs.get("superseded_in", 0):
         tag += "·superseded"
     line = f"  {node_id} [{tag}]: {attrs.get('statement') or attrs.get('label', '')}"
@@ -593,13 +607,32 @@ def _combine_match(lex_match: dict[str, float], sem_match: dict[str, float],
     return {n: max(lex_n.get(n, 0.0), sem_n.get(n, 0.0)) for n in hops}
 
 
+def _relevance_note(sem_match: dict[str, float], query: str, config: dict) -> str | None:
+    """C#8 legibility banner: when a semantic backend ran but *nothing* cleared the relevance floor,
+    say so — the returned slice is lexical/proximity-based, not a strong topical hit, so the agent
+    treats it as a weak match instead of authoritative. ``None`` (silent) with no backend (can't judge
+    confidence ⇒ don't cry wolf) or when something did match — design law #4.
+    """
+    if not sem_match:
+        return None
+    floor = config.get("embeddings", {}).get("relevance_floor", 0.4)
+    best = max(sem_match.values())
+    if best >= floor:
+        return None
+    return (f'  ⚠ low confidence — no memory/intent node strongly matches "{query}" '
+            f"(best {best:.2f} < {floor}); showing lexical/proximity results.")
+
+
 def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = None,
             budget_tokens: int | None = None, semantic_match: dict[str, float] | None = None,
-            root: Path | None = None) -> ContextResult:
+            root: Path | None = None, grounding: str | None = None,
+            show_scores: bool = False) -> ContextResult:
     """Run the full query pipeline over an already-built ``graph`` and render within budget.
 
     ``semantic_match`` (``{node_id: cosine}`` from :mod:`yigraf.embeddings`, scoped to memory+intent)
     is the M8 semantic seeder, fused with the lexical/IDF seeder. ``None``/empty ⇒ pure lexical (= v0).
+    ``grounding`` filters memory nodes to one epistemic tier (C#6); ``show_scores`` appends the per-node
+    cosine (C#8) — both opt-in so the default render stays token-thrifty.
     """
     budget = budget_tokens or config.get("retrieval", {}).get("query_token_budget", 4000)
     sem_match = semantic_match or {}
@@ -611,6 +644,10 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
 
     if family:
         hops = {n: h for n, h in hops.items() if graph.nodes[n].get("family") == family}
+    if grounding:  # C#6: restrict memory nodes to one grounding tier (leaves other families intact)
+        hops = {n: h for n, h in hops.items()
+                if graph.nodes[n].get("family") != "memory"
+                or graph.nodes[n].get("grounding") == grounding}
     match = _combine_match(lex_match, sem_match, hops)
     ranked = _rank(graph, hops, match, config)
 
@@ -627,5 +664,7 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
 
     reconcile_lines = _verified_reconcile(graph, drifted_edges)
     capture_lines = _capture_gaps(graph, scope=in_scope)  # scoped to the query's neighborhood, like drift
+    scores = {n: sem_match[n] for n in hops if n in sem_match} if show_scores else None
     return _render(graph, ranked, query, sorted(drift_lines), reconcile_lines, budget,
-                   root=root, config=config, capture_lines=capture_lines)
+                   root=root, config=config, capture_lines=capture_lines,
+                   relevance_note=_relevance_note(sem_match, query, config), scores=scores)

@@ -38,6 +38,14 @@ from yigraf.astnorm import ANCHOR_ALGO, FILE_ANCHOR_ALGO, file_content_hash, par
 MEMORY_FAMILY = "memory"
 CONF = "EXTRACTED"  # agent-asserted at a commit boundary, not inferred
 
+#: Epistemic-grounding axis (int:memory-grounding, C#6): *how* a belief was arrived at — orthogonal to
+#: maturity (has it survived?) and attestation (who endorsed it?). ``inferred`` is the default for an
+#: agent-asserted decision (it may be a guess); ``docs`` for one distilled from committed docs/rationale;
+#: ``empirical`` for one confirmed by a live observation (a spike, a test, a prod signal). A low-grounding
+#: (``inferred``) node surfaces as a re-verify TODO in ``context`` and can be upgraded once evidence lands.
+GROUNDINGS = ("inferred", "docs", "empirical")
+DEFAULT_GROUNDING = "inferred"
+
 #: Memory node types (graph-design §1 / memory-model §1). ``constraint`` is the promotable one.
 MEMORY_TYPES = (
     "decision",
@@ -104,6 +112,7 @@ class Memory:
     supersedes: list[str] = field(default_factory=list)
     status: str = "active"
     maturity: str = "working"  # working → settled by survival (M9); always working in M7
+    grounding: str = DEFAULT_GROUNDING  # inferred | docs | empirical (int:memory-grounding, C#6)
     promotable: bool = False  # a constraint flagged as a candidate enforced check (capture-flow §0a)
     provenance: dict = field(default_factory=dict)
 
@@ -163,6 +172,7 @@ def read_memory(path: Path) -> Memory:
         supersedes=list(meta.get("supersedes") or []),
         status=meta.get("status", "active"),
         maturity=meta.get("maturity", "working"),
+        grounding=meta.get("grounding", DEFAULT_GROUNDING),
         promotable=bool(meta.get("promotable", False)),
         provenance=dict(meta.get("provenance") or {}),
     )
@@ -176,6 +186,7 @@ def render_memory(memory: Memory) -> str:
         "type": memory.type,
         "status": memory.status,
         "maturity": memory.maturity,
+        "grounding": memory.grounding,
         "serves": list(memory.serves),
         "concerns": [
             {"sym": c.sym, "anchor": c.anchor, "anchor_algo": c.anchor_algo} for c in memory.concerns
@@ -268,6 +279,7 @@ def project_into(graph: nx.DiGraph, root: Path) -> None:
             confidence=CONF,
             status=memory.status,
             maturity=memory.maturity,
+            grounding=memory.grounding,
             statement=memory.statement,
             why=memory.why,
             alternatives=memory.alternatives,
