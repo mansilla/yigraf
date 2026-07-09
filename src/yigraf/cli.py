@@ -186,12 +186,16 @@ def _rebuild(root: Path) -> None:
     embeddings.refresh_index(root, graph, config)
 
 
-def _ranked_with_telemetry(root: Path, graph) -> None:
-    """Overlay the machine-local usage/last_seen sidecar onto the graph for recency-aware ranking (R1).
+def _ranked_with_telemetry(root: Path, graph, config: dict | None = None) -> None:
+    """Overlay the machine-local usage/last_seen/upholds sidecar for ranking + the maturity verdict (R1).
 
-    Read-path only: ``graph.json`` stays recomputable — telemetry is never written back into it.
+    Read-path only: ``graph.json`` stays recomputable — telemetry is never written back into it. After
+    the overlay we resolve the read-time ``settled`` verdict from the accumulated ``upholds`` (mem:033);
+    without ``config`` we still overlay telemetry but skip the verdict (callers that only need ranking).
     """
     counters.apply_telemetry(graph, counters.load_telemetry(root))
+    if config is not None:
+        counters.apply_maturity_verdict(graph, config)
 
 
 def _record_injection(root: Path, graph, result) -> None:
@@ -202,6 +206,53 @@ def _record_injection(root: Path, graph, result) -> None:
     """
     try:
         counters.record_injection(root, graph, list(result.rendered))
+    except OSError:
+        pass
+
+
+def _locator_relpath(locator: str) -> str | None:
+    """The repo-relative path a ``sym:``/``file:`` concern locator points at (for edit-uphold matching)."""
+    if locator.startswith("sym:"):
+        return locator[len("sym:"):].split("#", 1)[0]
+    if locator.startswith("file:"):
+        return locator[len("file:"):].split(":L", 1)[0]
+    return None
+
+
+def _record_edit_upholds(root: Path, graph, config: dict, rel_posix: str) -> None:
+    """A survived edit-encounter (mem:033): decisions governing the edited locus that did NOT drift earn
+    a weak maturity uphold. Best-effort + fail-open — a sidecar hiccup must never break the hook.
+
+    The edit hook only reaches here when the locus is governed (or drifting); we credit exactly the
+    ``concerns`` edges onto *this* file whose anchor still matches (a drifted concern is a violation, not
+    a survival, so it's excluded — and drift already asks the agent to re-verify it).
+    """
+    weight = float(config.get("maturity_uphold_edit", 0.25))
+    if weight <= 0:
+        return
+    drifted = {(i.task_id, i.locator) for i in compute_drift(graph) if i.kind != "renamed"}
+    upheld = {
+        src for src, tgt, a in graph.edges(data=True)
+        if a.get("relation") == "concerns"
+        and graph.nodes.get(src, {}).get("family") == memory.MEMORY_FAMILY
+        and _locator_relpath(tgt) == rel_posix
+        and (src, tgt) not in drifted
+    }
+    if upheld:
+        try:
+            counters.record_uphold(root, graph, sorted(upheld), weight)
+        except OSError:
+            pass
+
+
+def _record_reaffirm_uphold(repo: Path, config: dict, mem_ids: list[str]) -> None:
+    """A reaffirm is an explicit re-verification → a strong maturity uphold (mem:033). Best-effort."""
+    if not mem_ids:
+        return
+    try:
+        graph, _ = build_graph(repo, config)
+        counters.record_uphold(repo, graph, sorted(set(mem_ids)),
+                               float(config.get("maturity_uphold_review", 1.0)))
     except OSError:
         pass
 
@@ -421,7 +472,7 @@ def _dedup_guard(repo: Path, config: dict, graph, statement: str, why: str,
 def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, why: str,
                     serves: list[str], concern_syms: list[str], rejected: str | None,
                     supersedes: list[str], promotable: bool, force_new: bool = False,
-                    grounding: str | None = None) -> memory.Memory:
+                    grounding: str | None = None, pending_supersedes: list[str] | None = None) -> memory.Memory:
     """Write a new memory artifact, then rebuild graph.json. Shared by remember/supersede/note-constraint."""
     if type_ not in memory.MEMORY_TYPES:
         _guidance(f"--type must be one of {', '.join(memory.MEMORY_TYPES)} (got {type_}).")
@@ -430,19 +481,21 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
         _guidance(f"--grounding must be one of {', '.join(memory.GROUNDINGS)} (got {grounding}). "
                   f"inferred = a reasoned assertion; docs = distilled from written rationale; "
                   f"empirical = confirmed by a live observation (a spike/test/prod signal).")
+    pending_supersedes = pending_supersedes or []
 
     config = load_config(workspace / "config.yaml")
     graph, _ = build_graph(repo, config)  # built once, reused for concern/serves resolution + dedup
     concerns, warnings = _resolve_concerns(repo, config, graph, concern_syms)
     warnings += _serves_warnings(graph, serves)
-    # A supersede is a deliberate mind-change (it *should* resemble its predecessor) → skip the guard.
-    if not supersedes and not force_new:
+    # A supersede (applied or pending) is a deliberate mind-change → skip the near-duplicate guard.
+    if not supersedes and not pending_supersedes and not force_new:
         _dedup_guard(repo, config, graph, statement, why, concerns, serves)
     seq = memory.next_seq(repo)
     slug = memory.slugify(statement)
     node = memory.Memory(
         id=f"mem:{seq:03d}", seq=seq, slug=slug, type=type_, statement=statement, why=why,
         alternatives=rejected, serves=list(serves), concerns=concerns, supersedes=list(supersedes),
+        pending_supersedes=list(pending_supersedes),
         grounding=grounding, promotable=promotable, provenance={"source": "cli"},
     )
     dest = memory.memory_path(repo, seq, slug)
@@ -521,13 +574,25 @@ def supersede(
         _guidance(f"{old_id} is an intent, not a memory — `supersede` reverses a *decision*. To reverse "
                   f"an intent's contract, use `yigraf supersede-intent {old_id[len('int:'):]} <new-slug> "
                   f'-s "<new SHALL/MUST>" --why "<why the premise changed>"`.')
-    if memory.find_memory(repo, old_id) is None:
+    old_path = memory.find_memory(repo, old_id)
+    if old_path is None:
         _guidance(f"No memory node with id {old_id} to supersede. "
                   f'Find the decision you mean with `yigraf context "<topic>"`.')
-    node = _capture_memory(repo, workspace, statement=statement, type_=type, why=why,
-                           serves=serves or [], concern_syms=concerns or [], rejected=rejected,
-                           supersedes=[old_id], promotable=False, grounding=grounding)
+    # Sticky attestation (int:memory-attestation): an agent supersede of a HUMAN-attested node is held
+    # pending — the new reasoning is captured, but the old node is NOT demoted; it surfaces as a conflict
+    # until a human resolves it. Every CLI/MCP caller is "the agent", so human attestation always sticks.
+    human_attested = memory.read_memory(old_path).attestation == "human"
+    node = _capture_memory(
+        repo, workspace, statement=statement, type_=type, why=why,
+        serves=serves or [], concern_syms=concerns or [], rejected=rejected,
+        supersedes=[] if human_attested else [old_id],
+        pending_supersedes=[old_id] if human_attested else [],
+        promotable=False, grounding=grounding)
     _report_capture(node)
+    if human_attested:
+        typer.echo(f"⚠ {old_id} is human-attested — this supersede is HELD PENDING: {node.id} is captured "
+                   f"but {old_id} stays authoritative until a human resolves the conflict (mark {node.id} "
+                   f"human-attested to apply it). Nothing was silently overwritten.")
 
 
 def _reaffirm_concerns(repo: Path, config: dict, node: memory.Memory,
@@ -614,6 +679,7 @@ def reaffirm(
             typer.echo(f"⚠ {target} concerns {', '.join(gone)}, which no longer resolve(s) in the source — "
                        f"reaffirm can't re-anchor a gone locus. If the decision moved, "
                        f'`yigraf supersede {target} "<restated>" --concerns <new>`.')
+        _record_reaffirm_uphold(repo, config, [target])  # an explicit re-verification → strong uphold
         return
 
     if not (target.startswith("sym:") or target.startswith("file:")):
@@ -624,11 +690,12 @@ def reaffirm(
 
     # Locus-scoped batch: reaffirm the target's anchor on *every* memory that concerns it (you verified
     # this one locus, so reaffirming its decisions is a bounded, honest act — not a blanket sweep).
-    matched, restamped_ids, gone_ids = 0, [], []
+    matched, restamped_ids, gone_ids, matched_ids = 0, [], [], []
     for node in memory.iter_memories(repo):
         if target not in {c.sym for c in node.concerns}:
             continue
         matched += 1
+        matched_ids.append(node.id)
         restamped, gone = _reaffirm_concerns(repo, config, node, {target})
         if restamped or gone:
             memory.memory_path(repo, node.seq, node.slug).write_text(
@@ -641,6 +708,8 @@ def reaffirm(
         _guidance(f"No memory concerns {target} — nothing to reaffirm. "
                   f'Anchor one with `yigraf remember "…" --concerns {target}`.')
     _rebuild(repo)
+    # A gone locus is hard drift, not a survival — credit an uphold only to memories still anchored there.
+    _record_reaffirm_uphold(repo, config, [m for m in matched_ids if m not in gone_ids])
     if restamped_ids:
         typer.echo(f"Reaffirmed {len(restamped_ids)} memory(ies) concerning {target} — drift cleared: "
                    f"{', '.join(restamped_ids)}.")
@@ -667,7 +736,7 @@ def context(
         _guidance(f"--grounding must be one of {', '.join(memory.GROUNDINGS)} (got {grounding}).")
     config = load_config(workspace / "config.yaml")
     graph, _ = build_graph(repo, config)
-    _ranked_with_telemetry(repo, graph)  # recency/popularity overlay from the local sidecar (R1)
+    _ranked_with_telemetry(repo, graph, config)  # recency/popularity + maturity verdict (R1)
     semantic = embeddings.semantic_scores(repo, graph, config, query)  # {} ⇒ lexical-only (M8 / v0)
     result = retrieval.context(graph, query, config, family=family, budget_tokens=budget,
                                semantic_match=semantic, root=repo, grounding=grounding,
@@ -1274,11 +1343,12 @@ def _post_tool_use(data: dict) -> dict | None:
     graph, config = built
     if rel.suffix not in extension_map(available_extractors(config)):
         return None  # not a language yigraf indexes in this repo
-    _ranked_with_telemetry(root, graph)  # local recency/popularity overlay (R1)
+    _ranked_with_telemetry(root, graph, config)  # recency/popularity + maturity verdict (R1)
     result = retrieval.context_for_locus(graph, rel.as_posix(), config, root=root)
     if result is None:
         return None  # silent: nothing governs this locus and no drift
     _record_injection(root, graph, result)  # a surfaced decision/intent is a soft usage signal (sidecar)
+    _record_edit_upholds(root, graph, config, rel.as_posix())  # silent survival = a weak maturity uphold
     return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": result.text}}
 
 
@@ -1288,7 +1358,7 @@ def _session_start(data: dict) -> dict | None:
     if built is None:
         return None
     graph, config = built
-    _ranked_with_telemetry(root, graph)  # local recency/popularity overlay (R1)
+    _ranked_with_telemetry(root, graph, config)  # recency/popularity + maturity verdict (R1)
     result = retrieval.session_context(graph, config, root=root)
     if result is None:
         return None

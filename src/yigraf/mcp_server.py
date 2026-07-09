@@ -53,7 +53,8 @@ def run_context(repo: str | None, query: str, family: str | None = None,
         return _no_workspace(root, also_build=True)
     config = load_config(root / WORKSPACE_DIRNAME / "config.yaml")
     graph, _ = build_graph(root, config)
-    counters.apply_telemetry(graph, counters.load_telemetry(root))  # recency/popularity overlay (R1)
+    counters.apply_telemetry(graph, counters.load_telemetry(root))  # recency/popularity/upholds overlay (R1)
+    counters.apply_maturity_verdict(graph, config)  # read-time settled verdict from upholds (mem:033)
     semantic = embeddings.semantic_scores(root, graph, config, query)  # {} ⇒ lexical-only
     result = retrieval.context(graph, query, config, family=family, budget_tokens=budget,
                                semantic_match=semantic, root=root)

@@ -19,8 +19,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "languages": ["python", "go", "javascript", "typescript", "rust", "java", "c", "cpp",
                   "ruby", "php", "c_sharp", "kotlin", "scala", "swift", "bash", "sql"],
     "ignore": [".git/", "__pycache__/", ".venv/", "node_modules/", "origins/"],
-    # Maturity (R2): a memory node settles after K commits on the default branch un-superseded.
+    # Maturity (mem:033): a memory settles once its accumulated survived-encounter *upholds* reach
+    # `maturity_k` and it isn't superseded. Upholds are read-time, sidecar-derived — a reaffirm books
+    # `maturity_uphold_review`, a silent edit-hook survival books `maturity_uphold_edit`. Git-survival
+    # is an optional durability floor (0 = off): settled also requires `survival >= maturity_survival_floor`.
     "maturity_k": 3,
+    "maturity_uphold_review": 1.0,
+    "maturity_uphold_edit": 0.25,
+    "maturity_survival_floor": 0,
     # Retrieval (M4) — tunables from retrieval-design §9.
     "retrieval": {
         "seeds": 5,
@@ -77,8 +83,11 @@ ignore:                        # path prefixes skipped when indexing the repo
   - node_modules/
   - origins/
 
-# --- Maturity (R2) ---
-maturity_k: 3                  # commits on the default branch un-superseded before a memory "settles"
+# --- Maturity (mem:033) — settled = survived review-encounters, read-time from the sidecar ---
+maturity_k: 3                  # accumulated uphold weight (un-superseded) before a memory "settles"
+maturity_uphold_review: 1.0    # uphold booked by a `reaffirm` (an explicit re-verification)
+maturity_uphold_edit: 0.25     # uphold booked by a silent edit-hook survival (no drift on the locus)
+maturity_survival_floor: 0     # optional git-durability gate (commits since intro); 0 = off
 
 # --- Retrieval (M4) — tunables from docs/retrieval-design.md §9 ---
 retrieval:

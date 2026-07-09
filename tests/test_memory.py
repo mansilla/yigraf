@@ -339,3 +339,66 @@ def test_reaffirm_upgrades_grounding_in_place(tmp_path: Path):
     # the claim is unchanged (no supersede), only the epistemic status advanced — still mem:001, active
     mem = memory.read_memory(memory.find_memory(root, "mem:001"))
     assert mem.grounding == "empirical" and mem.statement == "inferred then confirmed"
+
+
+# --------------------------------------------------------------------------------------------------
+# Attestation axis (int:memory-attestation): agent|human, trust floor, sticky supersede.
+# --------------------------------------------------------------------------------------------------
+
+
+def _attest_human(root: Path, mem_id: str) -> None:
+    """Mark a node human-attested by editing its frontmatter (files are truth; the verb lands in #4)."""
+    path = memory.find_memory(root, mem_id)
+    node = memory.read_memory(path)
+    node.attestation = "human"
+    path.write_text(memory.render_memory(node), encoding="utf-8")
+    _run(["build", str(root)])
+
+
+def test_attestation_defaults_agent_and_round_trips(tmp_path: Path):
+    root = _repo(tmp_path)
+    _remember(root, "a decision")
+    assert memory.read_memory(memory.find_memory(root, "mem:001")).attestation == "agent"
+    assert _graph(root).nodes["mem:001"]["attestation"] == "agent"
+
+
+def test_supersede_of_human_attested_node_is_held_pending(tmp_path: Path):
+    """int:memory-attestation: an agent supersede of a human-attested node is captured but NOT applied."""
+    root = _repo(tmp_path)
+    _remember(root, "human-endorsed decision", concerns=[SYM])
+    _attest_human(root, "mem:001")
+    res = _run(["supersede", "mem:001", "a competing decision", "--repo", str(root)])
+    assert "HELD PENDING" in res.output
+    g = _graph(root)
+    assert g.nodes["mem:001"].get("superseded_in", 0) == 0  # old node stays authoritative (not demoted)
+    new = memory.read_memory(memory.find_memory(root, "mem:002"))
+    assert new.pending_supersedes == ["mem:001"] and new.supersedes == []  # pending, not applied
+
+
+def test_agent_supersede_of_agent_node_applies_normally(tmp_path: Path):
+    """Control: an agent-attested node supersedes normally (demotes the old) — stickiness is human-only."""
+    root = _repo(tmp_path)
+    _remember(root, "an agent decision", concerns=[SYM])
+    _run(["supersede", "mem:001", "the replacement", "--repo", str(root)])
+    g = _graph(root)
+    assert g.nodes["mem:001"]["superseded_in"] == 1  # demoted, applied
+    assert memory.read_memory(memory.find_memory(root, "mem:002")).supersedes == ["mem:001"]
+
+
+def test_pending_conflict_surfaces_in_context(tmp_path: Path):
+    root = _repo(tmp_path)
+    _remember(root, "human decision about refresh", concerns=[SYM], serves=["int:session-expiry"])
+    _attest_human(root, "mem:001")
+    _run(["supersede", "mem:001", "a new refresh decision", "--concerns", SYM, "--repo", str(root)])
+    graph, _ = build_graph(root, default_config())
+    text = retrieval.context(graph, "refresh decision", default_config()).text
+    assert "Conflict (pending" in text and "pending-supersedes human-attested mem:001" in text
+
+
+def test_human_attestation_shows_in_the_memory_line(tmp_path: Path):
+    root = _repo(tmp_path)
+    _remember(root, "endorsed decision about refresh", concerns=[SYM], serves=["int:session-expiry"])
+    _attest_human(root, "mem:001")
+    graph, _ = build_graph(root, default_config())
+    text = retrieval.context(graph, "endorsed decision refresh", default_config()).text
+    assert "·human]" in text or "·human·" in text  # the trust-floor marker rides the tag
