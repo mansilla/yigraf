@@ -95,6 +95,7 @@ class Intent:
     scenarios: list[str] = field(default_factory=list)
     design: str | None = None
     supersedes: list[str] = field(default_factory=list)  # int:<slug> ids this reversal replaces
+    attestation: str = "agent"  # agent | human — a human-elicited spec is a trust floor (int:intent-elicitation)
 
 
 def read_intent(path: Path) -> Intent:
@@ -113,6 +114,7 @@ def read_intent(path: Path) -> Intent:
         scenarios=_bullets(sections.get("scenarios", "")),
         design=design,
         supersedes=list(meta.get("supersedes") or []),
+        attestation=meta.get("attestation", "agent"),
     )
 
 
@@ -132,13 +134,15 @@ def render_intent(slug: str, statement: str, scenarios: list[str], design: str |
 
 
 def update_intent_frontmatter(path: Path, *, status: str | None = None,
-                              superseded_by: str | None = None) -> None:
-    """Flip an existing intent's ``status`` (and optionally stamp ``superseded_by``) in place.
+                              superseded_by: str | None = None,
+                              attestation: str | None = None) -> None:
+    """Flip an existing intent's ``status``/``attestation`` (and optionally stamp ``superseded_by``) in place.
 
-    The one legitimate edit to an authored intent's frontmatter: retiring or reversing it. The body
-    (the SHALL contract, scenarios, design) is never touched — a *changed* contract is a new intent
-    that ``supersedes`` this one, not an edit (that's what ``supersede-intent`` writes). ``superseded_by``
-    is human-legibility only; the traversable edge lives on the *successor's* ``supersedes`` field.
+    The legitimate metadata edits to an authored intent: retiring/reversing it, and recording a human
+    endorsement (``attestation``). The body (the SHALL contract, scenarios, design) is never touched —
+    a *changed* contract is a new intent that ``supersedes`` this one, not an edit (that's what
+    ``supersede-intent`` writes). ``superseded_by`` is human-legibility only; the traversable edge lives
+    on the *successor's* ``supersedes`` field.
     """
     path = Path(path)
     meta, body = _split_frontmatter(path.read_text(encoding="utf-8"))
@@ -146,6 +150,8 @@ def update_intent_frontmatter(path: Path, *, status: str | None = None,
         meta["status"] = status
     if superseded_by is not None:
         meta["superseded_by"] = superseded_by
+    if attestation is not None:
+        meta["attestation"] = attestation
     path.write_text(_compose(meta, body), encoding="utf-8")
 
 
@@ -293,7 +299,8 @@ def project_into(graph: nx.DiGraph, root: Path) -> None:
         graph.add_node(
             intent.id, family=INTENT_FAMILY, kind=intent.type, label=intent.statement or intent.slug,
             confidence=CONF, status=intent.status, statement=intent.statement,
-            scenarios=intent.scenarios, design=intent.design, source_file=f"intents/{intent.slug}.md",
+            scenarios=intent.scenarios, design=intent.design, attestation=intent.attestation,
+            source_file=f"intents/{intent.slug}.md",
         )
     # Second pass: an intent reversal (int → int supersedes) resolves only once every intent node
     # exists (a successor may sort before the intent it replaces). This is the traversable edge that

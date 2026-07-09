@@ -591,8 +591,57 @@ def supersede(
     _report_capture(node)
     if human_attested:
         typer.echo(f"⚠ {old_id} is human-attested — this supersede is HELD PENDING: {node.id} is captured "
-                   f"but {old_id} stays authoritative until a human resolves the conflict (mark {node.id} "
-                   f"human-attested to apply it). Nothing was silently overwritten.")
+                   f"but {old_id} stays authoritative until a human resolves the conflict "
+                   f"(`yigraf attest {node.id}` to apply it). Nothing was silently overwritten.")
+
+
+def _find_intent_file(workspace: Path, slug_cf: str) -> Path | None:
+    for path in sorted((workspace / "intents").glob("*.md")):
+        if path.stem.casefold() == slug_cf:
+            return path
+    return None
+
+
+@app.command()
+def attest(
+    target: str = typer.Argument(..., help="A memory id (mem:NNN) or an intent (int:<slug>) to mark human-attested."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Record the principal's endorsement: mark a decision or intent HUMAN-attested — a sticky trust floor.
+
+    The human-attestation entry (int:intent-elicitation; resolves the deferral in mem:048). Run it once
+    the principal has *actually* chosen — capturing a preference-fork you elicited, or endorsing a
+    decision the agent flagged for ack. Attesting a memory that PENDING-supersedes a human-attested node
+    APPLIES the held supersede (the principal accepted the change). Attestation is metadata, not a claim,
+    so it's edited in place. Only mark human when the human genuinely decided — the trust floor depends
+    on that honesty (the agent is the scribe, the principal is the source).
+    """
+    workspace = _require_workspace(repo)
+    if target.startswith("mem:"):
+        path = memory.find_memory(repo, target)
+        if path is None:
+            _guidance(f'No memory node with id {target} to attest. Find it with `yigraf context "<topic>"`.')
+        node = memory.read_memory(path)
+        applied = list(node.pending_supersedes)
+        node.supersedes = list(dict.fromkeys(node.supersedes + applied))  # a held supersede now applies
+        node.pending_supersedes = []
+        node.attestation = "human"
+        path.write_text(memory.render_memory(node), encoding="utf-8")
+        _rebuild(repo)
+        typer.echo(f"Attested {target} (human) — a trust floor: an agent supersede of it is now held pending.")
+        if applied:
+            typer.echo(f"Applied the held supersede: {target} now supersedes {', '.join(applied)} "
+                       f"(conflict resolved — the superseded node is demoted).")
+        return
+    if target.startswith("int:"):
+        intent_file = _find_intent_file(workspace, target[len("int:"):].casefold())
+        if intent_file is None:
+            _guidance(f'No intent {target}. Create it first with `yigraf intent {target[len("int:"):]} -s "…"`.')
+        artifacts.update_intent_frontmatter(intent_file, attestation="human")
+        _rebuild(repo)
+        typer.echo(f"Attested {target} (human) — a human-endorsed spec (trust floor).")
+        return
+    _guidance(f"attest takes a memory id (mem:NNN) or an intent (int:<slug>), got: {target}")
 
 
 def _reaffirm_concerns(repo: Path, config: dict, node: memory.Memory,
