@@ -472,8 +472,13 @@ def _dedup_guard(repo: Path, config: dict, graph, statement: str, why: str,
 def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, why: str,
                     serves: list[str], concern_syms: list[str], rejected: str | None,
                     supersedes: list[str], promotable: bool, force_new: bool = False,
-                    grounding: str | None = None, pending_supersedes: list[str] | None = None) -> memory.Memory:
-    """Write a new memory artifact, then rebuild graph.json. Shared by remember/supersede/note-constraint."""
+                    grounding: str | None = None, pending_supersedes: list[str] | None = None,
+                    provenance: dict | None = None) -> memory.Memory:
+    """Write a new memory artifact, then rebuild graph.json. Shared by remember/supersede/note-constraint.
+
+    ``provenance`` (default agent-asserted ``{"source": "cli"}``) drives the *landed* maturity tier
+    (:func:`yigraf.memory.landing_maturity`, task #1): an agent ``remember`` lands ``working``; the
+    miner / review bridge pass ``{"source": "mined"|"review"}`` to land a ``proposed`` candidate."""
     if type_ not in memory.MEMORY_TYPES:
         _guidance(f"--type must be one of {', '.join(memory.MEMORY_TYPES)} (got {type_}).")
     grounding = grounding or memory.DEFAULT_GROUNDING
@@ -482,6 +487,7 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
                   f"inferred = a reasoned assertion; docs = distilled from written rationale; "
                   f"empirical = confirmed by a live observation (a spike/test/prod signal).")
     pending_supersedes = pending_supersedes or []
+    provenance = provenance or {"source": "cli"}
 
     config = load_config(workspace / "config.yaml")
     graph, _ = build_graph(repo, config)  # built once, reused for concern/serves resolution + dedup
@@ -496,7 +502,8 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
         id=f"mem:{seq:03d}", seq=seq, slug=slug, type=type_, statement=statement, why=why,
         alternatives=rejected, serves=list(serves), concerns=concerns, supersedes=list(supersedes),
         pending_supersedes=list(pending_supersedes),
-        grounding=grounding, promotable=promotable, provenance={"source": "cli"},
+        grounding=grounding, promotable=promotable, provenance=provenance,
+        maturity=memory.landing_maturity(provenance),  # proposed for mined/review, else working (task #1)
     )
     dest = memory.memory_path(repo, seq, slug)
     dest.write_text(memory.render_memory(node), encoding="utf-8")
@@ -553,6 +560,44 @@ def note_constraint(
     node = _capture_memory(repo, workspace, statement=rule, type_="constraint", why=why,
                            serves=serves or [], concern_syms=concerns or [], rejected=rejected,
                            supersedes=[], promotable=True, force_new=new, grounding=grounding)
+    _report_capture(node)
+
+
+@app.command()
+def propose(
+    statement: str = typer.Argument(..., help="The candidate belief in one line (a review anti-pattern, or a distilled decision)."),
+    from_: str = typer.Option(..., "--from", help=f"Where the candidate came from: {' | '.join(sorted(memory.PROPOSED_SOURCES))}. Both LAND at the `proposed` tier."),
+    type: str = typer.Option(None, "--type", help=f"One of: {', '.join(memory.MEMORY_TYPES)} (default: constraint for review, decision for mined)."),
+    concerns: list[str] = typer.Option(None, "--concerns", help="The locus this candidate governs, sym:<path>#<name> or file:<path> (repeatable, anchored — this is what re-surfaces it at the edit hook)."),
+    rejected: str = typer.Option(None, "--rejected", help="The anti-pattern (review) / rejected alternative (mined) — the ruled-out shape the finding warns against."),
+    why: str = typer.Option("", "--why", help="The reasoning behind the candidate (optional)."),
+    serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
+    origin: str = typer.Option(None, "--origin", help="Free-text provenance detail for the audit trail, e.g. 'security-review', 'commit abc123', 'docs/DESIGN.md'."),
+    grounding: str = typer.Option(None, "--grounding", help=f"How the belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred)."),
+    new: bool = typer.Option(False, "--new", help="Capture even if it looks like a near-duplicate (skip the dedup guard)."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Land a distilled *candidate* memory at the `proposed` tier (the review bridge + knowledge miner).
+
+    A `proposed` node carries near-zero retrieval weight and does NOT pollute a topic query — but,
+    anchored via `--concerns` to a locus, it re-surfaces at the edit hook the next time that code is
+    touched (int:review-compound), and a real encounter there confirms it up to `working`. Distilling
+    the finding/rationale into one line is YOUR job (an LLM task); this verb only persists it with the
+    provenance that lands it in quarantine. Over-proposing is safe — an un-encountered candidate expires.
+    """
+    workspace = _require_workspace(repo)
+    if from_ not in memory.PROPOSED_SOURCES:
+        _guidance(f"--from must be one of {', '.join(sorted(memory.PROPOSED_SOURCES))} (got {from_}). "
+                  f"review = a confirmed code-/security-review finding; mined = distilled from commit "
+                  f"rationale, PR discussion, or repo docs.")
+    type_ = type or ("constraint" if from_ == "review" else "decision")
+    provenance = {"source": from_}
+    if origin:
+        provenance["origin"] = origin
+    node = _capture_memory(repo, workspace, statement=statement, type_=type_, why=why,
+                           serves=serves or [], concern_syms=concerns or [], rejected=rejected,
+                           supersedes=[], promotable=(type_ == "constraint"), force_new=new,
+                           grounding=grounding, provenance=provenance)
     _report_capture(node)
 
 
@@ -985,25 +1030,38 @@ def gc(
     path: Path = typer.Argument(Path("."), help="Repo root (default: current dir)."),
     apply: bool = typer.Option(False, "--apply", help="Actually archive (default: dry-run report)."),
 ) -> None:
-    """Archive superseded churn memory — never delete, never gate on usage (DESIGN R3).
+    """Archive collectable memory — never delete (DESIGN R3), always reversible, dry-run by default.
 
-    A superseded node nothing still references (``superseded_in>0 ∧ refs_in=0``) is moved to
-    ``yigraf/memory/archive/`` — out of the active graph but kept in the repo for history. A
-    superseded node that's still referenced is left in place as an available rejected alternative.
+    Two reasons, both moved to ``yigraf/memory/archive/`` (out of the active graph, kept for history):
+
+    - **superseded churn** (``superseded_in>0 ∧ refs_in=0``): the deterministic archive — keyed on
+      committed supersede edges, never on telemetry (mem:008), so identical on every clone.
+    - **abandoned proposed** (task #7): a mined/review candidate that was never confirmed by a real
+      encounter and has aged past ``proposed_ttl`` commits un-referenced. Behavioral — it reads the
+      read-time maturity verdict (a confirmed candidate has graduated to ``working`` and is spared), so
+      we overlay telemetry + resolve the verdict first. It expires *speculation* by silence; it NEVER
+      touches a genuine ``working``/``settled`` decision (silence is not evidence there — mem:033).
+
     Dry-run by default — pass ``--apply`` to move the artifacts (the source of truth).
     """
     workspace = _require_workspace(path)
     config = load_config(workspace / "config.yaml")
     graph, _ = build_graph(path, config)
-    actions = counters.classify_gc(graph)
+    _ranked_with_telemetry(path, graph, config)  # overlay upholds + resolve the maturity verdict (proposed→working)
+    actions = counters.classify_gc(graph, config)
 
     if not actions:
-        typer.echo("Nothing to collect (no superseded, unreferenced memory).")
+        typer.echo("Nothing to collect (no superseded churn, no abandoned proposed candidates).")
         return
 
+    reasons = {
+        "superseded-churn": "superseded churn, kept as history",
+        "abandoned-proposed": "abandoned proposed candidate — never confirmed by an encounter",
+    }
     for mem_id in sorted(actions):
         label = graph.nodes[mem_id].get("statement") or mem_id
-        typer.echo(f"  {'✓' if apply else '·'} {mem_id} → archive (superseded churn, kept as history): {label}")
+        why = reasons.get(actions[mem_id], actions[mem_id])
+        typer.echo(f"  {'✓' if apply else '·'} {mem_id} → archive ({why}): {label}")
 
     if not apply:
         typer.echo(f"Dry run — {len(actions)} node(s) would be archived. Re-run with --apply.")

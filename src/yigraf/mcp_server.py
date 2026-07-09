@@ -143,6 +143,25 @@ def run_note_constraint(repo: str | None, rule: str, concerns: list[str] | None 
     return _run_cli("note-constraint", args, repo)
 
 
+def run_propose(repo: str | None, statement: str, from_: str, concerns: list[str] | None = None,
+                rejected: str | None = None, why: str = "", serves: list[str] | None = None,
+                type: str | None = None, origin: str | None = None,
+                grounding: str | None = None) -> str:
+    args = [statement, "--from", from_]
+    if type:
+        args += ["--type", type]
+    args += _multi("--concerns", concerns) + _multi("--serves", serves)
+    if rejected:
+        args += ["--rejected", rejected]
+    if why:
+        args += ["--why", why]
+    if origin:
+        args += ["--origin", origin]
+    if grounding:
+        args += ["--grounding", grounding]
+    return _run_cli("propose", args, repo)
+
+
 def run_supersede(repo: str | None, old_id: str, statement: str, why: str = "",
                   serves: list[str] | None = None, concerns: list[str] | None = None,
                   rejected: str | None = None, type: str = "decision",
@@ -269,6 +288,35 @@ def build_server(default_repo: str | None = None):
             grounding: inferred|docs|empirical (default inferred) — see `remember`.
         """
         return run_note_constraint(repo or default_repo, rule, concerns, why, serves, rejected, grounding)
+
+    @server.tool()
+    def propose(statement: str, from_: str, concerns: list[str] | None = None,
+                rejected: str | None = None, why: str = "", serves: list[str] | None = None,
+                type: str | None = None, origin: str | None = None, grounding: str | None = None,
+                repo: str | None = None) -> str:
+        """Land a distilled CANDIDATE memory in quarantine (the `proposed` tier) — near-zero weight.
+
+        Two callers: (1) a code-/security-review finding you confirmed and chose to keep, and (2) the
+        knowledge miner distilling durable reasoning from commit rationale, PR discussion, or repo docs.
+        A proposed node does NOT pollute a topic query, but — anchored via `concerns` to a locus — it
+        re-surfaces at the edit hook when that code is next touched; a real encounter there confirms it
+        up to `working`. Over-proposing is safe: an un-encountered candidate expires. Distilling the
+        finding into one line is YOUR job; this only persists it with the quarantine provenance.
+
+        Args:
+            statement: the candidate belief in one line (a review anti-pattern, or a distilled decision).
+            from_: where it came from — "review" or "mined" (both land proposed). Sent as `--from`.
+            concerns: the locus it governs, e.g. ["sym:auth/session.py#refresh"] (anchored — this is
+                what re-surfaces it at the edit hook). Strongly recommended for a review finding.
+            rejected: the anti-pattern (review) / rejected alternative (mined) it warns against.
+            why: the reasoning behind the candidate.
+            serves: intent/plan ids it serves.
+            type: decision|constraint (default: constraint for review, decision for mined).
+            origin: free-text provenance detail for the audit trail (e.g. "security-review", "commit abc").
+            grounding: inferred|docs|empirical (default inferred) — see `remember`.
+        """
+        return run_propose(repo or default_repo, statement, from_, concerns, rejected, why, serves,
+                          type, origin, grounding)
 
     @server.tool()
     def supersede(old_id: str, statement: str, why: str = "", serves: list[str] | None = None,

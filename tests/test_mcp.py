@@ -99,6 +99,18 @@ def test_file_concern_through_mcp(tmp_path: Path):
     assert out.startswith("Captured mem:") and "file:Dockerfile" in out
 
 
+def test_propose_lands_a_proposed_candidate_through_mcp(tmp_path: Path):
+    out = mcp_server.run_propose(str(_linked_repo(tmp_path)),
+                                 "never refresh without validating the token", from_="review",
+                                 concerns=["sym:auth/session.py#refresh"], rejected="unchecked return")
+    assert out.startswith("Captured mem:") and "constraint" in out  # review → constraint by default
+
+
+def test_propose_bad_from_returns_guidance_not_error(tmp_path: Path):
+    out = mcp_server.run_propose(str(_linked_repo(tmp_path)), "x", from_="scraped")
+    assert "--from must be one of" in out  # exit-0 guidance reused through MCP
+
+
 def test_multi_expands_repeatable_options():
     assert mcp_server._multi("--serves", ["int:a", "int:b"]) == ["--serves", "int:a", "--serves", "int:b"]
     assert mcp_server._multi("--concerns", None) == []
@@ -109,5 +121,5 @@ def test_build_server_registers_all_tools(tmp_path: Path):
     pytest.importorskip("mcp")  # core dep; this guards only a deps-not-synced editable checkout
     server = mcp_server.build_server(str(_repo(tmp_path)))
     names = {t.name for t in asyncio.run(server.list_tools())}
-    assert {"context", "status", "link", "remember", "note_constraint", "supersede", "reaffirm",
-            "supersede_intent"} <= names
+    assert {"context", "status", "link", "remember", "note_constraint", "propose", "supersede",
+            "reaffirm", "supersede_intent"} <= names

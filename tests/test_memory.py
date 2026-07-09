@@ -10,13 +10,22 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from yigraf import memory
+from yigraf import cli, counters, memory
 from yigraf.cli import app
-from yigraf.config import default_config
+from yigraf.config import default_config, load_config
 from yigraf.drift import compute_drift
 from yigraf.extract import build_graph
 from yigraf.graph import read_graph
 from yigraf import retrieval
+
+
+def _read_with_verdict(root: Path):
+    """Read-path graph: overlay the telemetry sidecar (upholds) + resolve the maturity verdict."""
+    cfg = load_config(root / "yigraf" / "config.yaml")
+    g, _ = build_graph(root, cfg)
+    counters.apply_telemetry(g, counters.load_telemetry(root))
+    counters.apply_maturity_verdict(g, cfg)
+    return g
 
 runner = CliRunner()
 
@@ -339,6 +348,113 @@ def test_reaffirm_upgrades_grounding_in_place(tmp_path: Path):
     # the claim is unchanged (no supersede), only the epistemic status advanced — still mem:001, active
     mem = memory.read_memory(memory.find_memory(root, "mem:001"))
     assert mem.grounding == "empirical" and mem.statement == "inferred then confirmed"
+
+
+# --------------------------------------------------------------------------------------------------
+# Maturity landing (task #1): provenance drives the tier a memory ENTERS at.
+# --------------------------------------------------------------------------------------------------
+
+
+def test_landing_maturity_maps_provenance_to_tier():
+    """The pure rule: mined/review land proposed; an agent assertion (or no provenance) lands working."""
+    assert memory.landing_maturity({"source": "mined"}) == "proposed"
+    assert memory.landing_maturity({"source": "review"}) == "proposed"
+    assert memory.landing_maturity({"source": "cli"}) == "working"
+    assert memory.landing_maturity(None) == "working"
+
+
+def test_agent_remember_lands_working(tmp_path: Path):
+    """An agent-asserted remember lands ``working`` — the shown-nowhere default, full weight."""
+    root = _repo(tmp_path)
+    _remember(root, "an agent-asserted decision")
+    assert memory.read_memory(memory.find_memory(root, "mem:001")).maturity == "working"
+    assert _graph(root).nodes["mem:001"]["maturity"] == "working"
+
+
+def test_proposed_candidate_shows_the_proposed_tag(tmp_path: Path):
+    """A mined/review candidate lands proposed and surfaces the ``·proposed`` inline cue (task #1).
+
+    No CLI verb exposes provenance yet (the miner + review bridge land in later tasks), so this drives
+    the shared capture helper directly — the landing zone task #1 builds for them to feed."""
+    root = _repo(tmp_path)
+    node = cli._capture_memory(root, root / "yigraf", statement="a mined candidate", type_="decision",
+                               why="", serves=[], concern_syms=[SYM], rejected=None, supersedes=[],
+                               promotable=False, provenance={"source": "mined"})
+    assert node.maturity == "proposed"
+    assert memory.read_memory(memory.find_memory(root, "mem:001")).maturity == "proposed"
+    graph, _ = build_graph(root, default_config())
+    result = retrieval.context(graph, "mined candidate", default_config())
+    assert "mem:001 [decision·inferred·proposed]" in result.text
+
+
+# --------------------------------------------------------------------------------------------------
+# propose verb (tasks #5/#6): the review-compound bridge + knowledge miner share one landing path.
+# --------------------------------------------------------------------------------------------------
+
+
+def _propose(root: Path, statement: str, from_: str, **opts):
+    args = ["propose", statement, "--from", from_, "--repo", str(root)]
+    for key in ("type", "why", "rejected", "grounding", "origin"):
+        if key in opts:
+            args += [f"--{key}", opts[key]]
+    for sym in opts.get("concerns", []):
+        args += ["--concerns", sym]
+    return _run(args)
+
+
+def test_propose_review_lands_a_proposed_constraint_anchored_to_the_locus(tmp_path: Path):
+    """#5: a confirmed review finding → proposed constraint, anchored (concerns) to the reviewed locus,
+    carrying the anti-pattern as the rejected alternative."""
+    root = _repo(tmp_path)
+    _propose(root, "never refresh without validating the token first", from_="review",
+             concerns=[SYM], rejected="returning the token unchecked — the current body")
+    node = memory.read_memory(memory.find_memory(root, "mem:001"))
+    assert node.type == "constraint"           # review defaults to constraint
+    assert node.maturity == "proposed"         # lands in quarantine
+    assert node.provenance["source"] == "review"
+    assert node.alternatives.startswith("returning the token unchecked")
+    assert _graph(root).edges["mem:001", SYM]["relation"] == "concerns"  # anchored to the locus
+
+
+def test_propose_mined_defaults_to_decision_and_records_origin(tmp_path: Path):
+    """#6: a distilled candidate from history → proposed decision; --origin rides the provenance trail."""
+    root = _repo(tmp_path)
+    _propose(root, "refresh was made idempotent deliberately", from_="mined",
+             concerns=[SYM], origin="commit abc123")
+    node = memory.read_memory(memory.find_memory(root, "mem:001"))
+    assert node.type == "decision" and node.maturity == "proposed"
+    assert node.provenance == {"source": "mined", "origin": "commit abc123"}
+
+
+def test_propose_rejects_an_unknown_from(tmp_path: Path):
+    root = _repo(tmp_path)
+    result = runner.invoke(app, ["propose", "x", "--from", "scraped", "--repo", str(root)])
+    assert result.exit_code == 0  # design-law #1: recoverable → exit 0 with guidance
+    assert "--from must be one of" in result.output
+    assert memory.find_memory(root, "mem:001") is None  # nothing written
+
+
+def test_proposed_finding_resurfaces_at_its_locus_via_the_edit_hook(tmp_path: Path):
+    """The #5 done-test: the proposed finding is silent in the noise but re-surfaces at the edit hook
+    for the exact locus it concerns (int:review-compound: 'at the moment of action')."""
+    root = _repo(tmp_path)
+    _propose(root, "never refresh without validating the token first", from_="review", concerns=[SYM])
+    cfg = default_config()
+    graph, _ = build_graph(root, cfg)
+    result = retrieval.context_for_locus(graph, SRC, cfg)
+    assert result is not None and "mem:001" in result.text and "·proposed" in result.text
+
+
+def test_a_real_encounter_confirms_a_proposed_candidate_up_to_working(tmp_path: Path):
+    """The compounding payoff: enough survived edit-hook encounters (upholds ≥ maturity_confirm) graduate
+    a proposed candidate to working — no new confirm machinery, it reuses the maturity uphold accumulator."""
+    root = _repo(tmp_path)
+    _propose(root, "never refresh without validating the token first", from_="review", concerns=[SYM])
+    cfg = default_config()
+    assert _read_with_verdict(root).nodes["mem:001"]["maturity"] == "proposed"  # un-encountered
+    graph, _ = build_graph(root, cfg)
+    counters.record_uphold(root, graph, ["mem:001"], cfg["maturity_confirm"])  # one real encounter
+    assert _read_with_verdict(root).nodes["mem:001"]["maturity"] == "working"   # confirmed out of quarantine
 
 
 # --------------------------------------------------------------------------------------------------

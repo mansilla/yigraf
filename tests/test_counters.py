@@ -63,7 +63,8 @@ def _graph(root: Path):
 def _mem_graph(**overrides) -> nx.DiGraph:
     """A tiny in-memory graph: one active memory node, attrs overridable per test."""
     g = nx.DiGraph()
-    g.add_node("mem:001", family="memory", kind="decision", maturity="working", **overrides)
+    attrs = {"maturity": "working", **overrides}
+    g.add_node("mem:001", family="memory", kind="decision", **attrs)
     return g
 
 
@@ -83,12 +84,36 @@ def _commit(root: Path, msg: str) -> None:
 # --------------------------------------------------------------------------------------------------
 
 
-def test_build_maturity_is_always_working_regardless_of_git_survival(monkeypatch):
-    """mem:033: promotion is no longer git-derived — build stamps survival + the ``working`` base only."""
+def test_build_maturity_lands_working_regardless_of_git_survival(monkeypatch):
+    """mem:033: promotion is no longer git-derived — build stamps survival + the landed base only.
+
+    An agent-asserted node (no proposed-source provenance) lands ``working`` no matter its git age."""
     monkeypatch.setattr(counters, "_survival_map", lambda root, paths: {p: 99 for p in paths})
     g = _mem_graph(source_file="memory/001-x.md")
     counters.apply_maturity(g, Path("."), {"maturity_k": 3})
     assert g.nodes["mem:001"]["survival"] == 99 and g.nodes["mem:001"]["maturity"] == "working"
+
+
+def test_build_maturity_lands_proposed_for_mined_provenance(monkeypatch):
+    """task #1: a mined/review candidate lands ``proposed`` — derived from committed provenance (R1)."""
+    monkeypatch.setattr(counters, "_survival_map", lambda root, paths: {p: 99 for p in paths})
+    g = _mem_graph(source_file="memory/001-x.md", provenance={"source": "mined"})
+    counters.apply_maturity(g, Path("."), {"maturity_k": 3})
+    assert g.nodes["mem:001"]["maturity"] == "proposed"
+
+
+def test_verdict_proposed_stays_until_confirmed():
+    """task #1: an un-confirmed candidate (no uphold) stays ``proposed`` — near-zero weight."""
+    g = _mem_graph(maturity="proposed", upholds=0.0)
+    counters.apply_maturity_verdict(g, {"maturity_k": 3, "maturity_confirm": 1.0})
+    assert g.nodes["mem:001"]["maturity"] == "proposed"
+
+
+def test_verdict_first_encounter_confirms_proposed_to_working():
+    """task #1: the first real encounter (uphold ≥ maturity_confirm) graduates proposed → working."""
+    g = _mem_graph(maturity="proposed", upholds=1.0)
+    counters.apply_maturity_verdict(g, {"maturity_k": 3, "maturity_confirm": 1.0})
+    assert g.nodes["mem:001"]["maturity"] == "working"
 
 
 def test_verdict_settles_from_upholds():
@@ -200,6 +225,16 @@ def test_settled_memory_outranks_a_working_twin():
            retrieval._relevance(g, "mem:working", cfg, now=1000.0)
 
 
+def test_proposed_candidate_ranks_below_a_working_twin():
+    """task #1: a ``proposed`` candidate carries near-zero weight — docked well under a working belief."""
+    g = nx.DiGraph()
+    for nid, mat in (("mem:working", "working"), ("mem:proposed", "proposed")):
+        g.add_node(nid, family="memory", kind="decision", maturity=mat)
+    cfg = default_config()
+    assert retrieval._relevance(g, "mem:proposed", cfg, now=1000.0) < \
+           retrieval._relevance(g, "mem:working", cfg, now=1000.0)
+
+
 # --------------------------------------------------------------------------------------------------
 # Telemetry — gitignored sidecar, never in graph.json (R1)
 # --------------------------------------------------------------------------------------------------
@@ -251,7 +286,33 @@ def test_classify_gc_archives_only_superseded_churn():
     g.add_node("mem:active", family="memory")                             # not superseded
     g.add_node("task:p/1", family="plan")
     g.add_edge("task:p/1", "mem:ref", relation="references")
-    assert counters.classify_gc(g) == {"mem:churn": "archive"}            # only churn, only archive
+    assert counters.classify_gc(g) == {"mem:churn": "superseded-churn"}   # only churn
+
+
+def test_classify_gc_expires_abandoned_proposed_past_ttl():
+    """task #7: a never-confirmed proposed candidate aged past the TTL is archived — silence expires it."""
+    g = nx.DiGraph()
+    g.add_node("mem:old", family="memory", maturity="proposed", survival=40)   # abandoned, old
+    g.add_node("mem:fresh", family="memory", maturity="proposed", survival=5)  # too young — spared
+    g.add_node("mem:confirmed", family="memory", maturity="working", survival=40)  # confirmed → graduated
+    cfg = {"proposed_ttl": 30}
+    assert counters.classify_gc(g, cfg) == {"mem:old": "abandoned-proposed"}
+
+
+def test_classify_gc_never_expires_a_working_or_settled_decision_by_silence():
+    """The load-bearing guarantee (mem:033): only the quarantine tier expires by silence."""
+    g = nx.DiGraph()
+    for nid, mat in (("mem:w", "working"), ("mem:s", "settled")):
+        g.add_node(nid, family="memory", maturity=mat, survival=9999)  # ancient, untouched
+    assert counters.classify_gc(g, {"proposed_ttl": 1}) == {}
+
+
+def test_classify_gc_spares_a_referenced_proposed_candidate():
+    g = nx.DiGraph()
+    g.add_node("mem:p", family="memory", maturity="proposed", survival=40)
+    g.add_node("task:p/1", family="plan")
+    g.add_edge("task:p/1", "mem:p", relation="references")  # something points at it → keep
+    assert counters.classify_gc(g, {"proposed_ttl": 30}) == {}
 
 
 def test_gc_archives_superseded_churn_without_deleting(tmp_path: Path):
@@ -267,6 +328,24 @@ def test_gc_archives_superseded_churn_without_deleting(tmp_path: Path):
     assert "mem:001" not in g                                             # dropped from the active graph
     archived = list((root / "yigraf" / "memory" / "archive").glob("*.md"))
     assert len(archived) == 1 and "optimistic" in archived[0].name        # moved, not deleted
+
+
+def test_gc_expires_abandoned_proposed_but_spares_a_confirmed_one(tmp_path: Path, monkeypatch):
+    """task #7 done-test: the gc verb overlays the maturity verdict, so a candidate a real encounter
+    confirmed (upholds ≥ maturity_confirm → working) is spared, while a never-encountered one expires."""
+    monkeypatch.setattr(counters, "_survival_map", lambda root, paths: {p: 99 for p in paths})  # all old (≥ ttl 30)
+    root = _repo(tmp_path)
+    _run(["propose", "confirmed candidate", "--from", "mined", "--concerns", SYM, "--repo", str(root)])   # mem:001
+    _run(["propose", "abandoned candidate", "--from", "mined", "--concerns", SYM, "--repo", str(root)])   # mem:002
+
+    g, _ = build_graph(root, load_config(root / "yigraf" / "config.yaml"))
+    counters.record_uphold(root, g, ["mem:001"], 1.0)  # a real encounter confirms mem:001 (≥ maturity_confirm)
+
+    out = _run(["gc", str(root), "--apply"]).output
+    assert "mem:002 → archive (abandoned proposed" in out and "mem:001" not in out  # only the abandoned one
+    g2 = _graph(root)
+    assert "mem:001" in g2 and "mem:002" not in g2  # confirmed spared; abandoned dropped from the active graph
+    assert any("abandoned" in p.name for p in (root / "yigraf" / "memory" / "archive").glob("*.md"))
 
 
 # --------------------------------------------------------------------------------------------------

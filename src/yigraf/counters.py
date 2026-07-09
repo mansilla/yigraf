@@ -30,7 +30,7 @@ from pathlib import Path
 
 import networkx as nx
 
-from yigraf.memory import MEMORY_FAMILY
+from yigraf.memory import DEFAULT_MATURITY, MEMORY_FAMILY, landing_maturity
 
 #: Families that carry the telemetry nudge — the durable "why"/spec nodes whose recurrence across
 #: sessions is what recency/popularity should reward (structure is ranked by refs_in/proximity).
@@ -134,13 +134,15 @@ def _survival_for(root: Path, repo_relpaths: list[str], cache) -> dict[str, int]
 
 
 def apply_maturity(graph: nx.DiGraph, root: Path, config: dict, cache=None) -> None:
-    """Stamp git-derived ``survival`` on every memory node and set the ``working`` base (recomputable).
+    """Stamp git-derived ``survival`` + the provenance-derived *landed* tier on every memory node.
 
     Promotion is no longer git-derived (mem:033 — commit-age treats un-touched code as validated, the
-    "silence is not evidence" fallacy). ``settled`` is now a **read-time verdict** from survived
-    review-encounters in the telemetry sidecar (:func:`apply_maturity_verdict`), so the *promotion*
-    never touches the committed ``graph.json``. This build pass keeps only recomputable state:
-    ``survival`` (git — now an optional durability floor + informational) and the ``working`` base.
+    "silence is not evidence" fallacy). ``settled`` is a **read-time verdict** from survived
+    review-encounters in the telemetry sidecar (:func:`apply_maturity_verdict`), so *promotion* never
+    touches the committed ``graph.json``. This build pass keeps only recomputable state: ``survival``
+    (git — an optional durability floor + informational) and the **landed tier** — ``proposed`` for a
+    mined/review candidate, ``working`` otherwise — derived from the committed ``provenance`` so it is
+    itself recomputable (:func:`yigraf.memory.landing_maturity`, task #1).
 
     Survival is derived in a flat number of git calls — batched across all memory paths and, given a
     ``cache`` (the build path), memoized by ``HEAD`` so an edit-triggered rebuild that hasn't committed
@@ -157,7 +159,8 @@ def apply_maturity(graph: nx.DiGraph, root: Path, config: dict, cache=None) -> N
             continue
         source = attrs.get("source_file")
         attrs["survival"] = survival.get(f"yigraf/{source}", 0) if source else 0
-        attrs["maturity"] = "working"  # promotion is the read-time verdict; build stays recomputable
+        # The landed base (promotion above it is the read-time verdict; build stays recomputable).
+        attrs["maturity"] = landing_maturity(attrs.get("provenance"))
 
 
 # --------------------------------------------------------------------------------------------------
@@ -259,27 +262,42 @@ def recency(last_seen: int | None, now: float, half_life_days: float) -> float:
 
 
 def apply_maturity_verdict(graph: nx.DiGraph, config: dict) -> None:
-    """The read-time maturity verdict (mem:033): promote ``settled`` from survived-encounter upholds.
+    """The read-time maturity verdict (mem:033, task #1): promote a node above its *landed* tier from
+    survived-encounter upholds.
 
-    ``settled`` iff accumulated ``upholds ≥ maturity_k`` (behaviorally validated) AND not superseded
-    (deterministic demotion via the committed edge) AND ``survival ≥ maturity_survival_floor`` (an
-    optional git durability gate, default ``0`` ⇒ off). Reads the sidecar-overlaid ``upholds`` stamped
-    by :func:`apply_telemetry`, so it must run on read paths *after* that overlay — never at build time
-    (that would leak machine-local state into the committed graph). Idempotent; safe to call twice.
+    Reads the landed tier stamped by :func:`apply_maturity` (``proposed`` for a mined/review candidate,
+    else ``working``) and the sidecar-overlaid ``upholds`` stamped by :func:`apply_telemetry`, so it must
+    run on read paths *after* that overlay — never at build time (that would leak machine-local state into
+    the committed graph). Idempotent; safe to call twice.
+
+    - A ``proposed`` candidate stays ``proposed`` until ``upholds ≥ maturity_confirm`` — its first real
+      encounter *confirms* it up to ``working`` (int:knowledge-mining: near-zero weight until confirmed).
+    - ``settled`` iff ``upholds ≥ maturity_k`` (behaviorally validated) AND not superseded (deterministic
+      demotion via the committed edge) AND ``survival ≥ maturity_survival_floor`` (optional git gate,
+      default ``0`` ⇒ off).
+    - otherwise ``working``.
     """
     k = float(config.get("maturity_k", 3))
+    confirm = float(config.get("maturity_confirm", 1.0))
     floor = int(config.get("maturity_survival_floor", 0))
     for _, attrs in graph.nodes(data=True):
         if attrs.get("family") != MEMORY_FAMILY:
             continue
-        settled = (float(attrs.get("upholds", 0.0)) >= k
+        upholds = float(attrs.get("upholds", 0.0))
+        if attrs.get("maturity") == "proposed" and upholds < confirm:
+            continue  # an un-confirmed candidate — leave it at the proposed landing tier
+        settled = (upholds >= k
                    and not attrs.get("superseded_in", 0)
                    and int(attrs.get("survival", 0)) >= floor)
         attrs["maturity"] = "settled" if settled else "working"
 
 
 def maturity_weight(attrs: dict) -> float:
-    """The maturity contribution to relevance: a settled memory is weighted, a working one is not."""
+    """The maturity BONUS to relevance: ``+1`` for a settled memory, ``0`` otherwise.
+
+    A ``proposed`` candidate is docked separately in the relevance prior (a near-zero-weight penalty,
+    mirroring the superseded dock) — this function only carries the positive settled signal, so a
+    ``working`` node and an un-earned candidate don't both read as a flat ``0`` here."""
     return 1.0 if attrs.get("maturity") == "settled" else 0.0
 
 
@@ -294,19 +312,34 @@ def refs_in(graph: nx.DiGraph, node_id: str) -> int:
                if a.get("relation") in SEMANTIC_RELATIONS)
 
 
-def classify_gc(graph: nx.DiGraph) -> dict[str, str]:
-    """Map each superseded-and-unreferenced memory node to its GC action: ``archive`` (R3).
+def classify_gc(graph: nx.DiGraph, config: dict | None = None) -> dict[str, str]:
+    """Map each collectable memory node to its GC *reason* (both reasons ⇒ archived, never deleted; R3).
 
-    Churn = ``superseded_in>0 ∧ refs_in=0`` (a mind-change nobody else points at) → archived, never
-    deleted (history is auditable) and never gated on ``usage`` (telemetry isn't authoritative). A
-    superseded node that *is* still referenced is left in place as an available rejected alternative.
+    Two disjoint reasons, both moved to ``memory/archive/`` (out of the active graph, kept auditable):
+
+    - ``superseded-churn``: ``superseded_in>0 ∧ refs_in=0`` — a mind-change nobody else points at. This
+      is the **deterministic** archive (mem:008): keyed on committed supersede edges, never on telemetry,
+      so it's identical on every clone. A superseded node still referenced is left as a rejected alt.
+    - ``abandoned-proposed`` (task #7): a candidate that landed ``proposed`` (mined/review), was never
+      confirmed by a real encounter, and has aged past ``proposed_ttl`` commits un-referenced. This one
+      is **behavioral**: it reads the read-time maturity verdict (a confirmed candidate has already
+      graduated to ``working`` and is skipped), so callers must overlay telemetry + run
+      :func:`apply_maturity_verdict` first. It expires speculation by silence — which is safe *only*
+      because the proposed tier is quarantine (near-zero weight, mem:050); it NEVER touches a genuine
+      ``working``/``settled`` decision (silence is not evidence there — mem:033). Git-survival is the
+      staleness clock (recomputable), so a no-git repo never expires a candidate (survival stays 0).
     """
+    ttl = int((config or {}).get("proposed_ttl", 30))
     actions: dict[str, str] = {}
     for node_id, attrs in graph.nodes(data=True):
-        if attrs.get("family") != MEMORY_FAMILY or not attrs.get("superseded_in", 0):
+        if attrs.get("family") != MEMORY_FAMILY:
             continue
-        if refs_in(graph, node_id) == 0:
-            actions[node_id] = "archive"
+        if attrs.get("superseded_in", 0) and refs_in(graph, node_id) == 0:
+            actions[node_id] = "superseded-churn"
+        elif (attrs.get("maturity") == "proposed"
+              and int(attrs.get("survival", 0)) >= ttl
+              and refs_in(graph, node_id) == 0):
+            actions[node_id] = "abandoned-proposed"
     return actions
 
 
