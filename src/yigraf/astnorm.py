@@ -15,6 +15,8 @@ keywords, control flow, signatures, or decorators within a symbol's own body.
 from __future__ import annotations
 
 import hashlib
+import re
+from pathlib import Path
 from typing import TYPE_CHECKING, Mapping
 
 if TYPE_CHECKING:
@@ -23,6 +25,39 @@ if TYPE_CHECKING:
 #: Version tag stored alongside every anchor. Bumping it (``astnorm-v2``) re-anchors instead of
 #: silently false-drifting against hashes produced by an older rule (docs/m1-notes.md §4).
 ANCHOR_ALGO = "astnorm-v1"
+
+#: Anchor algo for a ``file:`` target (friend-review #12): a raw SHA-256 of the file bytes (or a line
+#: range), for infra/glue files (Dockerfile, buildspec, cdk.json, *.sh) that have no code symbols. A
+#: distinct algo so drift compares a file anchor only against a file node's hash, never an astnorm one.
+FILE_ANCHOR_ALGO = "file-sha256-v1"
+
+_FILE_RANGE = re.compile(r"^(.*):L(\d+)-L?(\d+)$")  # file:path:L10-L40 (or L10-40)
+
+
+def parse_file_target(target: str) -> tuple[str, int | None, int | None]:
+    """Split a ``file:<path>[:L<a>-L<b>]`` locator into ``(relpath, start, end)`` (1-based, inclusive)."""
+    spec = target[len("file:"):] if target.startswith("file:") else target
+    match = _FILE_RANGE.match(spec)
+    if match is None:
+        return spec, None, None
+    return match.group(1), int(match.group(2)), int(match.group(3))
+
+
+def file_content_hash(root: Path, target: str) -> str | None:
+    """SHA-256 anchor for a ``file:`` target (whole file, or a ``:L<a>-L<b>`` slice); ``None`` if absent.
+
+    Unlike :func:`content_hash`, this is a raw byte hash — no AST normalization, because these targets
+    are files with no parsed symbol structure. A line range hashes only those lines, so an unrelated
+    edit elsewhere in the file doesn't drift a region-scoped decision (friend-review #12/#13).
+    """
+    relpath, start, end = parse_file_target(target)
+    path = Path(root) / relpath
+    if not path.is_file():
+        return None
+    data = path.read_bytes()
+    if start is not None:
+        data = b"\n".join(data.split(b"\n")[start - 1:end])
+    return hashlib.sha256(data).hexdigest()
 
 #: Field separators for the token stream. ``\x1f`` (unit) joins a token's type to its text; ``\x1e``
 #: (record) joins tokens. Both are control chars that cannot occur in Python source, so they can't be

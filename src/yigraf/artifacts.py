@@ -19,7 +19,7 @@ from typing import Any
 import networkx as nx
 import yaml
 
-from yigraf.astnorm import ANCHOR_ALGO
+from yigraf.astnorm import ANCHOR_ALGO, FILE_ANCHOR_ALGO, file_content_hash, parse_file_target
 
 INTENT_FAMILY = "intent"
 PLAN_FAMILY = "plan"
@@ -94,6 +94,7 @@ class Intent:
     statement: str
     scenarios: list[str] = field(default_factory=list)
     design: str | None = None
+    supersedes: list[str] = field(default_factory=list)  # int:<slug> ids this reversal replaces
 
 
 def read_intent(path: Path) -> Intent:
@@ -111,18 +112,41 @@ def read_intent(path: Path) -> Intent:
         statement=sections.get("requirement", "").strip(),
         scenarios=_bullets(sections.get("scenarios", "")),
         design=design,
+        supersedes=list(meta.get("supersedes") or []),
     )
 
 
 def render_intent(slug: str, statement: str, scenarios: list[str], design: str | None,
-                  type: str = "requirement", status: str = "proposed") -> str:
+                  type: str = "requirement", status: str = "proposed",
+                  supersedes: list[str] | None = None) -> str:
     """Render the markdown for a new intent artifact."""
-    meta = {"id": f"int:{slug.casefold()}", "family": INTENT_FAMILY, "type": type, "status": status}
+    meta: dict[str, Any] = {"id": f"int:{slug.casefold()}", "family": INTENT_FAMILY,
+                            "type": type, "status": status}
+    if supersedes:
+        meta["supersedes"] = list(supersedes)
     lines = ["## Requirement", statement, "", "## Scenarios"]
     lines += [f"- {s}" for s in scenarios] or ["- "]
     if design:
         lines += ["", "## Design (how)", design]
     return _compose(meta, "\n".join(lines) + "\n")
+
+
+def update_intent_frontmatter(path: Path, *, status: str | None = None,
+                              superseded_by: str | None = None) -> None:
+    """Flip an existing intent's ``status`` (and optionally stamp ``superseded_by``) in place.
+
+    The one legitimate edit to an authored intent's frontmatter: retiring or reversing it. The body
+    (the SHALL contract, scenarios, design) is never touched — a *changed* contract is a new intent
+    that ``supersedes`` this one, not an edit (that's what ``supersede-intent`` writes). ``superseded_by``
+    is human-legibility only; the traversable edge lives on the *successor's* ``supersedes`` field.
+    """
+    path = Path(path)
+    meta, body = _split_frontmatter(path.read_text(encoding="utf-8"))
+    if status is not None:
+        meta["status"] = status
+    if superseded_by is not None:
+        meta["superseded_by"] = superseded_by
+    path.write_text(_compose(meta, body), encoding="utf-8")
 
 
 # --------------------------------------------------------------------------------------------------
@@ -208,11 +232,12 @@ def render_plan(slug: str, title: str, tasks: list[str]) -> str:
 
 
 def add_edge_to_plan(path: Path, task_id: str, relation: str, target: str,
-                     anchor: str | None = None) -> None:
+                     anchor: str | None = None, anchor_algo: str | None = None) -> None:
     """Write a ``tracks`` or ``implements`` edge for ``task_id`` into the plan's frontmatter.
 
-    ``tracks`` is a single intent id; ``implements`` appends a (deduplicated) symbol entry carrying
-    its stamped ``anchor`` + ``anchor_algo``. Re-linking the same symbol re-stamps its anchor.
+    ``tracks`` is a single intent id; ``implements`` appends a (deduplicated) ``sym:``/``file:`` entry
+    carrying its stamped ``anchor`` + ``anchor_algo`` (astnorm for a symbol, file-sha256 for a file —
+    friend-review #12). Re-linking the same target re-stamps its anchor.
     """
     path = Path(path)
     meta, body = _split_frontmatter(path.read_text(encoding="utf-8"))
@@ -224,7 +249,8 @@ def add_edge_to_plan(path: Path, task_id: str, relation: str, target: str,
         spec["tracks"] = target
     elif relation == "implements":
         impls = spec.setdefault("implements", [])
-        entry = {"sym": target, "anchor": anchor, "anchor_algo": ANCHOR_ALGO if anchor else None}
+        entry = {"sym": target, "anchor": anchor,
+                 "anchor_algo": (anchor_algo or ANCHOR_ALGO) if anchor else None}
         for existing in impls:
             if existing.get("sym") == target:
                 existing.update(entry)
@@ -262,14 +288,26 @@ def iter_plans(root: Path) -> list[Plan]:
 
 def project_into(graph: nx.DiGraph, root: Path) -> None:
     """Add intent/plan/task nodes and their cross-family edges to ``graph`` from the artifacts."""
-    for intent in iter_intents(root):
+    intents = iter_intents(root)
+    for intent in intents:
         graph.add_node(
             intent.id, family=INTENT_FAMILY, kind=intent.type, label=intent.statement or intent.slug,
             confidence=CONF, status=intent.status, statement=intent.statement,
             scenarios=intent.scenarios, design=intent.design, source_file=f"intents/{intent.slug}.md",
         )
+    # Second pass: an intent reversal (int → int supersedes) resolves only once every intent node
+    # exists (a successor may sort before the intent it replaces). This is the traversable edge that
+    # `superseded_by:` frontmatter alone never produced (friend-review #1).
+    for intent in intents:
+        for old in intent.supersedes:
+            if old in graph:
+                graph.add_edge(intent.id, old, relation="supersedes", confidence=CONF)
+            else:
+                _stash(graph, intent.id, "dangling_supersedes", old)
 
-    for plan in iter_plans(root):
+    plans = iter_plans(root)
+    _project_file_anchor_nodes(graph, root, plans)
+    for plan in plans:
         graph.add_node(plan.id, family=PLAN_FAMILY, kind="plan", label=plan.title,
                        confidence=CONF, phase=plan.phase)
         for task in plan.tasks:
@@ -279,6 +317,28 @@ def project_into(graph: nx.DiGraph, root: Path) -> None:
             )
             graph.add_edge(plan.id, task.id, relation="contains", confidence=CONF)
             _project_task_edges(graph, task)
+
+
+def _project_file_anchor_nodes(graph: nx.DiGraph, root: Path, plans: list[Plan]) -> None:
+    """Inject a node for each ``file:`` target a task ``implements``, carrying its current hash (#12).
+
+    The task counterpart of :func:`yigraf.memory._project_file_anchor_nodes`: an infra/glue file has
+    no extracted symbol, so we add its node with the file's current SHA-256 here — then the
+    ``implements`` edge resolves and drift compares like a symbol. A missing file stays absent → the
+    edge dangles → hard drift.
+    """
+    for plan in plans:
+        for task in plan.tasks:
+            for impl in task.implements:
+                if not impl.sym.startswith("file:") or impl.sym in graph:
+                    continue
+                current = file_content_hash(root, impl.sym)
+                if current is None:
+                    continue
+                relpath, _s, _e = parse_file_target(impl.sym)
+                graph.add_node(impl.sym, family="structure", kind="file-anchor",
+                               label=impl.sym[len("file:"):], confidence=CONF,
+                               content_hash=current, hash_algo=FILE_ANCHOR_ALGO, source_file=relpath)
 
 
 def _project_task_edges(graph: nx.DiGraph, task: Task) -> None:

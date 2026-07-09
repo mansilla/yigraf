@@ -82,6 +82,23 @@ def test_reaffirm_re_anchors_through_mcp(tmp_path: Path):
     assert "re-anchored" in out and "drift cleared" in out
 
 
+def test_supersede_intent_through_mcp(tmp_path: Path):
+    root = _repo(tmp_path)
+    assert runner.invoke(app, ["intent", "auth-aud", "--repo", str(root),
+                               "-s", "SHALL bind on aud"]).exit_code == 0
+    out = mcp_server.run_supersede_intent(str(root), "auth-aud", "auth-clientid",
+                                          "SHALL bind on client_id", why="aud absent under the target runtime")
+    assert "Superseded int:auth-aud → int:auth-clientid" in out and "supersedes" in out
+
+
+def test_file_concern_through_mcp(tmp_path: Path):
+    root = _repo(tmp_path)
+    (root / "Dockerfile").write_text('FROM python:3.11\nENTRYPOINT ["python","-m","app"]\n')
+    out = mcp_server.run_remember(str(root), "entrypoint must be exec-form",
+                                  why="signal handling", concerns=["file:Dockerfile"])
+    assert out.startswith("Captured mem:") and "file:Dockerfile" in out
+
+
 def test_multi_expands_repeatable_options():
     assert mcp_server._multi("--serves", ["int:a", "int:b"]) == ["--serves", "int:a", "--serves", "int:b"]
     assert mcp_server._multi("--concerns", None) == []
@@ -92,4 +109,5 @@ def test_build_server_registers_all_tools(tmp_path: Path):
     pytest.importorskip("mcp")  # core dep; this guards only a deps-not-synced editable checkout
     server = mcp_server.build_server(str(_repo(tmp_path)))
     names = {t.name for t in asyncio.run(server.list_tools())}
-    assert {"context", "status", "link", "remember", "note_constraint", "supersede", "reaffirm"} <= names
+    assert {"context", "status", "link", "remember", "note_constraint", "supersede", "reaffirm",
+            "supersede_intent"} <= names

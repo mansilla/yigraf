@@ -26,6 +26,9 @@ origins/
 # --- Eval harness output (captured transcripts + per-arm settings; rebuildable) ---
 scripts/eval/runs/
 
+# --- Internal drafts / blog notes (not for publication from this repo) ---
+internal/
+
 # --- Claude Code per-machine hook wiring ---
 # `yigraf install-claude-hooks` writes the absolute interpreter path into .claude/settings.local.json
 # (per-machine), which .claude/.gitignore keeps out of git. The shareable SKILL.md + AGENTS.md block

@@ -11,8 +11,8 @@ speaks, and ``yigraf install`` wires it by default — so this module's import a
 
 Read tools (``context``, ``status``) run **in-process** so the structure graph + the embedding model
 stay **warm** across calls in a session — a second ``context`` query doesn't re-pay the cold build/model
-load. Write tools (``remember``/``link``/``note_constraint``/``supersede``/``reaffirm``) run the matching CLI verb in a
-**subprocess** (arg-list, no shell): writes are rare and already rebuild the graph, and shelling out
+load. Write tools (``remember``/``link``/``note_constraint``/``supersede``/``supersede_intent``/``reaffirm``)
+run the matching CLI verb in a **subprocess** (arg-list, no shell): writes are rare and rebuild the graph, and shelling out
 reuses the CLI's dedup guard, anchoring, and exit-0 "did you mean" guidance verbatim — so the MCP write
 path can't drift from the CLI's (``mem:018``). This completes the agent loop (context → link → remember)
 on hosts with no lifecycle hook — the whole bet: one MCP surface, every vendor.
@@ -147,8 +147,19 @@ def run_supersede(repo: str | None, old_id: str, statement: str, why: str = "",
     return _run_cli("supersede", args, repo)
 
 
-def run_reaffirm(repo: str | None, mem_id: str, concerns: list[str] | None = None) -> str:
-    return _run_cli("reaffirm", [mem_id] + _multi("--concerns", concerns), repo)
+def run_reaffirm(repo: str | None, target: str, concerns: list[str] | None = None) -> str:
+    return _run_cli("reaffirm", [target] + _multi("--concerns", concerns), repo)
+
+
+def run_supersede_intent(repo: str | None, old_slug: str, new_slug: str, statement: str,
+                         why: str = "", scenario: list[str] | None = None,
+                         design: str | None = None, type: str = "requirement") -> str:
+    args = [old_slug, new_slug, "-s", statement, "--type", type] + _multi("--scenario", scenario)
+    if design:
+        args += ["--design", design]
+    if why:
+        args += ["--why", why]
+    return _run_cli("supersede-intent", args, repo)
 
 
 def build_server(default_repo: str | None = None):
@@ -190,7 +201,8 @@ def build_server(default_repo: str | None = None):
 
         Args:
             task: the task id, e.g. "task:auth/1".
-            target: a symbol "sym:<path>#<name>" (implements) or an intent "int:<slug>" (tracks).
+            target: a symbol "sym:<path>#<name>" or a file "file:<path>[:L<a>-L<b>]" (implements),
+                or an intent "int:<slug>" (tracks). Use file: for infra/glue with no code symbol.
         """
         return run_link(repo or default_repo, task, target)
 
@@ -207,7 +219,8 @@ def build_server(default_repo: str | None = None):
             statement: the decision in one line.
             why: the reasoning — what a context reset would otherwise lose.
             serves: intent/plan ids this serves, e.g. ["int:auth"].
-            concerns: symbols this governs, e.g. ["sym:auth/session.py#refresh"] (anchored).
+            concerns: symbols or files this governs, e.g. ["sym:auth/session.py#refresh",
+                "file:Dockerfile", "file:cfg.yaml:L10-L40"] (anchored; file: for infra/glue).
             rejected: the rejected alternative + why not (the most perishable content).
             type: one of decision|constraint|learning (default decision).
         """
@@ -241,7 +254,7 @@ def build_server(default_repo: str | None = None):
         return run_supersede(repo or default_repo, old_id, statement, why, serves, concerns, rejected, type)
 
     @server.tool()
-    def reaffirm(mem_id: str, concerns: list[str] | None = None, repo: str | None = None) -> str:
+    def reaffirm(target: str, concerns: list[str] | None = None, repo: str | None = None) -> str:
         """Re-verify a decision still holds and re-anchor its `concerns` to current code, clearing drift.
 
         The honest counterpart to `supersede`: when code a memory governs is edited, drift asks you to
@@ -250,10 +263,35 @@ def build_server(default_repo: str | None = None):
         (that duplicates).
 
         Args:
-            mem_id: the memory to reaffirm, e.g. "mem:022".
-            concerns: re-anchor only these symbols (default: all the node's concerns).
+            target: a memory id "mem:022" (reaffirm its concerns), OR a locus "sym:<path>#<name>" /
+                "file:<path>" (reaffirm EVERY memory concerning that locus — the scoped batch for an
+                edit-heavy session, after you verified that one locus). No blanket "clear all" exists.
+            concerns: with a mem: id, re-anchor only these loci (default: all the node's concerns).
         """
-        return run_reaffirm(repo or default_repo, mem_id, concerns)
+        return run_reaffirm(repo or default_repo, target, concerns)
+
+    @server.tool()
+    def supersede_intent(old_slug: str, new_slug: str, statement: str, why: str = "",
+                         scenario: list[str] | None = None, design: str | None = None,
+                         type: str = "requirement", repo: str | None = None) -> str:
+        """Reverse an intent: create the replacement, archive the old, write a traversable int→int edge.
+
+        Use when an intent's premise turned out false — NOT for a memory mind-change (that's `supersede`).
+        The replacement is created active with a `supersedes` edge to the old (so `context` can traverse
+        from it back to what it replaced), the old is archived, and `--why` is captured as a memory
+        serving the new intent. A changed contract is a reversal — don't hand-edit the old intent.
+
+        Args:
+            old_slug: slug of the intent being reversed (its int:<slug> is archived).
+            new_slug: slug for the replacement intent.
+            statement: the replacement's one-line SHALL/MUST contract.
+            why: why the premise changed (captured as a memory serving the new intent).
+            scenario: optional Given/When/Then examples.
+            design: optional approach / the "how".
+            type: requirement|goal|capability (default requirement).
+        """
+        return run_supersede_intent(repo or default_repo, old_slug, new_slug, statement, why,
+                                    scenario, design, type)
 
     return server
 

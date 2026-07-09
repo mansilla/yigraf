@@ -33,7 +33,7 @@ from typing import Any
 import networkx as nx
 import yaml
 
-from yigraf.astnorm import ANCHOR_ALGO
+from yigraf.astnorm import ANCHOR_ALGO, FILE_ANCHOR_ALGO, file_content_hash, parse_file_target
 
 MEMORY_FAMILY = "memory"
 CONF = "EXTRACTED"  # agent-asserted at a commit boundary, not inferred
@@ -257,7 +257,9 @@ def project_into(graph: nx.DiGraph, root: Path) -> None:
     *before* :func:`yigraf.drift.resolve_renames` so a renamed ``concerns`` target re-anchors. An
     unresolved target stashes a ``dangling_*`` marker rather than conjuring a phantom node.
     """
-    for memory in iter_memories(root):
+    memories = iter_memories(root)
+    _project_file_anchor_nodes(graph, root, memories)
+    for memory in memories:
         graph.add_node(
             memory.id,
             family=MEMORY_FAMILY,
@@ -273,6 +275,28 @@ def project_into(graph: nx.DiGraph, root: Path) -> None:
             source_file=f"memory/{memory.seq:03d}-{memory.slug}.md",
         )
         _project_memory_edges(graph, memory)
+
+
+def _project_file_anchor_nodes(graph: nx.DiGraph, root: Path, memories: list[Memory]) -> None:
+    """Inject a node for each ``file:`` target a memory ``concerns``, carrying its *current* hash (#12).
+
+    Infra/glue files (Dockerfile, buildspec, ``*.sh``) have no code symbol to anchor to, so a decision
+    about them targets ``file:<path>[:L<a>-L<b>]``. The extractor never produced such a node, so we add
+    one here with the file's current SHA-256 — then the ``concerns`` edge resolves and :mod:`yigraf.drift`
+    soft-compares the stored anchor against it, exactly as for a symbol. A missing file is left absent →
+    the edge stays dangling → hard drift, matching a gone symbol.
+    """
+    for memory in memories:
+        for concern in memory.concerns:
+            if not concern.sym.startswith("file:") or concern.sym in graph:
+                continue
+            current = file_content_hash(root, concern.sym)
+            if current is None:
+                continue  # missing file → dangling concern → hard drift (handled downstream)
+            relpath, _start, _end = parse_file_target(concern.sym)
+            graph.add_node(concern.sym, family="structure", kind="file-anchor",
+                           label=concern.sym[len("file:"):], confidence=CONF,
+                           content_hash=current, hash_algo=FILE_ANCHOR_ALGO, source_file=relpath)
 
 
 def _project_memory_edges(graph: nx.DiGraph, memory: Memory) -> None:

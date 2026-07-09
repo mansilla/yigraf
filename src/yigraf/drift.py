@@ -39,10 +39,16 @@ class DriftItem:
 
 
 def _hash_index(graph: nx.DiGraph) -> dict[str, list[str]]:
-    """Map each structure node's ``content_hash`` to the node ids that carry it (sorted)."""
+    """Map each astnorm structure node's ``content_hash`` to the node ids that carry it (sorted).
+
+    Rename re-anchoring is an astnorm-symbol concept — a moved symbol keeps its body-hash. ``file:``
+    anchor nodes (``hash_algo != astnorm-v1``) are excluded: a file doesn't "rename" by content match,
+    and its raw SHA lives in a different hash space anyway (friend-review #12).
+    """
     index: dict[str, list[str]] = {}
     for node_id, attrs in graph.nodes(data=True):
-        if attrs.get("family") == "structure" and "content_hash" in attrs:
+        if (attrs.get("family") == "structure" and "content_hash" in attrs
+                and attrs.get("hash_algo", ANCHOR_ALGO) == ANCHOR_ALGO):
             index.setdefault(attrs["content_hash"], []).append(node_id)
     for ids in index.values():
         ids.sort()
@@ -100,8 +106,12 @@ def compute_drift(graph: nx.DiGraph) -> list[DriftItem]:
             items.append(DriftItem("renamed", src, attrs["renamed_from"], new_locator=dst,
                                    relation=relation))
         anchor = attrs.get("anchor")
-        if anchor is None or attrs.get("anchor_algo") != ANCHOR_ALGO:
-            continue  # unanchored or a different algo — don't compare (R10)
+        # Compare only when the edge's anchor algo matches the target node's hash algo: preserves the
+        # astnorm-v2-bump protection (a v1 anchor never compares against a v2 hash) *and* routes a
+        # file: anchor (file-sha256-v1) only against a file node's raw SHA (#12). Symbol nodes carry no
+        # hash_algo, so they default to astnorm-v1 — the original R10 behavior, unchanged.
+        if anchor is None or attrs.get("anchor_algo") != graph.nodes[dst].get("hash_algo", ANCHOR_ALGO):
+            continue
         current = graph.nodes[dst].get("content_hash")
         if current is not None and current != anchor:
             items.append(DriftItem("soft", src, dst, detail="body changed since anchored",

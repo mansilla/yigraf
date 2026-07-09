@@ -17,7 +17,7 @@ from typing import NoReturn
 import typer
 
 from yigraf import __version__, artifacts, counters, embeddings, memory, retrieval, status, update
-from yigraf.astnorm import ANCHOR_ALGO
+from yigraf.astnorm import ANCHOR_ALGO, FILE_ANCHOR_ALGO, file_content_hash, parse_file_target
 from yigraf.config import load_config
 from yigraf.drift import compute_drift
 from yigraf.extract import build_graph, symbol_content_hash
@@ -56,11 +56,30 @@ def _symbol_suggestion(graph, target: str) -> str:
     return f' Run `yigraf context "{name}"` to find its locator.'
 
 
-def _anchor_or_guide(repo: Path, config: dict, target: str) -> str:
-    """Stamp the astnorm anchor for ``target``; if it's unresolved, emit a 'did you mean' and exit 0."""
+def _anchor_or_guide(repo: Path, config: dict, target: str) -> tuple[str, str]:
+    """Stamp the ``(anchor, algo)`` for a ``sym:`` or ``file:`` target; unresolved → guidance, exit 0.
+
+    A ``file:<path>[:L<a>-L<b>]`` target (friend-review #12) hashes the file bytes (or line slice) with
+    ``FILE_ANCHOR_ALGO`` — for infra/glue files with no code symbol. A ``sym:`` target keeps the astnorm
+    anchor. The returned algo travels with the anchor so drift compares like against like.
+    """
+    if target.startswith("file:"):
+        relpath, start, _end = parse_file_target(target)
+        # A whole-file file: anchor on an *indexed* code file would collide with the extractor's own
+        # astnorm file node and silently never drift — steer to a symbol or a line range instead. A
+        # line range (start set) is fine: it's a distinct node the extractor never made.
+        if start is None and Path(relpath).suffix in extension_map(available_extractors(config)):
+            _guidance(f"{relpath} is indexed as code, so a whole-file `file:` anchor would silently "
+                      f"never drift. Anchor a symbol (sym:{relpath}#<name>) or a line range "
+                      f"(file:{relpath}:L<a>-L<b>) instead. `file:` is for infra/glue with no symbols.")
+        anchor = file_content_hash(repo, target)
+        if anchor is not None:
+            return anchor, FILE_ANCHOR_ALGO
+        _guidance(f"Couldn't find the file for {target} — expected file:<path>[:L<a>-L<b>] relative to "
+                  f"the repo root. Check the path exists and is spelled relative to {repo}.")
     anchor = symbol_content_hash(repo, target, config)
     if anchor is not None:
-        return anchor
+        return anchor, ANCHOR_ALGO
     graph, _ = build_graph(repo, config)
     _guidance(f"Couldn't find {target} in the current source." + _symbol_suggestion(graph, target))
 
@@ -196,24 +215,92 @@ def _known_plans(workspace: Path) -> list[str]:
 @app.command()
 def intent(
     slug: str = typer.Argument(..., help="Slug for the intent file (intents/<slug>.md)."),
-    statement: str = typer.Option(..., "--statement", "-s", help="One-line SHALL/MUST contract."),
+    statement: str = typer.Option(None, "--statement", "-s", help="One-line SHALL/MUST contract (required for a new intent)."),
     scenario: list[str] = typer.Option(None, "--scenario", help="A Given/When/Then example (repeatable)."),
     design: str = typer.Option(None, "--design", help="Optional approach / the 'how'."),
     type: str = typer.Option("requirement", "--type", help="requirement | goal | capability."),
-    status: str = typer.Option("proposed", "--status", help="proposed | active | satisfied | archived."),
+    status: str = typer.Option(None, "--status", help="proposed | active | satisfied | archived (default proposed on create)."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
-    """Create an intent artifact (statement + scenarios + optional design)."""
+    """Create an intent artifact — or, if it already exists, update its ``--status`` in place.
+
+    An existing intent isn't clobbered: without ``--status`` we still refuse (the anti-clobber guard),
+    but ``yigraf intent <slug> --status archived`` retires or re-activates it without a hand-edit —
+    the one intent-evolution path that isn't a full reversal (friend-review #2). A *changed contract*
+    is a reversal: use ``yigraf supersede-intent`` so the replacement links back to what it replaced.
+    """
+    if status is not None and status not in artifacts.INTENT_STATUSES:
+        _guidance(f"--status must be one of {', '.join(artifacts.INTENT_STATUSES)} (got {status}).")
     workspace = _require_workspace(repo)
     dest = workspace / "intents" / f"{slug}.md"
+
     if dest.exists():
-        _guidance(f"Intent int:{slug.casefold()} already exists ({dest}). Edit it directly, or pick a new slug.")
+        if status is None:
+            _guidance(f"Intent int:{slug.casefold()} already exists ({dest}). To retire/reactivate it, "
+                      f"`yigraf intent {slug} --status archived`; to reverse its contract, "
+                      f'`yigraf supersede-intent {slug} <new-slug> -s "<new contract>"`.')
+        artifacts.update_intent_frontmatter(dest, status=status)
+        _rebuild(repo)
+        typer.echo(f"Updated intent int:{slug.casefold()} → status={status} ({dest})")
+        return
+
+    if not statement:
+        _guidance(f"No intent int:{slug.casefold()} yet, so --statement is required to create it.")
     dest.write_text(
-        artifacts.render_intent(slug, statement, scenario or [], design, type=type, status=status),
+        artifacts.render_intent(slug, statement, scenario or [], design, type=type,
+                                status=status or "proposed"),
         encoding="utf-8",
     )
     _rebuild(repo)
     typer.echo(f"Created intent int:{slug.casefold()} ({dest})")
+
+
+@app.command(name="supersede-intent")
+def supersede_intent(
+    old_slug: str = typer.Argument(..., help="The intent slug being reversed (its int:<slug> is archived)."),
+    new_slug: str = typer.Argument(..., help="Slug for the replacement intent (intents/<new>.md)."),
+    statement: str = typer.Option(..., "--statement", "-s", help="The replacement's one-line SHALL/MUST contract."),
+    scenario: list[str] = typer.Option(None, "--scenario", help="A Given/When/Then example (repeatable)."),
+    design: str = typer.Option(None, "--design", help="Optional approach / the 'how'."),
+    type: str = typer.Option("requirement", "--type", help="requirement | goal | capability."),
+    why: str = typer.Option("", "--why", help="Why the premise changed — captured as a memory serving the new intent."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Reverse an intent: create the replacement, archive the old, and write a real int→int supersedes edge.
+
+    The most important decision class — a reversal — was the one the graph couldn't represent
+    structurally (``supersede`` took ``mem:`` only; ``superseded_by:`` frontmatter produced 0 edges).
+    This creates ``int:<new>`` with a ``supersedes: [int:<old>]`` field (the traversable edge), flips
+    ``int:<old>`` to ``archived`` (stamping ``superseded_by`` for legibility), and — given ``--why`` —
+    captures the reversal's rationale as a memory serving the new intent (the perishable *why*).
+    """
+    if type not in artifacts.INTENT_TYPES:
+        _guidance(f"--type must be one of {', '.join(artifacts.INTENT_TYPES)} (got {type}).")
+    workspace = _require_workspace(repo)
+    old_id, new_id = f"int:{old_slug.casefold()}", f"int:{new_slug.casefold()}"
+    old_dest = workspace / "intents" / f"{old_slug}.md"
+    new_dest = workspace / "intents" / f"{new_slug}.md"
+
+    if not old_dest.exists():
+        _guidance(f"No intent {old_id} to supersede ({old_dest} not found). "
+                  f'Find it with `yigraf context "<topic>" --family intent`.')
+    if new_dest.exists():
+        _guidance(f"Intent {new_id} already exists ({new_dest}). Pick a different new slug.")
+
+    new_dest.write_text(
+        artifacts.render_intent(new_slug, statement, scenario or [], design, type=type,
+                                status="active", supersedes=[old_id]),
+        encoding="utf-8",
+    )
+    artifacts.update_intent_frontmatter(old_dest, status="archived", superseded_by=new_id)
+    _rebuild(repo)
+    typer.echo(f"Superseded {old_id} → {new_id} (old archived; {new_id} —supersedes→ {old_id})")
+
+    if why:
+        node = _capture_memory(repo, workspace, statement=f"{new_id} supersedes {old_id}", type_="decision",
+                               why=why, serves=[new_id], concern_syms=[], rejected=None,
+                               supersedes=[], promotable=False, force_new=True)
+        _report_capture(node)
 
 
 @app.command()
@@ -256,17 +343,17 @@ def link(
         ids = ", ".join(t.id for t in tasks) or "(none)"
         _guidance(f"{task_id} is not a task in {plan_file.name}. Tasks there: {ids}.")
 
-    if target.startswith("sym:"):
+    if target.startswith("sym:") or target.startswith("file:"):
         config = load_config(workspace / "config.yaml")
-        anchor = _anchor_or_guide(repo, config, target)
-        artifacts.add_edge_to_plan(plan_file, task_id, "implements", target, anchor=anchor)
+        anchor, algo = _anchor_or_guide(repo, config, target)
+        artifacts.add_edge_to_plan(plan_file, task_id, "implements", target, anchor=anchor, anchor_algo=algo)
         typer.echo(f"Linked {task_id} —implements→ {target} (anchored {anchor[:12]})")
     elif target.startswith("int:"):
         artifacts.add_edge_to_plan(plan_file, task_id, "tracks", target)
         typer.echo(f"Linked {task_id} —tracks→ {target}")
     else:
-        _guidance("Target must be a symbol (sym:<path>#<name>) → implements, or an intent "
-                  f"(int:<slug>) → tracks. Got: {target}")
+        _guidance("Target must be a symbol (sym:<path>#<name>) or file (file:<path>[:L<a>-L<b>]) → "
+                  f"implements, or an intent (int:<slug>) → tracks. Got: {target}")
 
     _rebuild(repo)
 
@@ -276,10 +363,11 @@ def _resolve_concerns(repo: Path, workspace: Path, syms: list[str]) -> list[memo
     config = load_config(workspace / "config.yaml")
     concerns: list[memory.Concern] = []
     for sym in syms:
-        if not sym.startswith("sym:"):
-            _guidance(f"--concerns must be a symbol (sym:<path>#<name>), got: {sym}")
-        anchor = _anchor_or_guide(repo, config, sym)
-        concerns.append(memory.Concern(sym=sym, anchor=anchor, anchor_algo=ANCHOR_ALGO))
+        if not (sym.startswith("sym:") or sym.startswith("file:")):
+            _guidance(f"--concerns must be a symbol (sym:<path>#<name>) or a file "
+                      f"(file:<path>[:L<a>-L<b>], for infra/glue with no symbol), got: {sym}")
+        anchor, algo = _anchor_or_guide(repo, config, sym)
+        concerns.append(memory.Concern(sym=sym, anchor=anchor, anchor_algo=algo))
     return concerns
 
 
@@ -397,62 +485,114 @@ def supersede(
     _report_capture(node)
 
 
-@app.command()
-def reaffirm(
-    mem_id: str = typer.Argument(..., help="The memory id to reaffirm, e.g. mem:022."),
-    concerns: list[str] = typer.Option(None, "--concerns", help="Re-anchor only these symbols (default: all the node's concerns)."),
-    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
-) -> None:
-    """Re-verify a decision still holds and re-stamp its ``concerns`` anchors to the current code.
+def _reaffirm_concerns(repo: Path, config: dict, node: memory.Memory,
+                       only: set[str]) -> tuple[list[str], list[str]]:
+    """Re-stamp a memory's matching ``concerns`` anchors to current content; return ``(restamped, gone)``.
 
-    The honest counterpart to ``supersede``: when a symbol a memory ``concerns`` is edited, drift fires
-    ("body changed since anchored") to force a re-verify — but if the decision still holds, there was no
-    mind-change to ``supersede`` and re-``remember`` would only duplicate. ``reaffirm`` records the
-    re-verification by re-stamping the anchor to the symbol's current content, clearing the drift
-    in-place (edit-in-place is safe here: no claim changes, only the anchor advances). Mirrors how
-    ``link`` re-stamps a task's ``implements`` anchor — the same fix, for a memory's ``concerns`` edge.
+    Mutates ``node`` in place (the caller writes it). ``only`` restricts which concern loci are touched
+    (empty ⇒ all). A gone symbol/file is left un-restamped (hard drift, not a reaffirm) and reported so
+    rename re-anchoring still works. Shared by both reaffirm forms (single-node and locus-scoped).
     """
-    workspace = _require_workspace(repo)
-    path = memory.find_memory(repo, mem_id)
-    if path is None:
-        _guidance(f"No memory node with id {mem_id} to reaffirm. "
-                  f'Find the decision you mean with `yigraf context "<topic>"`.')
-    node = memory.read_memory(path)
-    if not node.concerns:
-        _guidance(f"{mem_id} concerns no symbol, so it carries no anchor to reaffirm "
-                  f"(only a `concerns sym:...` edge drifts). Nothing to do.")
-
-    only = set(concerns or [])
-    if only:
-        unknown = only - {c.sym for c in node.concerns}
-        if unknown:
-            _guidance(f"{mem_id} doesn't concern {', '.join(sorted(unknown))}. "
-                      f"It concerns: {', '.join(c.sym for c in node.concerns)}.")
-
-    config = load_config(workspace / "config.yaml")
     restamped, gone = [], []
     for c in node.concerns:
         if only and c.sym not in only:
             continue
-        fresh = symbol_content_hash(repo, c.sym, config)
-        if fresh is None:  # a gone symbol is hard drift, not a reaffirm — keep its anchor for rename match
+        if c.sym.startswith("file:"):
+            fresh, algo = file_content_hash(repo, c.sym), FILE_ANCHOR_ALGO
+        else:
+            fresh, algo = symbol_content_hash(repo, c.sym, config), ANCHOR_ALGO
+        if fresh is None:  # a gone symbol/file is hard drift, not a reaffirm — keep anchor for rename match
             gone.append(c.sym)
             continue
         if fresh != c.anchor:
             restamped.append(c.sym)
-        c.anchor, c.anchor_algo = fresh, ANCHOR_ALGO
+        c.anchor, c.anchor_algo = fresh, algo
+    return restamped, gone
 
-    path.write_text(memory.render_memory(node), encoding="utf-8")
+
+@app.command()
+def reaffirm(
+    target: str = typer.Argument(..., help="A memory id (mem:NNN → reaffirm its concerns) or a locus (sym:<path>#<name> or file:<path> → reaffirm every memory concerning it)."),
+    concerns: list[str] = typer.Option(None, "--concerns", help="With a mem: id, re-anchor only these loci (default: all the node's concerns)."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Re-verify a decision still holds and re-stamp its ``concerns`` anchors to the current code.
+
+    The honest counterpart to ``supersede``: when a locus a memory ``concerns`` is edited, drift fires
+    ("body changed since anchored") to force a re-verify — but if the decision still holds, there was no
+    mind-change to ``supersede`` and re-``remember`` would only duplicate. ``reaffirm`` records the
+    re-verification by re-stamping the anchor to the locus's current content, clearing the drift
+    in-place (no claim changes, only the anchor advances). Mirrors how ``link`` re-stamps a task's
+    ``implements`` anchor.
+
+    Two forms: ``reaffirm mem:<id>`` reaffirms one memory's concerns; ``reaffirm <sym|file>`` reaffirms
+    **every** memory concerning that locus — the honest batch for an edit-heavy session, scoped to a
+    locus you actually re-verified. There is deliberately no blanket "clear all drift" (that would
+    rubber-stamp decisions you never re-checked — the dishonesty ``reaffirm`` exists to avoid; mem:031).
+    """
+    workspace = _require_workspace(repo)
+    config = load_config(workspace / "config.yaml")
+
+    if target.startswith("mem:"):
+        path = memory.find_memory(repo, target)
+        if path is None:
+            _guidance(f"No memory node with id {target} to reaffirm. "
+                      f'Find the decision you mean with `yigraf context "<topic>"`.')
+        node = memory.read_memory(path)
+        if not node.concerns:
+            _guidance(f"{target} concerns no symbol/file, so it carries no anchor to reaffirm. Nothing to do.")
+        only = set(concerns or [])
+        unknown = only - {c.sym for c in node.concerns}
+        if unknown:
+            _guidance(f"{target} doesn't concern {', '.join(sorted(unknown))}. "
+                      f"It concerns: {', '.join(c.sym for c in node.concerns)}.")
+        restamped, gone = _reaffirm_concerns(repo, config, node, only)
+        path.write_text(memory.render_memory(node), encoding="utf-8")
+        _rebuild(repo)
+        if restamped:
+            typer.echo(f"Reaffirmed {target}: re-anchored {', '.join(restamped)} to current code — drift cleared.")
+        elif not gone:
+            typer.echo(f"Reaffirmed {target}: anchors already matched the current code (no drift to clear).")
+        if gone:
+            typer.echo(f"⚠ {target} concerns {', '.join(gone)}, which no longer resolve(s) in the source — "
+                       f"reaffirm can't re-anchor a gone locus. If the decision moved, "
+                       f'`yigraf supersede {target} "<restated>" --concerns <new>`.')
+        return
+
+    if not (target.startswith("sym:") or target.startswith("file:")):
+        _guidance(f"reaffirm takes a memory id (mem:NNN) or a locus (sym:<path>#<name> or file:<path>), "
+                  f"got: {target}")
+    if concerns:
+        _guidance("--concerns filters a single mem: node; with a locus the locus IS the filter — drop --concerns.")
+
+    # Locus-scoped batch: reaffirm the target's anchor on *every* memory that concerns it (you verified
+    # this one locus, so reaffirming its decisions is a bounded, honest act — not a blanket sweep).
+    matched, restamped_ids, gone_ids = 0, [], []
+    for node in memory.iter_memories(repo):
+        if target not in {c.sym for c in node.concerns}:
+            continue
+        matched += 1
+        restamped, gone = _reaffirm_concerns(repo, config, node, {target})
+        if restamped or gone:
+            memory.memory_path(repo, node.seq, node.slug).write_text(
+                memory.render_memory(node), encoding="utf-8")
+        if restamped:
+            restamped_ids.append(node.id)
+        if gone:
+            gone_ids.append(node.id)
+    if matched == 0:
+        _guidance(f"No memory concerns {target} — nothing to reaffirm. "
+                  f'Anchor one with `yigraf remember "…" --concerns {target}`.')
     _rebuild(repo)
-
-    if restamped:
-        typer.echo(f"Reaffirmed {mem_id}: re-anchored {', '.join(restamped)} to current code — drift cleared.")
-    elif not gone:
-        typer.echo(f"Reaffirmed {mem_id}: anchors already matched the current code (no drift to clear).")
-    if gone:
-        typer.echo(f"⚠ {mem_id} concerns {', '.join(gone)}, which no longer resolve(s) in the source — "
-                   f"reaffirm can't re-anchor a gone symbol. If the decision moved, "
-                   f'`yigraf supersede {mem_id} "<restated>" --concerns <new-sym>`.')
+    if restamped_ids:
+        typer.echo(f"Reaffirmed {len(restamped_ids)} memory(ies) concerning {target} — drift cleared: "
+                   f"{', '.join(restamped_ids)}.")
+    elif not gone_ids:
+        typer.echo(f"Reaffirmed {matched} memory(ies) concerning {target}: anchors already matched "
+                   f"the current code (no drift to clear).")
+    if gone_ids:
+        typer.echo(f"⚠ {target} no longer resolves in the source (concerned by {', '.join(gone_ids)}) — "
+                   f"hard drift, not a reaffirm; if it moved, supersede those memories to the new locus.")
 
 
 @app.command()

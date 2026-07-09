@@ -144,6 +144,7 @@ plus the rejected option is enough; capture at the *conclusion*, not mid-thinkin
   candidate to promote into an enforced check).
 - Changed your mind? Never edit a decision in place — `yigraf supersede mem:<id> "<new decision>" --why "<what changed>"`. The old one stays as a rejected alternative.
 - Decision still holds after you edited the code it governs? `yigraf reaffirm mem:<id>` — re-stamps the anchor and clears the drift (the honest counterpart to `supersede`: don't re-`remember`, that duplicates).
+- Governing an infra/glue file with **no code symbol** (Dockerfile, buildspec, `*.sh`, `*.json`)? Anchor to the file: `--concerns file:<path>` (whole file), or `--concerns file:<path>:L10-L40` for a line range — region-scoped, so an unrelated edit elsewhere in the file doesn't drift it. `sym:` is for code; `file:` is for everything else. (A whole-file `file:` anchor on *indexed code* is refused — use a symbol or a line range there.)
 
 A `--concerns` link is **anchored** like `implements`: edit that code later and yigraf surfaces a
 "re-verify this decision still holds" reconcile. That's the payoff — the next agent to touch the code
@@ -160,7 +161,20 @@ symbol's body changed) or hard drift (it's gone), for both `implements` (task→
 (decision→code) links. A pure rename auto-re-anchors. When drift surfaces, re-verify the code still
 satisfies the spec/decision, then re-anchor: `yigraf link task:<id> sym:…` for a task's `implements`,
 `yigraf reaffirm mem:<id>` for a decision's `concerns` that still holds (or `supersede` it if your mind
-changed). (`yigraf drift` exits non-zero on drift — that's the commit/CI gate, not something you poll.)
+changed). After an edit-heavy session that drifted many decisions on one locus, `yigraf reaffirm
+<sym|file>` reaffirms **every** memory concerning that locus in one call — scoped to a locus you
+actually re-verified (there's no blanket "clear all drift" — that would rubber-stamp). (`yigraf drift`
+exits non-zero on drift — that's the commit/CI gate, not something you poll.)
+
+## 5. Evolve an intent (retire or reverse a spec)
+Specs change too — but **never hand-edit a superseded intent into place**; use one of two supported paths:
+- **Retire / reactivate** (obsolete, no replacement): `yigraf intent <slug> --status archived` (or
+  `active` / `satisfied`). The contract text is left untouched — no clobber.
+- **Reverse** (the premise turned out false): `yigraf supersede-intent <old-slug> <new-slug> -s "<new
+  SHALL contract>" --why "<what changed>"`. This creates the replacement (active), archives the old, and
+  writes a real `int→int` **supersedes** edge — so `context` can traverse from the replacement back to
+  what it replaced (a bare `superseded_by:` line would be invisible to the graph). The `--why` is
+  captured as a memory serving the new intent — the perishable reason the reversal happened.
 """
 
 _AGENTS_BLOCK = f"""{_AGENTS_START}
