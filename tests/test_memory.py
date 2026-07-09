@@ -50,7 +50,7 @@ def _graph(root: Path):
 
 def _remember(root: Path, statement: str, **opts) -> None:
     args = ["remember", statement, "--repo", str(root)]
-    for key in ("type", "why", "rejected"):
+    for key in ("type", "why", "rejected", "grounding"):
         if key in opts:
             args += [f"--{key}", opts[key]]
     for target in opts.get("serves", []):
@@ -255,7 +255,7 @@ def test_context_renders_the_decision_with_its_why(tmp_path: Path):
     graph, _ = build_graph(root, default_config())
     result = retrieval.context(graph, "optimistic locking refresh", default_config())
     assert "Decisions (why):" in result.text
-    assert "mem:001 [decision]" in result.text
+    assert "mem:001 [decision·inferred]" in result.text  # grounding rides the tag (C#6, default inferred)
     assert "why: refresh path is hot" in result.text
 
 
@@ -277,3 +277,60 @@ def test_next_seq_increments_across_captures(tmp_path: Path):
     assert memory.next_seq(root) == 2
     _remember(root, "second")
     assert memory.next_seq(root) == 3
+
+
+# --------------------------------------------------------------------------------------------------
+# Grounding axis (int:memory-grounding, C#6): inferred | docs | empirical, orthogonal to maturity.
+# --------------------------------------------------------------------------------------------------
+
+
+def test_grounding_defaults_to_inferred_and_round_trips(tmp_path: Path):
+    root = _repo(tmp_path)
+    _remember(root, "a reasoned guess")
+    mem = memory.read_memory(memory.find_memory(root, "mem:001"))
+    assert mem.grounding == "inferred"  # default: an agent assertion is not yet evidence-backed
+    assert _graph(root).nodes["mem:001"]["grounding"] == "inferred"
+
+
+def test_grounding_override_persists(tmp_path: Path):
+    root = _repo(tmp_path)
+    _remember(root, "confirmed by a live spike", grounding="empirical")
+    assert memory.read_memory(memory.find_memory(root, "mem:001")).grounding == "empirical"
+
+
+def test_invalid_grounding_is_guided_not_crashed(tmp_path: Path):
+    root = _repo(tmp_path)
+    result = runner.invoke(app, ["remember", "x", "--repo", str(root), "--grounding", "hunch"])
+    assert result.exit_code == 0  # design-law #1: recoverable → exit 0 with guidance, not a stack trace
+    assert "--grounding must be one of" in result.output
+    assert memory.find_memory(root, "mem:001") is None  # nothing was written
+
+
+def test_context_shows_grounding_tag(tmp_path: Path):
+    root = _repo(tmp_path)
+    _remember(root, "empirical decision", grounding="empirical",
+              serves=["int:session-expiry"], concerns=[SYM])
+    graph, _ = build_graph(root, default_config())
+    result = retrieval.context(graph, "empirical decision", default_config())
+    assert "mem:001 [decision·empirical]" in result.text
+
+
+def test_context_grounding_filter_drops_other_tiers(tmp_path: Path):
+    root = _repo(tmp_path)
+    _remember(root, "an inferred belief", concerns=[SYM])  # inferred (default)
+    _remember(root, "an empirical belief", grounding="empirical", concerns=[SYM])
+    graph, _ = build_graph(root, default_config())
+    result = retrieval.context(graph, "belief", default_config(), grounding="empirical")
+    assert "an empirical belief" in result.text
+    assert "an inferred belief" not in result.text  # filtered out; only the empirical tier remains
+
+
+def test_reaffirm_upgrades_grounding_in_place(tmp_path: Path):
+    root = _repo(tmp_path)
+    _remember(root, "inferred then confirmed", concerns=[SYM])
+    assert memory.read_memory(memory.find_memory(root, "mem:001")).grounding == "inferred"
+    res = _run(["reaffirm", "mem:001", "--repo", str(root), "--grounding", "empirical"])
+    assert "grounding inferred → empirical" in res.output
+    # the claim is unchanged (no supersede), only the epistemic status advanced — still mem:001, active
+    mem = memory.read_memory(memory.find_memory(root, "mem:001"))
+    assert mem.grounding == "empirical" and mem.statement == "inferred then confirmed"

@@ -116,39 +116,51 @@ def run_link(repo: str | None, task: str, target: str) -> str:
 
 def run_remember(repo: str | None, statement: str, why: str = "", serves: list[str] | None = None,
                  concerns: list[str] | None = None, rejected: str | None = None,
-                 type: str = "decision") -> str:
+                 type: str = "decision", grounding: str | None = None) -> str:
     args = [statement, "--type", type]
     if why:
         args += ["--why", why]
     args += _multi("--serves", serves) + _multi("--concerns", concerns)
     if rejected:
         args += ["--rejected", rejected]
+    if grounding:
+        args += ["--grounding", grounding]
     return _run_cli("remember", args, repo)
 
 
 def run_note_constraint(repo: str | None, rule: str, concerns: list[str] | None = None,
-                        why: str = "", serves: list[str] | None = None) -> str:
+                        why: str = "", serves: list[str] | None = None,
+                        grounding: str | None = None) -> str:
     args = [rule] + _multi("--concerns", concerns)
     if why:
         args += ["--why", why]
     args += _multi("--serves", serves)
+    if grounding:
+        args += ["--grounding", grounding]
     return _run_cli("note-constraint", args, repo)
 
 
 def run_supersede(repo: str | None, old_id: str, statement: str, why: str = "",
                   serves: list[str] | None = None, concerns: list[str] | None = None,
-                  rejected: str | None = None, type: str = "decision") -> str:
+                  rejected: str | None = None, type: str = "decision",
+                  grounding: str | None = None) -> str:
     args = [old_id, statement, "--type", type]
     if why:
         args += ["--why", why]
     args += _multi("--serves", serves) + _multi("--concerns", concerns)
     if rejected:
         args += ["--rejected", rejected]
+    if grounding:
+        args += ["--grounding", grounding]
     return _run_cli("supersede", args, repo)
 
 
-def run_reaffirm(repo: str | None, target: str, concerns: list[str] | None = None) -> str:
-    return _run_cli("reaffirm", [target] + _multi("--concerns", concerns), repo)
+def run_reaffirm(repo: str | None, target: str, concerns: list[str] | None = None,
+                 grounding: str | None = None) -> str:
+    args = [target] + _multi("--concerns", concerns)
+    if grounding:
+        args += ["--grounding", grounding]
+    return _run_cli("reaffirm", args, repo)
 
 
 def run_supersede_intent(repo: str | None, old_slug: str, new_slug: str, statement: str,
@@ -189,7 +201,11 @@ def build_server(default_repo: str | None = None):
     @server.tool()
     def status(repo: str | None = None) -> str:
         """A compact status line for the yigraf graph: counts (symbols/intents/tasks/decisions),
-        drift count, freshness (committed graph.json vs source), and the semantic index size."""
+        drift count, freshness (committed graph.json vs source), and the semantic index size.
+
+        Note: `sem N` counts only the embedded families — memory + intent nodes — not the whole graph
+        (code is never embedded; retrieval-design §10). So `sem` staying flat while `sym` grows is
+        expected, not a stale index: it tracks decisions/intents, which change far less than code."""
         return run_status(repo or default_repo)
 
     @server.tool()
@@ -209,7 +225,8 @@ def build_server(default_repo: str | None = None):
     @server.tool()
     def remember(statement: str, why: str = "", serves: list[str] | None = None,
                  concerns: list[str] | None = None, rejected: str | None = None,
-                 type: str = "decision", repo: str | None = None) -> str:
+                 type: str = "decision", grounding: str | None = None,
+                 repo: str | None = None) -> str:
         """Persist a non-obvious decision/rationale as a durable memory node — the *why* a reset loses.
 
         Capture at a conclusion (a chosen approach, a worked-around constraint), not mid-thinking. A
@@ -223,12 +240,17 @@ def build_server(default_repo: str | None = None):
                 "file:Dockerfile", "file:cfg.yaml:L10-L40"] (anchored; file: for infra/glue).
             rejected: the rejected alternative + why not (the most perishable content).
             type: one of decision|constraint|learning (default decision).
+            grounding: how the belief is grounded — inferred|docs|empirical (default inferred). Use
+                empirical when a live observation (a spike/test/prod signal) confirmed it; inferred
+                beliefs surface as re-verify TODOs in `context`.
         """
-        return run_remember(repo or default_repo, statement, why, serves, concerns, rejected, type)
+        return run_remember(repo or default_repo, statement, why, serves, concerns, rejected, type,
+                            grounding)
 
     @server.tool()
     def note_constraint(rule: str, concerns: list[str] | None = None, why: str = "",
-                        serves: list[str] | None = None, repo: str | None = None) -> str:
+                        serves: list[str] | None = None, grounding: str | None = None,
+                        repo: str | None = None) -> str:
         """Capture a constraint/rule governing code (flagged as a candidate to promote to a check).
 
         Args:
@@ -236,25 +258,29 @@ def build_server(default_repo: str | None = None):
             concerns: symbols it governs, e.g. ["sym:path.py#fn"] (anchored).
             why: why the rule exists.
             serves: intent/plan ids it serves.
+            grounding: inferred|docs|empirical (default inferred) — see `remember`.
         """
-        return run_note_constraint(repo or default_repo, rule, concerns, why, serves)
+        return run_note_constraint(repo or default_repo, rule, concerns, why, serves, grounding)
 
     @server.tool()
     def supersede(old_id: str, statement: str, why: str = "", serves: list[str] | None = None,
                   concerns: list[str] | None = None, rejected: str | None = None,
-                  type: str = "decision", repo: str | None = None) -> str:
+                  type: str = "decision", grounding: str | None = None,
+                  repo: str | None = None) -> str:
         """Record a mind-change: a new memory node that supersedes an old one (never edit in place).
 
         Args:
             old_id: the memory being superseded, e.g. "mem:007".
             statement: the new decision in one line.
             why: what changed.
-            serves/concerns/rejected/type: as for `remember`.
+            serves/concerns/rejected/type/grounding: as for `remember`.
         """
-        return run_supersede(repo or default_repo, old_id, statement, why, serves, concerns, rejected, type)
+        return run_supersede(repo or default_repo, old_id, statement, why, serves, concerns, rejected,
+                            type, grounding)
 
     @server.tool()
-    def reaffirm(target: str, concerns: list[str] | None = None, repo: str | None = None) -> str:
+    def reaffirm(target: str, concerns: list[str] | None = None, grounding: str | None = None,
+                 repo: str | None = None) -> str:
         """Re-verify a decision still holds and re-anchor its `concerns` to current code, clearing drift.
 
         The honest counterpart to `supersede`: when code a memory governs is edited, drift asks you to
@@ -267,8 +293,10 @@ def build_server(default_repo: str | None = None):
                 "file:<path>" (reaffirm EVERY memory concerning that locus — the scoped batch for an
                 edit-heavy session, after you verified that one locus). No blanket "clear all" exists.
             concerns: with a mem: id, re-anchor only these loci (default: all the node's concerns).
+            grounding: with a mem: id, upgrade its grounding in place (e.g. inferred→empirical when a
+                live spike just confirmed the decision).
         """
-        return run_reaffirm(repo or default_repo, target, concerns)
+        return run_reaffirm(repo or default_repo, target, concerns, grounding)
 
     @server.tool()
     def supersede_intent(old_slug: str, new_slug: str, statement: str, why: str = "",

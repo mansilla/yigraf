@@ -197,3 +197,32 @@ def test_capture_gap_is_scoped_to_the_query_in_context(tmp_path: Path):
     _done_unlinked_task(root)
     assert "task:cleanup/1 is done" in _ctx(root, "cleanup").text          # in scope → surfaced
     assert "task:cleanup/1 is done" not in _ctx(root, "session expiry").text  # unrelated → silent
+
+
+# --------------------------------------------------------------------------------------------------
+# Relevance legibility (C#8): low-confidence banner + opt-in per-node cosine.
+# --------------------------------------------------------------------------------------------------
+
+
+def test_relevance_note_fires_below_floor():
+    """A semantic backend ran but nothing cleared the floor → a one-line honesty banner."""
+    note = retrieval._relevance_note({"mem:001": 0.21}, "unrelated query", default_config())
+    assert note is not None and "low confidence" in note and "unrelated query" in note
+
+
+def test_relevance_note_silent_above_floor_and_without_backend():
+    """Silent (None) when something matched strongly, and when there was no backend at all (design #4)."""
+    assert retrieval._relevance_note({"mem:001": 0.72}, "q", default_config()) is None
+    assert retrieval._relevance_note({}, "q", default_config()) is None  # no backend ⇒ can't cry wolf
+
+
+def test_scores_flag_appends_cosine(tmp_path: Path):
+    """`show_scores` appends the per-node cosine; off by default (token-thrift)."""
+    root = _repo(tmp_path)
+    graph, _ = build_graph(root, default_config())
+    sem = {"int:session-expiry": 0.71}  # above the relevance floor → no banner muddying the assertion
+    with_scores = retrieval.context(graph, "session expiry", default_config(),
+                                    semantic_match=sem, show_scores=True)
+    assert "[sim 0.71]" in with_scores.text
+    without = retrieval.context(graph, "session expiry", default_config(), semantic_match=sem)
+    assert "[sim" not in without.text

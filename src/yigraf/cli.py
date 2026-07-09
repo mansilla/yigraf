@@ -394,10 +394,16 @@ def _dedup_guard(repo: Path, config: dict, statement: str, why: str,
 
 def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, why: str,
                     serves: list[str], concern_syms: list[str], rejected: str | None,
-                    supersedes: list[str], promotable: bool, force_new: bool = False) -> memory.Memory:
+                    supersedes: list[str], promotable: bool, force_new: bool = False,
+                    grounding: str | None = None) -> memory.Memory:
     """Write a new memory artifact, then rebuild graph.json. Shared by remember/supersede/note-constraint."""
     if type_ not in memory.MEMORY_TYPES:
         _guidance(f"--type must be one of {', '.join(memory.MEMORY_TYPES)} (got {type_}).")
+    grounding = grounding or memory.DEFAULT_GROUNDING
+    if grounding not in memory.GROUNDINGS:
+        _guidance(f"--grounding must be one of {', '.join(memory.GROUNDINGS)} (got {grounding}). "
+                  f"inferred = a reasoned assertion; docs = distilled from written rationale; "
+                  f"empirical = confirmed by a live observation (a spike/test/prod signal).")
 
     concerns = _resolve_concerns(repo, workspace, concern_syms)
     # A supersede is a deliberate mind-change (it *should* resemble its predecessor) → skip the guard.
@@ -408,7 +414,7 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
     node = memory.Memory(
         id=f"mem:{seq:03d}", seq=seq, slug=slug, type=type_, statement=statement, why=why,
         alternatives=rejected, serves=list(serves), concerns=concerns, supersedes=list(supersedes),
-        promotable=promotable, provenance={"source": "cli"},
+        grounding=grounding, promotable=promotable, provenance={"source": "cli"},
     )
     dest = memory.memory_path(repo, seq, slug)
     dest.write_text(memory.render_memory(node), encoding="utf-8")
@@ -435,6 +441,7 @@ def remember(
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
     concerns: list[str] = typer.Option(None, "--concerns", help="A symbol this governs, sym:<path>#<name> (repeatable, anchored)."),
     rejected: str = typer.Option(None, "--rejected", help="The rejected alternative + why (the most perishable content)."),
+    grounding: str = typer.Option(None, "--grounding", help=f"How the belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred). empirical = confirmed by a live observation."),
     new: bool = typer.Option(False, "--new", help="Capture even if it looks like a near-duplicate (skip the dedup guard)."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
@@ -442,7 +449,7 @@ def remember(
     workspace = _require_workspace(repo)
     node = _capture_memory(repo, workspace, statement=statement, type_=type, why=why,
                            serves=serves or [], concern_syms=concerns or [], rejected=rejected,
-                           supersedes=[], promotable=False, force_new=new)
+                           supersedes=[], promotable=False, force_new=new, grounding=grounding)
     _report_capture(node)
 
 
@@ -452,6 +459,7 @@ def note_constraint(
     concerns: list[str] = typer.Option(None, "--concerns", help="A symbol this constrains, sym:<path>#<name> (repeatable, anchored)."),
     why: str = typer.Option("", "--why", help="Why the constraint holds (optional)."),
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
+    grounding: str = typer.Option(None, "--grounding", help=f"How the belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred). empirical = confirmed by a live observation."),
     new: bool = typer.Option(False, "--new", help="Capture even if it looks like a near-duplicate (skip the dedup guard)."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
@@ -459,7 +467,7 @@ def note_constraint(
     workspace = _require_workspace(repo)
     node = _capture_memory(repo, workspace, statement=rule, type_="constraint", why=why,
                            serves=serves or [], concern_syms=concerns or [], rejected=None,
-                           supersedes=[], promotable=True, force_new=new)
+                           supersedes=[], promotable=True, force_new=new, grounding=grounding)
     _report_capture(node)
 
 
@@ -472,6 +480,7 @@ def supersede(
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
     concerns: list[str] = typer.Option(None, "--concerns", help="A symbol this governs (repeatable, anchored)."),
     rejected: str = typer.Option(None, "--rejected", help="The rejected alternative + why."),
+    grounding: str = typer.Option(None, "--grounding", help=f"How the new belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred)."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
     """Record a mind-change: a new memory node with a supersedes edge to the old one (never edit-in-place)."""
@@ -481,7 +490,7 @@ def supersede(
                   f'Find the decision you mean with `yigraf context "<topic>"`.')
     node = _capture_memory(repo, workspace, statement=statement, type_=type, why=why,
                            serves=serves or [], concern_syms=concerns or [], rejected=rejected,
-                           supersedes=[old_id], promotable=False)
+                           supersedes=[old_id], promotable=False, grounding=grounding)
     _report_capture(node)
 
 
@@ -514,6 +523,7 @@ def _reaffirm_concerns(repo: Path, config: dict, node: memory.Memory,
 def reaffirm(
     target: str = typer.Argument(..., help="A memory id (mem:NNN → reaffirm its concerns) or a locus (sym:<path>#<name> or file:<path> → reaffirm every memory concerning it)."),
     concerns: list[str] = typer.Option(None, "--concerns", help="With a mem: id, re-anchor only these loci (default: all the node's concerns)."),
+    grounding: str = typer.Option(None, "--grounding", help=f"With a mem: id, upgrade its grounding in place ({' | '.join(memory.GROUNDINGS)}) — e.g. a live spike just confirmed an inferred decision."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
     """Re-verify a decision still holds and re-stamp its ``concerns`` anchors to the current code.
@@ -532,6 +542,8 @@ def reaffirm(
     """
     workspace = _require_workspace(repo)
     config = load_config(workspace / "config.yaml")
+    if grounding is not None and grounding not in memory.GROUNDINGS:
+        _guidance(f"--grounding must be one of {', '.join(memory.GROUNDINGS)} (got {grounding}).")
 
     if target.startswith("mem:"):
         path = memory.find_memory(repo, target)
@@ -539,19 +551,28 @@ def reaffirm(
             _guidance(f"No memory node with id {target} to reaffirm. "
                       f'Find the decision you mean with `yigraf context "<topic>"`.')
         node = memory.read_memory(path)
-        if not node.concerns:
-            _guidance(f"{target} concerns no symbol/file, so it carries no anchor to reaffirm. Nothing to do.")
+        # A pure grounding upgrade is meaningful even for a memory with no concerns anchor (the claim
+        # is unchanged; only its epistemic status advances as evidence lands) — so don't require concerns.
+        if not node.concerns and grounding is None:
+            _guidance(f"{target} concerns no symbol/file, so it carries no anchor to reaffirm. "
+                      f"To record that evidence confirmed it, add --grounding empirical.")
         only = set(concerns or [])
         unknown = only - {c.sym for c in node.concerns}
         if unknown:
             _guidance(f"{target} doesn't concern {', '.join(sorted(unknown))}. "
                       f"It concerns: {', '.join(c.sym for c in node.concerns)}.")
         restamped, gone = _reaffirm_concerns(repo, config, node, only)
+        upgraded = grounding is not None and grounding != node.grounding
+        was = node.grounding
+        if grounding is not None:
+            node.grounding = grounding
         path.write_text(memory.render_memory(node), encoding="utf-8")
         _rebuild(repo)
+        if upgraded:
+            typer.echo(f"Reaffirmed {target}: grounding {was} → {node.grounding}.")
         if restamped:
             typer.echo(f"Reaffirmed {target}: re-anchored {', '.join(restamped)} to current code — drift cleared.")
-        elif not gone:
+        elif not gone and not upgraded:
             typer.echo(f"Reaffirmed {target}: anchors already matched the current code (no drift to clear).")
         if gone:
             typer.echo(f"⚠ {target} concerns {', '.join(gone)}, which no longer resolve(s) in the source — "
@@ -600,16 +621,21 @@ def context(
     query: str = typer.Argument(..., help="What to look up, e.g. \"session expiry\"."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
     family: str = typer.Option(None, "--family", help="Restrict to one family: structure|intent|plan."),
+    grounding: str = typer.Option(None, "--grounding", help=f"Restrict memory nodes to one grounding tier: {' | '.join(memory.GROUNDINGS)} (C#6)."),
+    scores: bool = typer.Option(False, "--scores", help="Append the per-node semantic similarity (cosine) to each rendered node."),
     budget: int = typer.Option(None, "--budget", help="Token budget for the render."),
 ) -> None:
     """Retrieve a scoped, token-budgeted slice of the graph for a query (locators + signatures)."""
     workspace = _require_workspace(repo)
+    if grounding is not None and grounding not in memory.GROUNDINGS:
+        _guidance(f"--grounding must be one of {', '.join(memory.GROUNDINGS)} (got {grounding}).")
     config = load_config(workspace / "config.yaml")
     graph, _ = build_graph(repo, config)
     _ranked_with_telemetry(repo, graph)  # recency/popularity overlay from the local sidecar (R1)
     semantic = embeddings.semantic_scores(repo, graph, config, query)  # {} ⇒ lexical-only (M8 / v0)
     result = retrieval.context(graph, query, config, family=family, budget_tokens=budget,
-                               semantic_match=semantic, root=repo)
+                               semantic_match=semantic, root=repo, grounding=grounding,
+                               show_scores=scores)
     _record_injection(repo, graph, result)  # a surfacing is a soft usage signal (sidecar, not graph.json)
     typer.echo(result.text, nl=False)
     typer.echo(f"[~{result.token_estimate} tokens · {result.nodes_rendered}/{result.nodes_total} nodes shown]")

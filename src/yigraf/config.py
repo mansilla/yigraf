@@ -49,6 +49,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "backend": "fastembed",  # fastembed | sentence-transformers | none
         "model": "BAAI/bge-small-en-v1.5",
         "dup_cosine": 0.9,  # write-time near-duplicate threshold for `remember` (capture-flow §4)
+        # `context` cosine floor below which it prints a low-confidence banner (C#8). Calibrated for
+        # bge-small, whose cosines compress into a high, narrow band: on this corpus off-topic/gibberish
+        # queries top out ≈0.62 and real topical queries bottom at ≈0.68, so 0.65 sits in the gap. A
+        # different model needs re-calibration (a naive 0.4 never fires).
+        "relevance_floor": 0.65,
     },
 }
 
@@ -112,6 +117,8 @@ embeddings:
   backend: fastembed            # fastembed | sentence-transformers | none
   model: BAAI/bge-small-en-v1.5  # local CPU model, version-pinned, downloaded on first use
   dup_cosine: 0.9               # write-time near-duplicate threshold for `remember` (capture-flow §4)
+  relevance_floor: 0.65         # `context` cosine floor below which a low-confidence banner shows (C#8).
+                                # Calibrated for bge-small (off-topic ≈0.62, on-topic ≈0.68); retune per model.
 """
 
 
