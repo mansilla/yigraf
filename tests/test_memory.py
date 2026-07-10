@@ -66,6 +66,8 @@ def _remember(root: Path, statement: str, **opts) -> None:
         args += ["--serves", target]
     for sym in opts.get("concerns", []):
         args += ["--concerns", sym]
+    for ref in opts.get("evidence", []):
+        args += ["--evidence", ref]
     _run(args)
 
 
@@ -308,7 +310,7 @@ def test_grounding_defaults_to_inferred_and_round_trips(tmp_path: Path):
 
 def test_grounding_override_persists(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "confirmed by a live spike", grounding="empirical")
+    _remember(root, "confirmed by a live spike", grounding="empirical", evidence=["commit:abc123"])
     assert memory.read_memory(memory.find_memory(root, "mem:001")).grounding == "empirical"
 
 
@@ -323,7 +325,7 @@ def test_invalid_grounding_is_guided_not_crashed(tmp_path: Path):
 def test_context_shows_grounding_tag(tmp_path: Path):
     root = _repo(tmp_path)
     _remember(root, "empirical decision", grounding="empirical",
-              serves=["int:session-expiry"], concerns=[SYM])
+              serves=["int:session-expiry"], concerns=[SYM], evidence=["commit:abc123"])
     graph, _ = build_graph(root, default_config())
     result = retrieval.context(graph, "empirical decision", default_config())
     assert "mem:001 [decision·empirical]" in result.text
@@ -332,7 +334,8 @@ def test_context_shows_grounding_tag(tmp_path: Path):
 def test_context_grounding_filter_drops_other_tiers(tmp_path: Path):
     root = _repo(tmp_path)
     _remember(root, "an inferred belief", concerns=[SYM])  # inferred (default)
-    _remember(root, "an empirical belief", grounding="empirical", concerns=[SYM])
+    _remember(root, "an empirical belief", grounding="empirical", concerns=[SYM],
+              evidence=["commit:abc123"])
     graph, _ = build_graph(root, default_config())
     result = retrieval.context(graph, "belief", default_config(), grounding="empirical")
     assert "an empirical belief" in result.text
@@ -343,7 +346,8 @@ def test_reaffirm_upgrades_grounding_in_place(tmp_path: Path):
     root = _repo(tmp_path)
     _remember(root, "inferred then confirmed", concerns=[SYM])
     assert memory.read_memory(memory.find_memory(root, "mem:001")).grounding == "inferred"
-    res = _run(["reaffirm", "mem:001", "--repo", str(root), "--grounding", "empirical"])
+    res = _run(["reaffirm", "mem:001", "--repo", str(root), "--grounding", "empirical",
+                "--evidence", "commit:abc123"])  # empirical now requires naming the observation
     assert "grounding inferred → empirical" in res.output
     # the claim is unchanged (no supersede), only the epistemic status advanced — still mem:001, active
     mem = memory.read_memory(memory.find_memory(root, "mem:001"))
@@ -562,3 +566,100 @@ def test_attest_unknown_target_is_guided(tmp_path: Path):
     root = _repo(tmp_path)
     assert "No memory node" in _run(["attest", "mem:404", "--repo", str(root)]).output
     assert "No intent" in _run(["attest", "int:nope", "--repo", str(root)]).output
+
+
+# --------------------------------------------------------------------------------------------------
+# grounded_by evidence + evidence-drift (int:memory-grounding): the empirical tier must NAME a live
+# observation, and a locus evidence rides the same drift machinery as concerns.
+# --------------------------------------------------------------------------------------------------
+
+EV_SYM = "sym:auth/session.py#verify"
+
+
+def _add_evidence_symbol(root: Path, body: str = "    return x\n") -> str:
+    """Add a second symbol (``verify``) to the source to serve as a drift-checkable evidence locus,
+    keeping ``refresh`` (the usual concern) intact so only the evidence drifts when we edit it."""
+    (root / SRC).write_text(f"def refresh(token):\n    return token\n\n\ndef verify(x):\n{body}")
+    _run(["build", str(root)])
+    return EV_SYM
+
+
+def test_remember_empirical_without_evidence_is_guided(tmp_path: Path):
+    """The empirical tier is a claim about a live observation — it must name one, or exit 0 + guidance."""
+    root = _repo(tmp_path)
+    result = runner.invoke(app, ["remember", "confirmed by a spike", "--grounding", "empirical",
+                                 "--repo", str(root)])
+    assert result.exit_code == 0  # design-law #1: recoverable → guidance, not a crash
+    assert "--grounding empirical means confirmed by a live observation" in result.output
+    assert memory.find_memory(root, "mem:001") is None  # nothing written — the claim was unearned
+
+
+def test_evidence_locus_projects_an_anchored_grounded_by_edge(tmp_path: Path):
+    root = _repo(tmp_path)
+    ev = _add_evidence_symbol(root)
+    _remember(root, "refresh is idempotent", grounding="empirical", concerns=[SYM], evidence=[ev])
+    g = _graph(root)
+    edge = g.edges["mem:001", ev]
+    assert edge["relation"] == "grounded_by"
+    assert edge["anchor"] == g.nodes[ev]["content_hash"]  # freshly captured → anchored, no drift
+
+
+def test_opaque_evidence_is_recorded_but_not_an_edge(tmp_path: Path):
+    root = _repo(tmp_path)
+    _remember(root, "matches the RFC", grounding="empirical", evidence=["commit:abc123"])
+    g = _graph(root)
+    assert not any(a.get("relation") == "grounded_by" for _, _, a in g.out_edges("mem:001", data=True))
+    assert g.nodes["mem:001"]["opaque_evidence"] == ["commit:abc123"]  # recorded, never drifts
+
+
+def test_editing_evidence_surfaces_grounded_by_drift(tmp_path: Path):
+    root = _repo(tmp_path)
+    ev = _add_evidence_symbol(root)
+    _remember(root, "refresh is idempotent", grounding="empirical", concerns=[SYM], evidence=[ev])
+    _add_evidence_symbol(root, body="    return x + 1\n")  # the evidence's body changed
+    graph, _ = build_graph(root, default_config())
+    items = [i for i in compute_drift(graph) if i.relation == "grounded_by"]
+    assert [i.kind for i in items] == ["soft"] and items[0].task_id == "mem:001"
+    concerns_items = [i for i in compute_drift(graph) if i.relation == "concerns"]
+    assert concerns_items == []  # the concern (refresh) is untouched — only the evidence drifted
+
+
+def test_renaming_evidence_reanchors_without_drift(tmp_path: Path):
+    root = _repo(tmp_path)
+    ev = _add_evidence_symbol(root)
+    _remember(root, "refresh is idempotent", grounding="empirical", concerns=[SYM], evidence=[ev])
+    # Rename the evidence symbol (same body) — the anchor excludes the name, so it re-anchors for free.
+    (root / SRC).write_text("def refresh(token):\n    return token\n\n\ndef verify_renamed(x):\n    return x\n")
+    graph, _ = build_graph(root, default_config())
+    assert [i for i in compute_drift(graph) if i.relation == "grounded_by" and i.kind != "renamed"] == []
+    assert graph.edges["mem:001", "sym:auth/session.py#verify_renamed"]["relation"] == "grounded_by"
+
+
+def test_reaffirm_evidence_clears_grounds_drift(tmp_path: Path):
+    root = _repo(tmp_path)
+    ev = _add_evidence_symbol(root)
+    _remember(root, "refresh is idempotent", grounding="empirical", concerns=[SYM], evidence=[ev])
+    _add_evidence_symbol(root, body="    return x + 1\n")  # evidence drifts
+    res = _run(["reaffirm", "mem:001", "--repo", str(root), "--grounding", "empirical", "--evidence", ev])
+    assert "grounds-drift cleared" in res.output
+    graph, _ = build_graph(root, default_config())
+    assert [i for i in compute_drift(graph) if i.relation == "grounded_by"] == []  # re-anchored
+
+
+def test_reaffirm_to_empirical_without_evidence_is_guided(tmp_path: Path):
+    """Closes the loophole: upgrading grounding to empirical in place also requires naming evidence."""
+    root = _repo(tmp_path)
+    _remember(root, "inferred belief", concerns=[SYM])  # inferred, no evidence
+    result = runner.invoke(app, ["reaffirm", "mem:001", "--repo", str(root), "--grounding", "empirical"])
+    assert result.exit_code == 0
+    assert "--grounding empirical requires naming the observation" in result.output
+    assert memory.read_memory(memory.find_memory(root, "mem:001")).grounding == "inferred"  # unchanged
+
+
+def test_context_shows_grounded_evidence(tmp_path: Path):
+    root = _repo(tmp_path)
+    _remember(root, "refresh is idempotent", grounding="empirical", concerns=[SYM],
+              evidence=["commit:abc123"])
+    graph, _ = build_graph(root, default_config())
+    result = retrieval.context(graph, "idempotent", default_config())
+    assert "[grounded: commit:abc123]" in result.text

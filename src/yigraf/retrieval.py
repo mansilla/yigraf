@@ -242,10 +242,20 @@ class ContextResult:
 
 
 def _drift_line(item) -> str:
-    """A reconcile line for one drift item, worded for the relation that drifted (implements vs concerns)."""
+    """A reconcile line for one drift item, worded for the relation that drifted.
+
+    ``concerns`` (the code a decision governs changed → re-check the decision), ``grounded_by`` (the
+    *evidence* that earned a belief's ``empirical`` tier changed → that certainty is now unearned; a
+    demotion trigger for int:memory-maturity), or ``implements`` (a task's symbol drifted).
+    """
     verb = "changed since anchored" if item.kind == "soft" else "no longer found"
     if item.relation == "concerns":
         tail = "re-verify this decision still holds, then re-`remember` or `supersede` it."
+    elif item.relation == "grounded_by":
+        tail = (f"the evidence grounding this ·empirical belief {verb} — re-verify the observation "
+                f"still holds, then `reaffirm {item.task_id} --grounding empirical --evidence <fresh>`, "
+                f"or honestly downgrade: `reaffirm {item.task_id} --grounding inferred`.")
+        return f"  ⚠ {item.task_id} → {item.locator}: {tail}"
     else:
         tail = "re-verify or relink."
     return f"  ⚠ {item.task_id} → {item.locator} {verb} — {tail}"
@@ -504,8 +514,20 @@ def _memory_line(graph: nx.DiGraph, node_id: str, attrs: dict) -> str:
         line += f" — why: {attrs['why']}"
     if attrs.get("alternatives"):
         line += f" (rejected: {attrs['alternatives']})"
+    evidence = _evidence_refs(graph, node_id, attrs)
+    if evidence:  # the agent sees WHAT grounds an ·empirical belief — a defended, checkable claim
+        line += f" [grounded: {', '.join(evidence)}]"
     links = _memory_links(graph, node_id)
     return line + links
+
+
+def _evidence_refs(graph: nx.DiGraph, node_id: str, attrs: dict) -> list[str]:
+    """The evidence loci grounding a memory (int:memory-grounding): live ``grounded_by`` edge targets,
+    still-dangling loci, and opaque refs (commit:/url/text). Ordered, deduped, cheap — a locator each."""
+    refs = [dst for _, dst, a in graph.out_edges(node_id, data=True) if a.get("relation") == "grounded_by"]
+    refs += [e["sym"] for e in attrs.get("dangling_grounded_by", [])]
+    refs += list(attrs.get("opaque_evidence", []))
+    return list(dict.fromkeys(refs))
 
 
 def _memory_links(graph: nx.DiGraph, mem_id: str) -> str:

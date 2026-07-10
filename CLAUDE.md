@@ -18,8 +18,9 @@ its current state — the questions an agent cannot answer from source alone and
 - **Why is it this way?** → `memory` (the decisions, constraints, and rejected alternatives)
 
 These four node families and the **cross-family edges** between them (`implements`, `tracks`,
-`serves`, `concerns`, `supersedes`) *are* the answer. Retrieval is "ask once, get the answer as a
-token-cheap slice." This is the whole product.
+`serves`, `concerns`, `supersedes`, `grounded_by`) *are* the answer. Retrieval is "ask once, get the
+answer as a token-cheap slice." This is the whole product. (`grounded_by` names the evidence that
+earns a memory's `empirical` grounding tier; like `concerns` it is anchored and drift-bearing.)
 
 ## The design law (apply it to every change)
 

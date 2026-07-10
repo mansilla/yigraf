@@ -117,7 +117,8 @@ def run_link(repo: str | None, task: str, target: str) -> str:
 
 def run_remember(repo: str | None, statement: str, why: str = "", serves: list[str] | None = None,
                  concerns: list[str] | None = None, rejected: str | None = None,
-                 type: str = "decision", grounding: str | None = None) -> str:
+                 type: str = "decision", grounding: str | None = None,
+                 evidence: list[str] | None = None) -> str:
     args = [statement, "--type", type]
     if why:
         args += ["--why", why]
@@ -126,12 +127,14 @@ def run_remember(repo: str | None, statement: str, why: str = "", serves: list[s
         args += ["--rejected", rejected]
     if grounding:
         args += ["--grounding", grounding]
+    args += _multi("--evidence", evidence)
     return _run_cli("remember", args, repo)
 
 
 def run_note_constraint(repo: str | None, rule: str, concerns: list[str] | None = None,
                         why: str = "", serves: list[str] | None = None,
-                        rejected: str | None = None, grounding: str | None = None) -> str:
+                        rejected: str | None = None, grounding: str | None = None,
+                        evidence: list[str] | None = None) -> str:
     args = [rule] + _multi("--concerns", concerns)
     if why:
         args += ["--why", why]
@@ -140,13 +143,14 @@ def run_note_constraint(repo: str | None, rule: str, concerns: list[str] | None 
         args += ["--rejected", rejected]
     if grounding:
         args += ["--grounding", grounding]
+    args += _multi("--evidence", evidence)
     return _run_cli("note-constraint", args, repo)
 
 
 def run_propose(repo: str | None, statement: str, from_: str, concerns: list[str] | None = None,
                 rejected: str | None = None, why: str = "", serves: list[str] | None = None,
                 type: str | None = None, origin: str | None = None,
-                grounding: str | None = None) -> str:
+                grounding: str | None = None, evidence: list[str] | None = None) -> str:
     args = [statement, "--from", from_]
     if type:
         args += ["--type", type]
@@ -159,13 +163,14 @@ def run_propose(repo: str | None, statement: str, from_: str, concerns: list[str
         args += ["--origin", origin]
     if grounding:
         args += ["--grounding", grounding]
+    args += _multi("--evidence", evidence)
     return _run_cli("propose", args, repo)
 
 
 def run_supersede(repo: str | None, old_id: str, statement: str, why: str = "",
                   serves: list[str] | None = None, concerns: list[str] | None = None,
                   rejected: str | None = None, type: str = "decision",
-                  grounding: str | None = None) -> str:
+                  grounding: str | None = None, evidence: list[str] | None = None) -> str:
     args = [old_id, statement, "--type", type]
     if why:
         args += ["--why", why]
@@ -174,14 +179,16 @@ def run_supersede(repo: str | None, old_id: str, statement: str, why: str = "",
         args += ["--rejected", rejected]
     if grounding:
         args += ["--grounding", grounding]
+    args += _multi("--evidence", evidence)
     return _run_cli("supersede", args, repo)
 
 
 def run_reaffirm(repo: str | None, target: str, concerns: list[str] | None = None,
-                 grounding: str | None = None) -> str:
+                 grounding: str | None = None, evidence: list[str] | None = None) -> str:
     args = [target] + _multi("--concerns", concerns)
     if grounding:
         args += ["--grounding", grounding]
+    args += _multi("--evidence", evidence)
     return _run_cli("reaffirm", args, repo)
 
 
@@ -252,7 +259,7 @@ def build_server(default_repo: str | None = None):
     def remember(statement: str, why: str = "", serves: list[str] | None = None,
                  concerns: list[str] | None = None, rejected: str | None = None,
                  type: str = "decision", grounding: str | None = None,
-                 repo: str | None = None) -> str:
+                 evidence: list[str] | None = None, repo: str | None = None) -> str:
         """Persist a non-obvious decision/rationale as a durable memory node — the *why* a reset loses.
 
         Capture at a conclusion (a chosen approach, a worked-around constraint), not mid-thinking. A
@@ -269,14 +276,19 @@ def build_server(default_repo: str | None = None):
             grounding: how the belief is grounded — inferred|docs|empirical (default inferred). Use
                 empirical when a live observation (a spike/test/prod signal) confirmed it; inferred
                 beliefs surface as re-verify TODOs in `context`.
+            evidence: what grounds the belief — REQUIRED for grounding=empirical. A locus (e.g.
+                ["sym:tests/test_x.py#test_case", "file:path"]) is drift-checked, so the evidence
+                changing later re-surfaces the belief as unearned; an opaque ref ("commit:abc", a URL)
+                is recorded but not drift-checked.
         """
         return run_remember(repo or default_repo, statement, why, serves, concerns, rejected, type,
-                            grounding)
+                            grounding, evidence)
 
     @server.tool()
     def note_constraint(rule: str, concerns: list[str] | None = None, why: str = "",
                         serves: list[str] | None = None, rejected: str | None = None,
-                        grounding: str | None = None, repo: str | None = None) -> str:
+                        grounding: str | None = None, evidence: list[str] | None = None,
+                        repo: str | None = None) -> str:
         """Capture a constraint/rule governing code (flagged as a candidate to promote to a check).
 
         Args:
@@ -286,14 +298,16 @@ def build_server(default_repo: str | None = None):
             serves: intent/plan ids it serves.
             rejected: the ruled-out alternative + why (a constraint often exists *because* one was).
             grounding: inferred|docs|empirical (default inferred) — see `remember`.
+            evidence: what grounds it — REQUIRED for grounding=empirical; see `remember`.
         """
-        return run_note_constraint(repo or default_repo, rule, concerns, why, serves, rejected, grounding)
+        return run_note_constraint(repo or default_repo, rule, concerns, why, serves, rejected,
+                                   grounding, evidence)
 
     @server.tool()
     def propose(statement: str, from_: str, concerns: list[str] | None = None,
                 rejected: str | None = None, why: str = "", serves: list[str] | None = None,
                 type: str | None = None, origin: str | None = None, grounding: str | None = None,
-                repo: str | None = None) -> str:
+                evidence: list[str] | None = None, repo: str | None = None) -> str:
         """Land a distilled CANDIDATE memory in quarantine (the `proposed` tier) — near-zero weight.
 
         Two callers: (1) a code-/security-review finding you confirmed and chose to keep, and (2) the
@@ -314,29 +328,30 @@ def build_server(default_repo: str | None = None):
             type: decision|constraint (default: constraint for review, decision for mined).
             origin: free-text provenance detail for the audit trail (e.g. "security-review", "commit abc").
             grounding: inferred|docs|empirical (default inferred) — see `remember`.
+            evidence: what grounds it — REQUIRED for grounding=empirical; see `remember`.
         """
         return run_propose(repo or default_repo, statement, from_, concerns, rejected, why, serves,
-                          type, origin, grounding)
+                          type, origin, grounding, evidence)
 
     @server.tool()
     def supersede(old_id: str, statement: str, why: str = "", serves: list[str] | None = None,
                   concerns: list[str] | None = None, rejected: str | None = None,
                   type: str = "decision", grounding: str | None = None,
-                  repo: str | None = None) -> str:
+                  evidence: list[str] | None = None, repo: str | None = None) -> str:
         """Record a mind-change: a new memory node that supersedes an old one (never edit in place).
 
         Args:
             old_id: the memory being superseded, e.g. "mem:007".
             statement: the new decision in one line.
             why: what changed.
-            serves/concerns/rejected/type/grounding: as for `remember`.
+            serves/concerns/rejected/type/grounding/evidence: as for `remember`.
         """
         return run_supersede(repo or default_repo, old_id, statement, why, serves, concerns, rejected,
-                            type, grounding)
+                            type, grounding, evidence)
 
     @server.tool()
     def reaffirm(target: str, concerns: list[str] | None = None, grounding: str | None = None,
-                 repo: str | None = None) -> str:
+                 evidence: list[str] | None = None, repo: str | None = None) -> str:
         """Re-verify a decision still holds and re-anchor its `concerns` to current code, clearing drift.
 
         The honest counterpart to `supersede`: when code a memory governs is edited, drift asks you to
@@ -350,9 +365,12 @@ def build_server(default_repo: str | None = None):
                 edit-heavy session, after you verified that one locus). No blanket "clear all" exists.
             concerns: with a mem: id, re-anchor only these loci (default: all the node's concerns).
             grounding: with a mem: id, upgrade its grounding in place (e.g. inferred→empirical when a
-                live spike just confirmed the decision).
+                live spike just confirmed the decision). Reaching empirical REQUIRES naming `evidence`.
+            evidence: with a mem: id, name/re-anchor the observation grounding it — required to reach
+                empirical. A locus already grounding it is re-anchored (clearing grounds-drift after you
+                re-verified the observation); a new one is added. Never re-stamped on a bare reaffirm.
         """
-        return run_reaffirm(repo or default_repo, target, concerns, grounding)
+        return run_reaffirm(repo or default_repo, target, concerns, grounding, evidence)
 
     @server.tool()
     def attest(target: str, repo: str | None = None) -> str:

@@ -105,7 +105,18 @@ def test_context_is_injected_not_read(tmp_path: Path):
     assert "ctx" not in _summary(root).render_line()
     s = _summary(root, ctx_used=40_000, ctx_limit=200_000)
     assert s.ctx_used == 40_000
-    assert "ctx 20%" in s.render_line()
+    assert "ctx 20% 40k" in s.render_line()  # percent + the absolute token magnitude
+
+
+def test_ctx_token_magnitude_is_compact(tmp_path: Path):
+    """The gauge trails the raw token count as a glanceable magnitude (128k / 1.2M), in both renders."""
+    assert status._fmt_tokens(940) == "940"
+    assert status._fmt_tokens(1_280) == "1.3k"
+    assert status._fmt_tokens(128_000) == "128k"
+    assert status._fmt_tokens(1_200_000) == "1.2M"
+    s = _summary(_repo(tmp_path), ctx_used=128_000, ctx_limit=1_000_000)
+    assert "128k" in s.render_line()
+    assert "128k" in s.render_line(color=True)
 
 
 def test_render_line_is_a_single_compact_line(tmp_path: Path):

@@ -24,8 +24,15 @@ from yigraf.astnorm import ANCHOR_ALGO
 CONF = "EXTRACTED"
 
 #: The drift-bearing relations and the per-node attr each stashes an unresolved (dangling) target on.
-#: One code path serves both so ``concerns`` inherits rename re-anchoring + soft/hard detection for free.
-_DRIFT_RELATIONS = {"implements": "dangling_implements", "concerns": "dangling_concerns"}
+#: One code path serves all three, so ``concerns`` and ``grounded_by`` inherit rename re-anchoring +
+#: soft/hard detection for free. ``grounded_by`` (memory → the evidence that grounds it,
+#: int:memory-grounding): the evidence changing means the ``empirical`` tier is now unearned — a
+#: demotion signal reconciled by ``reaffirm --grounding`` (re-observed) or a downgrade to ``inferred``.
+_DRIFT_RELATIONS = {
+    "implements": "dangling_implements",
+    "concerns": "dangling_concerns",
+    "grounded_by": "dangling_grounded_by",
+}
 
 
 @dataclass

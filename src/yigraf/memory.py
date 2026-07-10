@@ -138,6 +138,23 @@ class Concern:
 
 
 @dataclass
+class Evidence:
+    """A ``grounded_by`` edge target: what *substantiates* a belief (int:memory-grounding).
+
+    Orthogonal to :class:`Concern` (what a decision *governs*): evidence is what earned its
+    ``empirical`` grounding tier — a test, a spike, a prod signal. A resolvable locus
+    (``sym:``/``file:``) carries a drift anchor exactly like a Concern, so the evidence changing
+    surfaces as ``grounded_by`` drift — the empirical tier is now unearned (a demotion trigger for
+    int:memory-maturity). An *opaque* ref (``commit:<sha>``, a URL, free text) is recorded but never
+    drifts: there is nothing in the repo to hash, and a commit sha is immutable anyway.
+    """
+
+    ref: str
+    anchor: str | None = None
+    anchor_algo: str | None = None
+
+
+@dataclass
 class Memory:
     id: str
     seq: int
@@ -148,6 +165,10 @@ class Memory:
     alternatives: str | None = None
     serves: list[str] = field(default_factory=list)
     concerns: list[Concern] = field(default_factory=list)
+    # What grounds the belief (int:memory-grounding): required to claim ``grounding: empirical``. A
+    # locus (sym:/file:) carries a drift anchor and projects a ``grounded_by`` edge; an opaque ref
+    # (commit:/url/text) is recorded but never drifts. Orthogonal to ``concerns`` (what it governs).
+    evidence: list[Evidence] = field(default_factory=list)
     supersedes: list[str] = field(default_factory=list)
     # A supersede *held pending* because it targets a human-attested node (int:memory-attestation):
     # projected as a supersedes edge marked ``pending`` — surfaced as a conflict, not applied (the old
@@ -170,6 +191,12 @@ def _read_concern(entry: Any) -> Concern:
     if isinstance(entry, str):
         return Concern(sym=entry)
     return Concern(sym=entry["sym"], anchor=entry.get("anchor"), anchor_algo=entry.get("anchor_algo"))
+
+
+def _read_evidence(entry: Any) -> Evidence:
+    if isinstance(entry, str):
+        return Evidence(ref=entry)
+    return Evidence(ref=entry["ref"], anchor=entry.get("anchor"), anchor_algo=entry.get("anchor_algo"))
 
 
 def _parse_body(body: str) -> tuple[str, str, str | None]:
@@ -213,6 +240,7 @@ def read_memory(path: Path) -> Memory:
         alternatives=alternatives,
         serves=list(meta.get("serves") or []),
         concerns=[_read_concern(e) for e in (meta.get("concerns") or [])],
+        evidence=[_read_evidence(e) for e in (meta.get("evidence") or [])],
         supersedes=list(meta.get("supersedes") or []),
         pending_supersedes=list(meta.get("pending_supersedes") or []),
         status=meta.get("status", "active"),
@@ -240,6 +268,10 @@ def render_memory(memory: Memory) -> str:
         ],
         "supersedes": list(memory.supersedes),
     }
+    if memory.evidence:  # written only when present, like pending_supersedes (keeps graph.json terse)
+        meta["evidence"] = [
+            {"ref": e.ref, "anchor": e.anchor, "anchor_algo": e.anchor_algo} for e in memory.evidence
+        ]
     if memory.pending_supersedes:
         meta["pending_supersedes"] = list(memory.pending_supersedes)
     if memory.promotable:
@@ -350,15 +382,18 @@ def _project_file_anchor_nodes(graph: nx.DiGraph, root: Path, memories: list[Mem
     the edge stays dangling → hard drift, matching a gone symbol.
     """
     for memory in memories:
-        for concern in memory.concerns:
-            if not concern.sym.startswith("file:") or concern.sym in graph:
+        # Both drift-bearing memory→file relations need a file-anchor node: ``concerns`` (what it
+        # governs) and ``grounded_by`` (a file that is its evidence). Same treatment for each locus.
+        loci = [c.sym for c in memory.concerns] + [e.ref for e in memory.evidence]
+        for locus in loci:
+            if not locus.startswith("file:") or locus in graph:
                 continue
-            current = file_content_hash(root, concern.sym)
+            current = file_content_hash(root, locus)
             if current is None:
-                continue  # missing file → dangling concern → hard drift (handled downstream)
-            relpath, _start, _end = parse_file_target(concern.sym)
-            graph.add_node(concern.sym, family="structure", kind="file-anchor",
-                           label=concern.sym[len("file:"):], confidence=CONF,
+                continue  # missing file → dangling edge → hard drift (handled downstream)
+            relpath, _start, _end = parse_file_target(locus)
+            graph.add_node(locus, family="structure", kind="file-anchor",
+                           label=locus[len("file:"):], confidence=CONF,
                            content_hash=current, hash_algo=FILE_ANCHOR_ALGO, source_file=relpath)
 
 
@@ -380,6 +415,20 @@ def _project_memory_edges(graph: nx.DiGraph, memory: Memory) -> None:
             # Keep the anchor so drift.resolve_renames can re-anchor a rename by content match.
             _stash(graph, memory.id, "dangling_concerns",
                    {"sym": concern.sym, "anchor": concern.anchor, "anchor_algo": concern.anchor_algo})
+
+    # ``grounded_by`` (int:memory-grounding): a locus (sym:/file:) evidence gets an anchored edge and
+    # rides the SAME drift machinery as concerns (yigraf.drift._DRIFT_RELATIONS) — evidence changing =
+    # the empirical tier is unearned. An opaque ref (commit:/url/text) has no anchor: recorded on the
+    # node for rendering, never an edge, never drifts (nothing in-repo to hash).
+    for ev in memory.evidence:
+        if ev.anchor is None and not (ev.ref.startswith("sym:") or ev.ref.startswith("file:")):
+            _stash(graph, memory.id, "opaque_evidence", ev.ref)
+        elif ev.ref in graph:
+            graph.add_edge(memory.id, ev.ref, relation="grounded_by", confidence=CONF,
+                           anchor=ev.anchor, anchor_algo=ev.anchor_algo or ANCHOR_ALGO)
+        else:
+            _stash(graph, memory.id, "dangling_grounded_by",
+                   {"sym": ev.ref, "anchor": ev.anchor, "anchor_algo": ev.anchor_algo})
 
     for old in memory.supersedes:
         if old in graph:

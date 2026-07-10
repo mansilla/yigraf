@@ -72,7 +72,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # the knee, a genuine ~200k window is unaffected (the min is the window itself). 0 opts out (gauge
     # against the raw window). ~200k is where Opus-class quality degrades and per-turn cost climbs.
     "status": {
-        "ctx_soft_limit": 200_000,
+        "ctx_soft_limit": 250_000,
     },
 }
 
@@ -151,7 +151,7 @@ embeddings:
 # min(host window, ctx_soft_limit): a 1M window clamps to the knee, a genuine ~200k window is
 # unaffected. ~200k is where Opus-class quality degrades and cost climbs. Set 0 to use the raw window.
 status:
-  ctx_soft_limit: 200000        # tokens of usable budget the ctx gauge scales to (0 = raw window)
+  ctx_soft_limit: 250000        # tokens of usable budget the ctx gauge scales to (0 = raw window)
 """
 
 

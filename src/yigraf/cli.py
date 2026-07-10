@@ -443,6 +443,31 @@ def _resolve_concerns(repo: Path, config: dict, graph, syms: list[str]) -> tuple
     return concerns, warnings
 
 
+def _resolve_evidence(repo: Path, config: dict, graph, refs: list[str]) -> tuple[list[memory.Evidence], list[str]]:
+    """Resolve each ``--evidence`` ref to an :class:`Evidence` (int:memory-grounding).
+
+    A ``sym:``/``file:`` ref is a *live repo locus* → stamp its drift anchor (like a concern), so the
+    evidence changing surfaces as ``grounded_by`` drift; an unresolved one is a forward-reference
+    (evidence about to land) → dangling anchor + a soft warning, exactly as ``--concerns`` does. Any
+    other ref (``commit:<sha>``, a URL, free text) is *opaque*: recorded verbatim with no anchor — it
+    never drifts (nothing in-repo to hash; a commit sha is immutable), so no warning either.
+    """
+    evidence: list[memory.Evidence] = []
+    warnings: list[str] = []
+    for ref in refs:
+        if ref.startswith("sym:") or ref.startswith("file:"):
+            anchor, algo = _anchor(repo, config, ref)
+            evidence.append(memory.Evidence(ref=ref, anchor=anchor, anchor_algo=algo))
+            if anchor is None:
+                warnings.append(f"⚠ no such locus {ref} in the current source — creating a dangling "
+                                f"grounded_by edge (it anchors once the evidence lands; "
+                                f"`reaffirm <mem-id> --grounding empirical --evidence {ref}`)."
+                                + _symbol_suggestion(graph, ref))
+        else:
+            evidence.append(memory.Evidence(ref=ref))  # opaque (commit:/url/text) — no anchor, no drift
+    return evidence, warnings
+
+
 def _serves_warnings(graph, serves: list[str]) -> list[str]:
     """Soft-warn on a ``--serves`` id absent from the graph — a dangling edge, never a block (D#3)."""
     return [f"⚠ no such node {t} — creating a dangling serves edge (a forward-reference is fine; it "
@@ -472,7 +497,8 @@ def _dedup_guard(repo: Path, config: dict, graph, statement: str, why: str,
 def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, why: str,
                     serves: list[str], concern_syms: list[str], rejected: str | None,
                     supersedes: list[str], promotable: bool, force_new: bool = False,
-                    grounding: str | None = None, pending_supersedes: list[str] | None = None,
+                    grounding: str | None = None, evidence_refs: list[str] | None = None,
+                    pending_supersedes: list[str] | None = None,
                     provenance: dict | None = None) -> memory.Memory:
     """Write a new memory artifact, then rebuild graph.json. Shared by remember/supersede/note-constraint.
 
@@ -486,12 +512,22 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
         _guidance(f"--grounding must be one of {', '.join(memory.GROUNDINGS)} (got {grounding}). "
                   f"inferred = a reasoned assertion; docs = distilled from written rationale; "
                   f"empirical = confirmed by a live observation (a spike/test/prod signal).")
+    evidence_refs = evidence_refs or []
+    # The empirical tier is a claim about a live observation — it must NAME the observation, or it's
+    # just an assertion dressed as evidence (int:memory-grounding; mem:032 'silence is not evidence').
+    if grounding == "empirical" and not evidence_refs:
+        _guidance("--grounding empirical means confirmed by a live observation — name what confirmed "
+                  "it with --evidence sym:<path>#<test> | file:<path> | commit:<sha> | <url> "
+                  "(repeatable). If it's a reasoned assertion rather than an observation, use "
+                  "--grounding inferred (the default).")
     pending_supersedes = pending_supersedes or []
     provenance = provenance or {"source": "cli"}
 
     config = load_config(workspace / "config.yaml")
     graph, _ = build_graph(repo, config)  # built once, reused for concern/serves resolution + dedup
     concerns, warnings = _resolve_concerns(repo, config, graph, concern_syms)
+    evidence, ev_warnings = _resolve_evidence(repo, config, graph, evidence_refs)
+    warnings += ev_warnings
     warnings += _serves_warnings(graph, serves)
     # A supersede (applied or pending) is a deliberate mind-change → skip the near-duplicate guard.
     if not supersedes and not pending_supersedes and not force_new:
@@ -500,8 +536,8 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
     slug = memory.slugify(statement)
     node = memory.Memory(
         id=f"mem:{seq:03d}", seq=seq, slug=slug, type=type_, statement=statement, why=why,
-        alternatives=rejected, serves=list(serves), concerns=concerns, supersedes=list(supersedes),
-        pending_supersedes=list(pending_supersedes),
+        alternatives=rejected, serves=list(serves), concerns=concerns, evidence=evidence,
+        supersedes=list(supersedes), pending_supersedes=list(pending_supersedes),
         grounding=grounding, promotable=promotable, provenance=provenance,
         maturity=memory.landing_maturity(provenance),  # proposed for mined/review, else working (task #1)
     )
@@ -533,6 +569,7 @@ def remember(
     concerns: list[str] = typer.Option(None, "--concerns", help="A symbol this governs, sym:<path>#<name> (repeatable, anchored)."),
     rejected: str = typer.Option(None, "--rejected", help="The rejected alternative + why (the most perishable content)."),
     grounding: str = typer.Option(None, "--grounding", help=f"How the belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred). empirical = confirmed by a live observation."),
+    evidence: list[str] = typer.Option(None, "--evidence", help="What grounds the belief (required for --grounding empirical): sym:<path>#<test> | file:<path> (drift-checked) | commit:<sha> | <url> (repeatable)."),
     new: bool = typer.Option(False, "--new", help="Capture even if it looks like a near-duplicate (skip the dedup guard)."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
@@ -540,7 +577,8 @@ def remember(
     workspace = _require_workspace(repo)
     node = _capture_memory(repo, workspace, statement=statement, type_=type, why=why,
                            serves=serves or [], concern_syms=concerns or [], rejected=rejected,
-                           supersedes=[], promotable=False, force_new=new, grounding=grounding)
+                           supersedes=[], promotable=False, force_new=new, grounding=grounding,
+                           evidence_refs=evidence or [])
     _report_capture(node)
 
 
@@ -552,6 +590,7 @@ def note_constraint(
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
     rejected: str = typer.Option(None, "--rejected", help="The ruled-out alternative + why (a constraint often exists *because* one was rejected)."),
     grounding: str = typer.Option(None, "--grounding", help=f"How the belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred). empirical = confirmed by a live observation."),
+    evidence: list[str] = typer.Option(None, "--evidence", help="What grounds the constraint (required for --grounding empirical): sym:<path>#<test> | file:<path> (drift-checked) | commit:<sha> | <url> (repeatable)."),
     new: bool = typer.Option(False, "--new", help="Capture even if it looks like a near-duplicate (skip the dedup guard)."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
@@ -559,7 +598,8 @@ def note_constraint(
     workspace = _require_workspace(repo)
     node = _capture_memory(repo, workspace, statement=rule, type_="constraint", why=why,
                            serves=serves or [], concern_syms=concerns or [], rejected=rejected,
-                           supersedes=[], promotable=True, force_new=new, grounding=grounding)
+                           supersedes=[], promotable=True, force_new=new, grounding=grounding,
+                           evidence_refs=evidence or [])
     _report_capture(node)
 
 
@@ -574,6 +614,7 @@ def propose(
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
     origin: str = typer.Option(None, "--origin", help="Free-text provenance detail for the audit trail, e.g. 'security-review', 'commit abc123', 'docs/DESIGN.md'."),
     grounding: str = typer.Option(None, "--grounding", help=f"How the belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred)."),
+    evidence: list[str] = typer.Option(None, "--evidence", help="What grounds the candidate (required for --grounding empirical): sym:<path>#<test> | file:<path> (drift-checked) | commit:<sha> | <url> (repeatable)."),
     new: bool = typer.Option(False, "--new", help="Capture even if it looks like a near-duplicate (skip the dedup guard)."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
@@ -597,7 +638,7 @@ def propose(
     node = _capture_memory(repo, workspace, statement=statement, type_=type_, why=why,
                            serves=serves or [], concern_syms=concerns or [], rejected=rejected,
                            supersedes=[], promotable=(type_ == "constraint"), force_new=new,
-                           grounding=grounding, provenance=provenance)
+                           grounding=grounding, evidence_refs=evidence or [], provenance=provenance)
     _report_capture(node)
 
 
@@ -611,6 +652,7 @@ def supersede(
     concerns: list[str] = typer.Option(None, "--concerns", help="A symbol this governs (repeatable, anchored)."),
     rejected: str = typer.Option(None, "--rejected", help="The rejected alternative + why."),
     grounding: str = typer.Option(None, "--grounding", help=f"How the new belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred)."),
+    evidence: list[str] = typer.Option(None, "--evidence", help="What grounds the new belief (required for --grounding empirical): sym:<path>#<test> | file:<path> (drift-checked) | commit:<sha> | <url> (repeatable)."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
     """Record a mind-change: a new memory node with a supersedes edge to the old one (never edit-in-place)."""
@@ -632,7 +674,7 @@ def supersede(
         serves=serves or [], concern_syms=concerns or [], rejected=rejected,
         supersedes=[] if human_attested else [old_id],
         pending_supersedes=[old_id] if human_attested else [],
-        promotable=False, grounding=grounding)
+        promotable=False, grounding=grounding, evidence_refs=evidence or [])
     _report_capture(node)
     if human_attested:
         typer.echo(f"⚠ {old_id} is human-attested — this supersede is HELD PENDING: {node.id} is captured "
@@ -714,11 +756,35 @@ def _reaffirm_concerns(repo: Path, config: dict, node: memory.Memory,
     return restamped, gone
 
 
+def _reaffirm_evidence(repo: Path, config: dict, node: memory.Memory, new_refs: list[str]) -> list[str]:
+    """Upsert ``--evidence`` refs onto ``node`` (int:memory-grounding); return the refs touched.
+
+    Each locus (sym:/file:) is stamped with a fresh drift anchor: a ref already grounding the node is
+    re-anchored to current content (grounds-drift: the observation was re-verified), a new one is
+    appended; opaque refs (commit:/url/text) upsert with no anchor. Mutates ``node`` in place. Called
+    ONLY on an explicit ``--evidence`` — never a bare reaffirm — so clearing grounds-drift requires
+    re-naming the observation, never a silent rubber-stamp (the dishonesty mem:031 guards against).
+    """
+    touched: list[str] = []
+    by_ref = {e.ref: e for e in node.evidence}
+    for ref in new_refs:
+        anchor, algo = _anchor(repo, config, ref) if ref.startswith(("sym:", "file:")) else (None, None)
+        if ref in by_ref:
+            by_ref[ref].anchor, by_ref[ref].anchor_algo = anchor, algo
+        else:
+            ev = memory.Evidence(ref=ref, anchor=anchor, anchor_algo=algo)
+            node.evidence.append(ev)
+            by_ref[ref] = ev
+        touched.append(ref)
+    return touched
+
+
 @app.command()
 def reaffirm(
     target: str = typer.Argument(..., help="A memory id (mem:NNN → reaffirm its concerns) or a locus (sym:<path>#<name> or file:<path> → reaffirm every memory concerning it)."),
     concerns: list[str] = typer.Option(None, "--concerns", help="With a mem: id, re-anchor only these loci (default: all the node's concerns)."),
     grounding: str = typer.Option(None, "--grounding", help=f"With a mem: id, upgrade its grounding in place ({' | '.join(memory.GROUNDINGS)}) — e.g. a live spike just confirmed an inferred decision."),
+    evidence: list[str] = typer.Option(None, "--evidence", help="With a mem: id, name/re-anchor the observation grounding it (required to reach empirical): sym:<path>#<test> | file:<path> | commit:<sha> | <url> (repeatable)."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
     """Re-verify a decision still holds and re-stamp its ``concerns`` anchors to the current code.
@@ -746,11 +812,22 @@ def reaffirm(
             _guidance(f"No memory node with id {target} to reaffirm. "
                       f'Find the decision you mean with `yigraf context "<topic>"`.')
         node = memory.read_memory(path)
-        # A pure grounding upgrade is meaningful even for a memory with no concerns anchor (the claim
-        # is unchanged; only its epistemic status advances as evidence lands) — so don't require concerns.
-        if not node.concerns and grounding is None:
-            _guidance(f"{target} concerns no symbol/file, so it carries no anchor to reaffirm. "
-                      f"To record that evidence confirmed it, add --grounding empirical.")
+        # Upsert any --evidence first: re-anchor a locus already grounding this node (grounds-drift:
+        # re-observed) or add a fresh observation. Done before the empirical gate so the gate sees it.
+        added_evidence = _reaffirm_evidence(repo, config, node, evidence or [])
+        # The empirical tier must NAME a live observation — the same gate as capture (int:memory-grounding).
+        # This closes the reaffirm loophole: `--grounding empirical` no longer upgrades on the agent's word.
+        target_grounding = grounding if grounding is not None else node.grounding
+        if target_grounding == "empirical" and not node.evidence:
+            _guidance(f"--grounding empirical requires naming the observation that confirms {target}: add "
+                      f"--evidence sym:<path>#<test> | file:<path> | commit:<sha> | <url>. If you can no "
+                      f"longer confirm it, downgrade honestly: `yigraf reaffirm {target} --grounding inferred`.")
+        # A pure grounding upgrade is meaningful even for a memory with no concerns anchor (the claim is
+        # unchanged; only its epistemic status advances) — so require concerns only when nothing else acts.
+        if not node.concerns and grounding is None and not added_evidence:
+            _guidance(f"{target} concerns no symbol/file and you named no --evidence, so there is nothing "
+                      f"to re-anchor. To record that a live observation confirms it, "
+                      f"`yigraf reaffirm {target} --grounding empirical --evidence <locus>`.")
         only = set(concerns or [])
         unknown = only - {c.sym for c in node.concerns}
         if unknown:
@@ -765,9 +842,11 @@ def reaffirm(
         _rebuild(repo)
         if upgraded:
             typer.echo(f"Reaffirmed {target}: grounding {was} → {node.grounding}.")
+        if added_evidence:
+            typer.echo(f"Reaffirmed {target}: grounded by {', '.join(added_evidence)} — grounds-drift cleared.")
         if restamped:
             typer.echo(f"Reaffirmed {target}: re-anchored {', '.join(restamped)} to current code — drift cleared.")
-        elif not gone and not upgraded:
+        elif not gone and not upgraded and not added_evidence:
             typer.echo(f"Reaffirmed {target}: anchors already matched the current code (no drift to clear).")
         if gone:
             typer.echo(f"⚠ {target} concerns {', '.join(gone)}, which no longer resolve(s) in the source — "

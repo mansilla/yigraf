@@ -54,6 +54,16 @@ def _c(text: str, code: str) -> str:
     return f"\x1b[{code}m{text}{_RESET}"
 
 
+def _fmt_tokens(n: int) -> str:
+    """A raw token count as a compact, glanceable magnitude: ``1280 → 1.3k``, ``128000 → 128k``,
+    ``1_200_000 → 1.2M``. Sub-1k stays exact. One significant fractional digit only under 10 of a
+    unit (``1.3k``/``9.4M``), whole above (``128k``/``42M``) — enough to read the trend, no noise."""
+    if n < 1_000:
+        return str(n)
+    unit, scaled = ("M", n / 1_000_000) if n >= 1_000_000 else ("k", n / 1_000)
+    return (f"{scaled:.1f}{unit}" if scaled < 10 else f"{scaled:.0f}{unit}")
+
+
 @dataclass
 class StatusSummary:
     """A compact, host-agnostic snapshot of the graph. ``ctx_*`` are adapter-supplied and optional."""
@@ -72,7 +82,7 @@ class StatusSummary:
     update: str | None = None  # a newer yigraf version on PyPI, if the daily check found one
     ctx_used: int | None = None  # context tokens in use, if a host supplied it
     ctx_limit: int | None = None  # context window size, if a host supplied it
-    ctx_soft_limit: int = 200_000  # usable-budget knee the gauge scales to (config status.ctx_soft_limit; mem:053)
+    ctx_soft_limit: int = 250_000  # usable-budget knee the gauge scales to (config status.ctx_soft_limit; mem:053)
 
     @property
     def _ctx_effective(self) -> int | None:
@@ -125,7 +135,8 @@ class StatusSummary:
         if self.semantic:
             parts.append(f"sem {self.embedded}")
         if self.ctx_pct is not None:
-            parts.append(f"ctx {self.ctx_pct}%")
+            parts.append(f"ctx {self.ctx_pct}%"
+                         + (f" {_fmt_tokens(self.ctx_used)}" if self.ctx_used else ""))
         if self.update:
             parts.append(f"⬆ {self.update}")
         return " · ".join(parts)
@@ -155,11 +166,15 @@ class StatusSummary:
         return _c(" · ", "2").join(segs)
 
     def _ctx_gauge(self) -> str:
-        """A tiny 4-cell bar + percent, colored green→yellow→red as the window fills."""
+        """A tiny 4-cell bar + percent, colored green→yellow→red as the window fills, trailed by the
+        raw token magnitude (``128k``) dim, so the human reads both the fill and the absolute cost."""
         pct = self.ctx_pct or 0
         code = "32" if pct < 50 else "33" if pct < 80 else "31"
         fill = max(0, min(4, round(pct / 25)))
-        return _c("ctx ", "2") + _c("▰" * fill + "▱" * (4 - fill) + f" {pct}%", code)
+        gauge = _c("ctx ", "2") + _c("▰" * fill + "▱" * (4 - fill) + f" {pct}%", code)
+        if self.ctx_used:
+            gauge += _c(f" {_fmt_tokens(self.ctx_used)}", "2")
+        return gauge
 
     def as_dict(self) -> dict:
         """The full summary as JSON-ready data — for a host adapter that wants to render it itself."""
@@ -224,8 +239,8 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
     from yigraf import __version__, update
     available = update.available(root, __version__)
 
-    # The gauge scales to a usable budget, not the raw window (int:status-surface); default 200k.
-    soft_limit = config.get("status", {}).get("ctx_soft_limit", 200_000)
+    # The gauge scales to a usable budget, not the raw window (int:status-surface); default 250k.
+    soft_limit = config.get("status", {}).get("ctx_soft_limit", 250_000)
 
     return StatusSummary(
         symbols=symbols, intents=intents, plans=plans,
