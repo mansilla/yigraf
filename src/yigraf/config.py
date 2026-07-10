@@ -66,6 +66,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # different model needs re-calibration (a naive 0.4 never fires).
         "relevance_floor": 0.65,
     },
+    # Status surface (int:status-surface). The ctx gauge scales to a *usable budget*, not the raw
+    # window: quality and token cost track *absolute* occupancy, so a 1M window reads ~"full" long
+    # before 100%. The gauge denominator is min(host window, ctx_soft_limit) — a 1M window clamps to
+    # the knee, a genuine ~200k window is unaffected (the min is the window itself). 0 opts out (gauge
+    # against the raw window). ~200k is where Opus-class quality degrades and per-turn cost climbs.
+    "status": {
+        "ctx_soft_limit": 200_000,
+    },
 }
 
 # Commented YAML written by ``yigraf init``. A test asserts this parses to DEFAULT_CONFIG, so the
@@ -136,6 +144,14 @@ embeddings:
   dup_cosine: 0.9               # write-time near-duplicate threshold for `remember` (capture-flow §4)
   relevance_floor: 0.65         # `context` cosine floor below which a low-confidence banner shows (C#8).
                                 # Calibrated for bge-small (off-topic ≈0.62, on-topic ≈0.68); retune per model.
+
+# --- Status surface (int:status-surface) — the human ambient statusline ---
+# The context gauge scales to a *usable budget*, not the raw window: quality and per-turn cost track
+# *absolute* occupancy, so a 1M window reads ~"full" long before 100%. Denominator is
+# min(host window, ctx_soft_limit): a 1M window clamps to the knee, a genuine ~200k window is
+# unaffected. ~200k is where Opus-class quality degrades and cost climbs. Set 0 to use the raw window.
+status:
+  ctx_soft_limit: 200000        # tokens of usable budget the ctx gauge scales to (0 = raw window)
 """
 
 

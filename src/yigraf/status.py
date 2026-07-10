@@ -72,12 +72,33 @@ class StatusSummary:
     update: str | None = None  # a newer yigraf version on PyPI, if the daily check found one
     ctx_used: int | None = None  # context tokens in use, if a host supplied it
     ctx_limit: int | None = None  # context window size, if a host supplied it
+    ctx_soft_limit: int = 200_000  # usable-budget knee the gauge scales to (config status.ctx_soft_limit; mem:053)
+
+    @property
+    def _ctx_effective(self) -> int | None:
+        """The gauge denominator: the *usable budget*, ``min(window, ctx_soft_limit)``.
+
+        Quality and per-turn cost track *absolute* occupancy, not fraction-of-window, so a 1M window
+        clamps to the degradation knee (``ctx_soft_limit``) while a genuine ~200k window is unaffected
+        (the min is the window itself — the gauge stays byte-identical for small hosts). A
+        ``ctx_soft_limit`` of 0/None opts out: gauge against the raw window.
+        """
+        if not self.ctx_limit:
+            return None
+        return min(self.ctx_limit, self.ctx_soft_limit) if self.ctx_soft_limit else self.ctx_limit
 
     @property
     def ctx_pct(self) -> int | None:
-        """Context-window fill as a whole percent, or ``None`` when no host supplied occupancy."""
-        if self.ctx_used and self.ctx_limit:
-            return round(100 * self.ctx_used / self.ctx_limit)
+        """Fill as a whole percent of the *usable budget* (capped 100), or ``None`` with no host datum.
+
+        Not fraction-of-window: at 1M a 200k working set is ~"full" (≈100%), not a benign 20%, because
+        degradation and token cost track absolute occupancy. Plain and gauge both read this one number,
+        so digit, bar, and color agree. Raw ``ctx_used``/``ctx_limit`` stay verbatim in the dataclass
+        for a JSON consumer that wants the physical fill.
+        """
+        eff = self._ctx_effective
+        if self.ctx_used and eff:
+            return min(100, round(100 * self.ctx_used / eff))
         return None
 
     def render_line(self, *, color: bool = False, icon: str | None = None) -> str:
@@ -203,11 +224,14 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
     from yigraf import __version__, update
     available = update.available(root, __version__)
 
+    # The gauge scales to a usable budget, not the raw window (int:status-surface); default 200k.
+    soft_limit = config.get("status", {}).get("ctx_soft_limit", 200_000)
+
     return StatusSummary(
         symbols=symbols, intents=intents, plans=plans,
         tasks_total=tasks_total, tasks_open=tasks_open, decisions=decisions,
         drifting=drifting, freshness=_freshness(root, graph),
         semantic=embedded > 0, embedded=embedded,
         head=head[:7] if head else None, update=available,
-        ctx_used=ctx_used, ctx_limit=ctx_limit,
+        ctx_used=ctx_used, ctx_limit=ctx_limit, ctx_soft_limit=soft_limit,
     )
