@@ -50,15 +50,20 @@ sees the decision and its rationale without reading the history.
   to track the intent.
 
 ## 4. Drift means re-verify
-You don't poll for drift — `yigraf context` and the edit hook surface it for you: soft drift (a linked
-symbol's body changed) or hard drift (it's gone), for both `implements` (task→code) and `concerns`
-(decision→code) links. A pure rename auto-re-anchors. When drift surfaces, re-verify the code still
-satisfies the spec/decision, then re-anchor: `yigraf link task:<id> sym:…` for a task's `implements`,
-`yigraf reaffirm mem:<id>` for a decision's `concerns` that still holds (or `supersede` it if your mind
-changed). After an edit-heavy session that drifted many decisions on one locus, `yigraf reaffirm
-<sym|file>` reaffirms **every** memory concerning that locus in one call — scoped to a locus you
-actually re-verified (there's no blanket "clear all drift" — that would rubber-stamp). (`yigraf drift`
-exits non-zero on drift — that's the commit/CI gate, not something you poll.)
+You don't poll for drift, and you never *sweep* it — `yigraf context` and the edit hook surface it for
+you: soft drift (a linked symbol's body changed) or hard drift (it's gone), for both `implements`
+(task→code) and `concerns` (decision→code) links. A pure rename auto-re-anchors. When drift surfaces,
+re-verify the code still satisfies the spec/decision *while you have it open*, then re-anchor: `yigraf
+link task:<id> sym:…` for a task's `implements`, `yigraf reaffirm mem:<id>` for a decision's `concerns`
+that still holds (or `supersede` it if your mind changed). After an edit-heavy session that drifted many
+decisions on one locus, `yigraf reaffirm <sym|file>` reaffirms **every** memory concerning that locus in
+one call — scoped to a locus you actually re-verified. There is no blanket "clear all drift", and
+clearing drift you didn't re-read (a per-iteration cleanup pass) is the rubber-stamping that would make
+drift meaningless — only reaffirm what you verified this turn. A **done** task's `implements` drift is
+never surfaced at all (a shipped task's stale link is provenance, not a re-verify prompt — `int:drift-
+done-suppression`), so what you see is open-task and decision drift, the drift that actually wants
+action. (`yigraf drift` exits non-zero on *surfaced* drift — that's the commit/CI gate, not something
+you poll.)
 
 ## 5. Evolve an intent (retire or reverse a spec)
 Specs change too — but **never hand-edit a superseded intent into place**; use one of two supported paths:
