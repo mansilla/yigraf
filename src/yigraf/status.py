@@ -24,7 +24,7 @@ from pathlib import Path
 
 import networkx as nx
 
-from yigraf.drift import compute_drift
+from yigraf.drift import compute_drift, is_surfaced
 from yigraf.embeddings import load_index
 from yigraf.graph import to_node_link
 from yigraf.scaffold import WORKSPACE_DIRNAME
@@ -225,7 +225,10 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
             if a.get("status") == "active" and not a.get("superseded_in", 0):
                 decisions += 1
 
-    drifting = sum(1 for d in compute_drift(graph) if d.kind in ("soft", "hard"))
+    # Count only surfaced re-verify drift: a done task's implements drift is provenance, not a nag
+    # (int:drift-done-suppression); renames auto-re-anchor so they never count.
+    drifting = sum(1 for d in compute_drift(graph)
+                   if d.kind in ("soft", "hard") and is_surfaced(graph, d))
 
     index = load_index(root, config)
     embedded = len(index.ids) if index else 0

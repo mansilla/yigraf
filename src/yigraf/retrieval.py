@@ -19,7 +19,7 @@ from pathlib import Path
 import networkx as nx
 
 from yigraf import counters
-from yigraf.drift import compute_drift
+from yigraf.drift import compute_drift, is_surfaced
 
 #: Edges that count toward a node's incoming "importance" (refs_in). Shared with the GC/relevance
 #: engine so the two notions of "referenced" can't drift apart.
@@ -598,7 +598,9 @@ def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict,
     for item in compute_drift(graph):
         if item.kind == "renamed":
             continue
-        drifted_edges.add((item.task_id, item.locator))
+        drifted_edges.add((item.task_id, item.locator))  # full set — _verified_reconcile needs it
+        if not is_surfaced(graph, item):  # a done task's implements drift is provenance, not a nag
+            continue
         if item.task_id in hops or item.locator in seedset or item.locator in hops:
             has_drift = True
             drift_lines.append(_drift_line(item))
@@ -664,7 +666,9 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
     for item in compute_drift(graph):
         if item.kind == "renamed":
             continue
-        drifted_edges.add((item.task_id, item.locator))
+        drifted_edges.add((item.task_id, item.locator))  # full set — _verified_reconcile needs it
+        if not is_surfaced(graph, item):  # a done task's implements drift is provenance, not a nag
+            continue
         if item.task_id in in_scope or item.locator in in_scope:
             drift_lines.append(_drift_line(item))
 
@@ -750,7 +754,9 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
     for item in drift_items:
         if item.kind == "renamed":
             continue
-        drifted_edges.add((item.task_id, item.locator))
+        drifted_edges.add((item.task_id, item.locator))  # full set — _verified_reconcile needs it
+        if not is_surfaced(graph, item):  # a done task's implements drift is provenance, not a nag
+            continue
         if item.task_id in in_scope or item.locator in in_scope:
             drift_lines.append(_drift_line(item))
 

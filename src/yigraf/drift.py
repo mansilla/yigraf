@@ -134,3 +134,22 @@ def compute_drift(graph: nx.DiGraph) -> list[DriftItem]:
 
     items.sort(key=lambda it: (it.kind, it.task_id, it.locator))
     return items
+
+
+def is_surfaced(graph: nx.DiGraph, item: DriftItem) -> bool:
+    """Whether a drift item belongs in the *surfaced* signal — the ``yigraf drift`` report, the
+    ``context`` drift lines, and the statusline drift count — as opposed to the full set
+    :func:`compute_drift` returns for internal use.
+
+    int:drift-done-suppression: ``implements``-edge drift on a task the plan marks **done** is
+    provenance, not a re-verify prompt — a closed task has no honest re-verification, and relinking it
+    only rubber-stamps the anchor (the dishonesty mem:031/mem:039 guard against). So it is withheld from
+    what the agent sees. :func:`compute_drift` still emits it: the full set feeds
+    ``retrieval._verified_reconcile``, which needs a done task's stale link to flag its ``satisfied``
+    intent as no-longer-verified. Done-ness is the build-derived ``state`` attr (checkboxes are truth,
+    R6) — never stored drift state.
+    """
+    if item.relation == "implements" and item.task_id in graph.nodes:
+        if graph.nodes[item.task_id].get("state") == "done":
+            return False
+    return True

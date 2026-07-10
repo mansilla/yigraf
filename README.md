@@ -35,8 +35,10 @@ queryable graph and re-surfaces the relevant piece exactly when the agent needs 
   it, **anchored** to their current content.
 - **Drift detection** — when anchored code changes, yigraf surfaces *"re-verify this still holds, then
   re-link, reaffirm, or supersede."* A pure rename re-anchors automatically; a body change is honest
-  drift you clear by re-anchoring: `link` a task, `reaffirm` a decision that still holds, `supersede`
-  one that changed. (This is the part that makes yigraf governance, not just an index.)
+  drift you clear by re-anchoring — *only what you actually re-read* — `link` a task, `reaffirm` a
+  decision that still holds, `supersede` one that changed. A **done** task's link is provenance, so its
+  drift is never surfaced (nothing to re-verify on shipped work); you see open-task and decision drift,
+  the drift that wants action. (This is the part that makes yigraf governance, not just an index.)
 - **Memory** — capture decisions + the reasoning behind them; recall by **meaning** (semantic recall,
   on by default) or lexically; a decision earns `settled` after surviving K commits un-superseded; `gc`
   archives churn.

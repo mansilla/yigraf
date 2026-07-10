@@ -19,7 +19,7 @@ import typer
 from yigraf import __version__, artifacts, counters, embeddings, memory, retrieval, status, update
 from yigraf.astnorm import ANCHOR_ALGO, FILE_ANCHOR_ALGO, file_content_hash, parse_file_target
 from yigraf.config import load_config
-from yigraf.drift import compute_drift
+from yigraf.drift import compute_drift, is_surfaced
 from yigraf.extract import build_graph, symbol_content_hash
 from yigraf.graph import from_node_link, write_graph
 from yigraf.languages import available_extractors, extension_map
@@ -1086,7 +1086,9 @@ def drift(
     workspace = _require_workspace(path)
     config = load_config(workspace / "config.yaml")
     graph, _ = build_graph(path, config)  # build re-anchors renames in-memory first
-    items = compute_drift(graph)
+    # Surface only what the agent can honestly act on: a done task's implements drift is provenance,
+    # not a re-verify prompt, so it's withheld (int:drift-done-suppression via drift.is_surfaced).
+    items = [i for i in compute_drift(graph) if is_surfaced(graph, i)]
 
     if not items:
         typer.echo("No drift.")
