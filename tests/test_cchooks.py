@@ -242,14 +242,17 @@ def test_statusline_shows_ctx_gauge_from_the_transcript(tmp_path: Path):
     assert "ctx" in out and "20%" in out  # 40,000 / 200,000 = 20%, no jq involved
 
 
-def test_statusline_1m_model_uses_the_larger_ceiling(tmp_path: Path):
+def test_statusline_1m_model_gauges_against_the_usable_budget(tmp_path: Path):
+    """A 1M window clamps to the ~200k usable-budget knee (int:status-surface): the adapter still
+    reports the true 1M ceiling, but the gauge scales to min(window, ctx_soft_limit), so a 100k
+    working set reads ~"half full" — not a benign 10% — because degradation tracks absolute occupancy."""
     root = _governed_repo(tmp_path)
     tx = tmp_path / "tx.jsonl"
     tx.write_text(json.dumps(
         {"message": {"usage": {"input_tokens": 100000, "cache_read_input_tokens": 0,
                                "cache_creation_input_tokens": 0}}}) + "\n")
     out = _statusline(root, tx, model="claude-opus-4-8[1m]").output
-    assert "10%" in out  # 100,000 / 1,000,000, not / 200,000
+    assert "50%" in out  # 100,000 / 200,000 usable budget, not / 1,000,000 raw window
 
 
 def test_statusline_is_fail_open_on_garbage(tmp_path: Path, monkeypatch):
