@@ -1,4 +1,5 @@
 """The M2 authoring verbs end-to-end: intent/plan/link → projected graph (the M2 done-test)."""
+import re
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -162,15 +163,17 @@ def test_serves_to_missing_node_soft_warns_but_captures(tmp_path: Path):
     result = runner.invoke(app, ["remember", "x", "--serves", "int:not-yet", "--repo", str(root)])
     assert result.exit_code == 0
     assert "no such node int:not-yet" in result.output and "dangling serves edge" in result.output
-    assert _graph(root).nodes["mem:001"]["dangling_serves"] == ["int:not-yet"]
+    mem = re.search(r"Captured (mem:[0-9a-f]{16})", result.output).group(1)
+    assert _graph(root).nodes[mem]["dangling_serves"] == ["int:not-yet"]
 
 
 def test_note_constraint_accepts_rejected(tmp_path: Path):
     """D#4: --rejected on note-constraint (parity with remember) lands as the alternative, not in --why."""
     root = _repo(tmp_path)
-    _run(["note-constraint", "no blocking IO on the refresh path", "--concerns", SYM,
-          "--rejected", "a background thread — adds a race we can't test", "--repo", str(root)])
-    node = _graph(root).nodes["mem:001"]
+    out = _run(["note-constraint", "no blocking IO on the refresh path", "--concerns", SYM,
+                "--rejected", "a background thread — adds a race we can't test", "--repo", str(root)]).output
+    mem = re.search(r"Captured (mem:[0-9a-f]{16})", out).group(1)
+    node = _graph(root).nodes[mem]
     assert "background thread" in (node.get("alternatives") or "")
 
 

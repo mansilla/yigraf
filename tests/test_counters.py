@@ -9,6 +9,7 @@ The shared-committed-counter model (accumulated survival/usage in graph.json + a
 merge driver) is v1/Enterprise — explicitly out of scope here.
 """
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -148,12 +149,13 @@ def test_verdict_optional_survival_floor_gates_promotion():
 def test_decision_settles_after_enough_reaffirm_upholds(tmp_path: Path):
     """The end-to-end done-test: a decision reaffirmed K times is settled at read time (mem:033)."""
     root = _repo(tmp_path)
-    _run(["remember", "refresh uses optimistic locking", "--concerns", SYM, "--repo", str(root)])
-    assert _read_with_verdict(root).nodes["mem:001"]["maturity"] == "working"  # no upholds yet
+    out = _run(["remember", "refresh uses optimistic locking", "--concerns", SYM, "--repo", str(root)]).output
+    mem = re.search(r"Captured (mem:[0-9a-f]{16})", out).group(1)
+    assert _read_with_verdict(root).nodes[mem]["maturity"] == "working"  # no upholds yet
 
     for _ in range(3):  # each reaffirm books a strong uphold (~1.0); K=3 ⇒ settled
-        _run(["reaffirm", "mem:001", "--repo", str(root)])
-    assert _read_with_verdict(root).nodes["mem:001"]["maturity"] == "settled"
+        _run(["reaffirm", mem, "--repo", str(root)])
+    assert _read_with_verdict(root).nodes[mem]["maturity"] == "settled"
 
 
 def test_survival_is_head_cached_to_skip_the_walk(tmp_path: Path, monkeypatch):
@@ -261,12 +263,13 @@ def test_apply_telemetry_overlays_for_ranking():
 
 def test_context_records_telemetry_without_dirtying_graph_json(tmp_path: Path):
     root = _repo(tmp_path)
-    _run(["remember", "refresh uses optimistic locking", "--why", "the hot path",
-          "--concerns", SYM, "--repo", str(root)])
+    out = _run(["remember", "refresh uses optimistic locking", "--why", "the hot path",
+                "--concerns", SYM, "--repo", str(root)]).output
+    mem = re.search(r"Captured (mem:[0-9a-f]{16})", out).group(1)
 
     _run(["context", "optimistic locking refresh", "--repo", str(root)])
     tele = counters.load_telemetry(root)
-    assert tele.get("mem:001", {}).get("usage", 0) >= 1  # surfacing recorded in the sidecar
+    assert tele.get(mem, {}).get("usage", 0) >= 1  # surfacing recorded in the sidecar
 
     # graph.json holds no runtime telemetry — it stays fully recomputable, across rebuilds.
     _run(["build", str(root)])
@@ -317,15 +320,16 @@ def test_classify_gc_spares_a_referenced_proposed_candidate():
 
 def test_gc_archives_superseded_churn_without_deleting(tmp_path: Path):
     root = _repo(tmp_path)
-    _run(["remember", "refresh uses optimistic locking", "--concerns", SYM, "--repo", str(root)])
-    _run(["supersede", "mem:001", "refresh uses pessimistic locking", "--concerns", SYM, "--repo", str(root)])
+    out = _run(["remember", "refresh uses optimistic locking", "--concerns", SYM, "--repo", str(root)]).output
+    mem = re.search(r"Captured (mem:[0-9a-f]{16})", out).group(1)
+    _run(["supersede", mem, "refresh uses pessimistic locking", "--concerns", SYM, "--repo", str(root)])
 
     dry = _run(["gc", str(root)])
-    assert "Dry run" in dry.output and "mem:001 → archive" in dry.output
+    assert "Dry run" in dry.output and f"{mem} → archive" in dry.output
 
     _run(["gc", str(root), "--apply"])
     g = _graph(root)
-    assert "mem:001" not in g                                             # dropped from the active graph
+    assert mem not in g                                                  # dropped from the active graph
     archived = list((root / "yigraf" / "memory" / "archive").glob("*.md"))
     assert len(archived) == 1 and "optimistic" in archived[0].name        # moved, not deleted
 
@@ -335,16 +339,18 @@ def test_gc_expires_abandoned_proposed_but_spares_a_confirmed_one(tmp_path: Path
     confirmed (upholds ≥ maturity_confirm → working) is spared, while a never-encountered one expires."""
     monkeypatch.setattr(counters, "_survival_map", lambda root, paths: {p: 99 for p in paths})  # all old (≥ ttl 30)
     root = _repo(tmp_path)
-    _run(["propose", "confirmed candidate", "--from", "mined", "--concerns", SYM, "--repo", str(root)])   # mem:001
-    _run(["propose", "abandoned candidate", "--from", "mined", "--concerns", SYM, "--repo", str(root)])   # mem:002
+    o1 = _run(["propose", "confirmed candidate", "--from", "mined", "--concerns", SYM, "--repo", str(root)]).output
+    confirmed = re.search(r"Captured (mem:[0-9a-f]{16})", o1).group(1)   # the confirmed candidate
+    o2 = _run(["propose", "abandoned candidate", "--from", "mined", "--concerns", SYM, "--repo", str(root)]).output
+    abandoned = re.search(r"Captured (mem:[0-9a-f]{16})", o2).group(1)   # the abandoned candidate
 
     g, _ = build_graph(root, load_config(root / "yigraf" / "config.yaml"))
-    counters.record_uphold(root, g, ["mem:001"], 1.0)  # a real encounter confirms mem:001 (≥ maturity_confirm)
+    counters.record_uphold(root, g, [confirmed], 1.0)  # a real encounter confirms it (≥ maturity_confirm)
 
     out = _run(["gc", str(root), "--apply"]).output
-    assert "mem:002 → archive (abandoned proposed" in out and "mem:001" not in out  # only the abandoned one
+    assert f"{abandoned} → archive (abandoned proposed" in out and confirmed not in out  # only the abandoned one
     g2 = _graph(root)
-    assert "mem:001" in g2 and "mem:002" not in g2  # confirmed spared; abandoned dropped from the active graph
+    assert confirmed in g2 and abandoned not in g2  # confirmed spared; abandoned dropped from the active graph
     assert any("abandoned" in p.name for p in (root / "yigraf" / "memory" / "archive").glob("*.md"))
 
 

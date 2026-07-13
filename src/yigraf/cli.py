@@ -532,16 +532,20 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
     # A supersede (applied or pending) is a deliberate mind-change → skip the near-duplicate guard.
     if not supersedes and not pending_supersedes and not force_new:
         _dedup_guard(repo, config, graph, statement, why, concerns, serves)
-    seq = memory.next_seq(repo)
     slug = memory.slugify(statement)
+    # Content-addressed id (memid-v1, mem:063): coordinator-free, so no racy next_seq — and two agents
+    # who assert the same decision mint the same id and collapse on merge (int:concurrent-write-model).
+    mem_id = memory.memory_id(type_, statement, why, rejected, list(serves),
+                              [c.sym for c in concerns], [e.ref for e in evidence], list(supersedes))
+    dest = memory.hashed_memory_path(repo, slug, mem_id)
     node = memory.Memory(
-        id=f"mem:{seq:03d}", seq=seq, slug=slug, type=type_, statement=statement, why=why,
+        id=mem_id, seq=0, slug=slug, type=type_, statement=statement, why=why,
         alternatives=rejected, serves=list(serves), concerns=concerns, evidence=evidence,
         supersedes=list(supersedes), pending_supersedes=list(pending_supersedes),
         grounding=grounding, promotable=promotable, provenance=provenance,
         maturity=memory.landing_maturity(provenance),  # proposed for mined/review, else working (task #1)
+        source_file=f"memory/{dest.name}",
     )
-    dest = memory.memory_path(repo, seq, slug)
     dest.write_text(memory.render_memory(node), encoding="utf-8")
     _rebuild(repo)
     for w in warnings:  # soft-warn AFTER capture — the edge is written; these guide, never block (D#3)
@@ -871,7 +875,7 @@ def reaffirm(
         matched_ids.append(node.id)
         restamped, gone = _reaffirm_concerns(repo, config, node, {target})
         if restamped or gone:
-            memory.memory_path(repo, node.seq, node.slug).write_text(
+            memory.memory_file_path(repo, node).write_text(
                 memory.render_memory(node), encoding="utf-8")
         if restamped:
             restamped_ids.append(node.id)

@@ -5,6 +5,7 @@ The MCP SDK is a core dependency (``yigraf install`` wires the pull channel by d
 as plain functions and need no SDK at all.
 """
 import asyncio
+import re
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -76,9 +77,11 @@ def test_remember_captures_a_decision(tmp_path: Path):
 
 def test_reaffirm_re_anchors_through_mcp(tmp_path: Path):
     root = _linked_repo(tmp_path)
-    mcp_server.run_remember(str(root), "refresh stays immutable", concerns=["sym:auth/session.py#refresh"])
+    captured = mcp_server.run_remember(str(root), "refresh stays immutable",
+                                       concerns=["sym:auth/session.py#refresh"])
+    mem = re.search(r"Captured (mem:[0-9a-f]{16})", captured).group(1)
     (root / "auth" / "session.py").write_text("def refresh(token):\n    return token + 1\n")  # drift
-    out = mcp_server.run_reaffirm(str(root), "mem:001")
+    out = mcp_server.run_reaffirm(str(root), mem)
     assert "re-anchored" in out and "drift cleared" in out
 
 

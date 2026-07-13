@@ -25,6 +25,8 @@ v0 capture is deterministic and agent-asserted (memory-model §5 option A): no e
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -64,6 +66,14 @@ DEFAULT_ATTESTATION = "agent"
 #: (build-recomputable from provenance); ``settled`` is the sidecar-derived read-time verdict.
 MATURITIES = ("proposed", "working", "settled")
 DEFAULT_MATURITY = "working"
+
+#: Memory-node id algorithm (memid-v1, mem:063): the id is the content-hash of the SEMANTIC payload
+#: ONLY — never provenance/timestamp/causal-parents — so two agents that independently assert the same
+#: decision mint the SAME id and collapse to one node on merge (int:concurrent-write-model, mem:060).
+#: Versioned like :data:`yigraf.astnorm.ANCHOR_ALGO` so the recipe can evolve without silently
+#: re-identifying existing nodes. Coordinator-free, so it retires the racy global :func:`next_seq` for
+#: minting (its only remaining job is the legacy-id fallback for pre-memid files).
+MEMORY_ID_ALGO = "memid-v1"
 
 #: Provenance ``source`` values whose candidates LAND at ``proposed`` (they must be confirmed by a real
 #: encounter before they carry weight). An agent-asserted ``remember`` (source ``cli``/``mcp``) lands
@@ -180,6 +190,10 @@ class Memory:
     attestation: str = DEFAULT_ATTESTATION  # agent | human (int:memory-attestation)
     promotable: bool = False  # a constraint flagged as a candidate enforced check (capture-flow §0a)
     provenance: dict = field(default_factory=dict)
+    #: The real "memory/<filename>.md" this node was read from (set by :func:`read_memory`). Lets a
+    #: content-addressed (``<slug>-<hash>.md``) file be rewritten/projected by its true path instead of
+    #: a name reconstructed from ``seq``; ``None`` on a freshly-built node → derive from seq/slug.
+    source_file: str | None = None
 
 
 # --------------------------------------------------------------------------------------------------
@@ -234,6 +248,7 @@ def read_memory(path: Path) -> Memory:
         id=meta.get("id", f"mem:{seq:03d}"),
         seq=seq,
         slug=slug,
+        source_file=f"memory/{path.name}",
         type=meta.get("type", "decision"),
         statement=statement,
         why=why,
@@ -323,6 +338,46 @@ def memory_path(root: Path, seq: int, slug: str) -> Path:
     return memory_dir(root) / f"{seq:03d}-{slug}.md"
 
 
+def memory_id(type_: str, statement: str, why: str, alternatives: str | None,
+              serves: list[str], concern_syms: list[str], evidence_refs: list[str],
+              supersedes: list[str]) -> str:
+    """Content-address a memory by its SEMANTIC payload (``memid-v1``, mem:063).
+
+    The id hashes *what the memory says and what it links to* — never provenance, timestamp, or causal
+    position — so two agents who independently record the same decision mint the SAME id and collapse
+    to one node on merge (int:concurrent-write-model, mem:060). Coordinator-free, so it replaces the
+    racy global sequence counter (:func:`next_seq`). Identity spans the whole payload (incl. ``why`` /
+    ``alternatives``), so collapse is conservative: only genuinely identical reasoning merges for free;
+    a same-claim-different-``why`` pair diverges and is left to the near-duplicate / reconcile path.
+    """
+    payload = {
+        "algo": MEMORY_ID_ALGO,
+        "type": type_,
+        "statement": statement.strip(),
+        "why": (why or "").strip(),
+        "rejected": (alternatives or "").strip(),
+        "serves": sorted(serves),
+        "concerns": sorted(concern_syms),
+        "evidence": sorted(evidence_refs),
+        "supersedes": sorted(supersedes),
+    }
+    blob = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return "mem:" + hashlib.sha256(blob).hexdigest()[:16]
+
+
+def hashed_memory_path(root: Path, slug: str, mem_id: str) -> Path:
+    """Path for a content-addressed memory file: ``memory/<slug>-<hash>.md`` (``memid-v1``)."""
+    return memory_dir(root) / f"{slug}-{mem_id.split(':', 1)[1]}.md"
+
+
+def memory_file_path(root: Path, memory: Memory) -> Path:
+    """The on-disk path for an already-read memory — its real :attr:`Memory.source_file` (hash-named
+    or legacy ``NNN-slug``), falling back to the seq/slug reconstruction for a node built in memory."""
+    if memory.source_file:
+        return Path(root) / "yigraf" / memory.source_file
+    return memory_path(root, memory.seq, memory.slug)
+
+
 # --------------------------------------------------------------------------------------------------
 # Projection into the graph
 # --------------------------------------------------------------------------------------------------
@@ -348,6 +403,13 @@ def project_into(graph: nx.DiGraph, root: Path) -> None:
     Run *after* structure + intent/plan projection so ``serves``/``concerns`` targets resolve, and
     *before* :func:`yigraf.drift.resolve_renames` so a renamed ``concerns`` target re-anchors. An
     unresolved target stashes a ``dangling_*`` marker rather than conjuring a phantom node.
+
+    Two passes (mem:063): add *all* memory nodes before projecting *any* edges, so a memory→memory
+    ``supersedes``/``pending_supersedes`` edge resolves even when its target sorts later on disk. Under
+    the old sequential ids, filenames sorted in creation order so a predecessor was always present
+    first; content-addressed (``<slug>-<hash>.md``) files sort by slug, so a one-pass loop would stash
+    a forward supersede as ``dangling_supersedes`` and silently drop it (there is no re-resolution pass
+    for it, unlike ``dangling_concerns`` which :mod:`yigraf.drift` re-anchors).
     """
     memories = iter_memories(root)
     _project_file_anchor_nodes(graph, root, memories)
@@ -367,8 +429,9 @@ def project_into(graph: nx.DiGraph, root: Path) -> None:
             alternatives=memory.alternatives,
             promotable=memory.promotable,
             provenance=dict(memory.provenance),  # the landing tier is recomputed from this (R1)
-            source_file=f"memory/{memory.seq:03d}-{memory.slug}.md",
+            source_file=memory.source_file or f"memory/{memory.seq:03d}-{memory.slug}.md",
         )
+    for memory in memories:  # second pass: every memory target now exists (see two-pass note above)
         _project_memory_edges(graph, memory)
 
 

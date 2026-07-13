@@ -225,6 +225,22 @@ def test_sql_schema_symbols_and_drift():
     assert h1["sym:t.sql#users"] != h2["sym:t.sql#users"]
 
 
+def test_sql_schema_qualified_names():
+    # A schema-qualified reference (`public.foo`) has two identifier children (schema + name); the
+    # symbol must be named after the object, not its schema — else the object is invisible to drift.
+    src = (
+        "CREATE TABLE app.widget (id UUID PRIMARY KEY);\n"
+        "CREATE VIEW rpt.active_widgets AS SELECT id FROM app.widget;\n"
+        "CREATE FUNCTION public.find_or_create_widget(p TEXT) RETURNS UUID\n"
+        "  AS $$ SELECT translate(p, 'áéíóúñ', 'aeioun')::uuid $$ LANGUAGE sql;\n"
+    ).encode()
+    kinds = _kinds(extract_file("0017_widget.sql", src))
+    assert kinds["widget"] == "table"
+    assert kinds["active_widgets"] == "view"
+    assert kinds["find_or_create_widget"] == "function"
+    assert not any(n in kinds for n in ("app", "rpt", "public"))  # schemas are never symbols
+
+
 # --- Import + call enrichment (the per-language "extra layer") -------------------------------------
 
 

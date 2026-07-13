@@ -146,3 +146,18 @@ def test_status_cli_line_and_json(tmp_path: Path):
     assert out.exit_code == 0
     data = json.loads(out.stdout)
     assert data["symbols"] == 1 and data["freshness"] == "fresh" and data["ctx_used"] is None
+
+
+def test_coherence_is_silent_when_clean(tmp_path: Path):
+    """No open conflicts ⇒ no coherence segment (design law #4: silence over a permanent '0 conflict')."""
+    s = _summary(_repo(tmp_path))
+    assert s.coherence == 0 and "conflict" not in s.render_line()
+
+
+def test_coherence_dirty_renders_a_conflict_count(tmp_path: Path):
+    """The coherence-dirty dimension (mem:062) shows in both renders when a principal has conflicts to resolve."""
+    s = _summary(_repo(tmp_path))
+    s.coherence = 3  # inject the count; detection itself is covered by test_contradiction
+    assert "⚠ 3 conflict" in s.render_line()
+    assert "3 conflict" in s.render_line(color=True, icon=status.SPIN[0])
+    assert s.as_dict()["coherence"] == 3
