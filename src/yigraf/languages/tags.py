@@ -700,10 +700,14 @@ _BASH_TAGS = """
 
 # SQL: schema objects are the "symbols" (drift on a CREATE is a useful schema-change signal). No call
 # model. Only verified node types — an unknown one would fail query compile and skip the language.
+# `name:` field (not a bare `(identifier)`): a schema-qualified reference (`public.foo`) has TWO
+# identifier children (schema + name), and `matches()` then yields the pattern once per identifier —
+# _dedup_definitions keeps the FIRST (the schema), so `public.foo` was named after its schema and the
+# real object vanished. Keying on the `name:` field captures only the object, qualified or not.
 _SQL_TAGS = """
-(create_table (object_reference (identifier) @name)) @definition.table
-(create_view (object_reference (identifier) @name)) @definition.view
-(create_function (object_reference (identifier) @name)) @definition.function
+(create_table (object_reference name: (identifier) @name)) @definition.table
+(create_view (object_reference name: (identifier) @name)) @definition.view
+(create_function (object_reference name: (identifier) @name)) @definition.function
 """
 
 
