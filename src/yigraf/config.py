@@ -65,6 +65,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # queries top out ≈0.62 and real topical queries bottom at ≈0.68, so 0.65 sits in the gap. A
         # different model needs re-calibration (a naive 0.4 never fires).
         "relevance_floor": 0.65,
+        # Batch coherence sweep threshold (contradiction.py, task #4): two live co-anchored beliefs
+        # this close read as the same topic and surface as a knowledge-conflict candidate for a
+        # principal (mem:062). Below the 0.9 refuse-at-write line (a cross-log near-dup the per-write
+        # guard never saw) yet above the complementary-decision noise band — calibrated on the
+        # self-hosted corpus (5 candidates at 0.85, 0 at 0.9). Re-calibrate per model like the others.
+        "conflict_cosine": 0.85,
     },
     # Status surface (int:status-surface). The ctx gauge scales to a *usable budget*, not the raw
     # window: quality and token cost track *absolute* occupancy, so a 1M window reads ~"full" long
@@ -144,6 +150,8 @@ embeddings:
   dup_cosine: 0.9               # write-time near-duplicate threshold for `remember` (capture-flow §4)
   relevance_floor: 0.65         # `context` cosine floor below which a low-confidence banner shows (C#8).
                                 # Calibrated for bge-small (off-topic ≈0.62, on-topic ≈0.68); retune per model.
+  conflict_cosine: 0.85         # batch coherence sweep: two live co-anchored beliefs this close surface as
+                                # a knowledge-conflict candidate for a principal (task #4; below dup_cosine).
 
 # --- Status surface (int:status-surface) — the human ambient statusline ---
 # The context gauge scales to a *usable budget*, not the raw window: quality and per-turn cost track

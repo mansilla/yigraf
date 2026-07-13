@@ -6,6 +6,7 @@ second drift relation after ``implements``); a rename auto-re-anchors a ``concer
 supersession materializes the ``superseded_in`` counter and the active decision out-ranks the stale
 one; and the decision surfaces in ``context`` / the action-driven hook.
 """
+import re
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -57,7 +58,12 @@ def _graph(root: Path):
     return read_graph(root / "yigraf" / "graph.json")
 
 
-def _remember(root: Path, statement: str, **opts) -> None:
+def _mid(result) -> str:
+    """Extract the content-addressed id from a capture verb's ``Captured mem:<id> (...)`` line."""
+    return re.search(r"Captured (mem:[0-9a-f]{16})", result.output).group(1)
+
+
+def _remember(root: Path, statement: str, **opts) -> str:
     args = ["remember", statement, "--repo", str(root)]
     for key in ("type", "why", "rejected", "grounding"):
         if key in opts:
@@ -68,7 +74,7 @@ def _remember(root: Path, statement: str, **opts) -> None:
         args += ["--concerns", sym]
     for ref in opts.get("evidence", []):
         args += ["--evidence", ref]
-    _run(args)
+    return _mid(_run(args))
 
 
 # --------------------------------------------------------------------------------------------------
@@ -78,24 +84,24 @@ def _remember(root: Path, statement: str, **opts) -> None:
 
 def test_remember_projects_a_memory_node_with_its_edges(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "session refresh uses optimistic locking", type="decision",
-              why="refresh path is hot; a retry is cheaper than serializing",
-              serves=["int:session-expiry"], concerns=[SYM], rejected="pessimistic row lock")
+    mid = _remember(root, "session refresh uses optimistic locking", type="decision",
+                    why="refresh path is hot; a retry is cheaper than serializing",
+                    serves=["int:session-expiry"], concerns=[SYM], rejected="pessimistic row lock")
     g = _graph(root)
-    node = g.nodes["mem:001"]
+    node = g.nodes[mid]
     assert node["family"] == "memory" and node["kind"] == "decision" and node["status"] == "active"
     assert node["statement"] == "session refresh uses optimistic locking"
     assert node["why"].startswith("refresh path is hot")
     assert node["alternatives"] == "pessimistic row lock"
-    assert g.edges["mem:001", "int:session-expiry"]["relation"] == "serves"
-    assert g.edges["mem:001", SYM]["relation"] == "concerns"
+    assert g.edges[mid, "int:session-expiry"]["relation"] == "serves"
+    assert g.edges[mid, SYM]["relation"] == "concerns"
 
 
 def test_concerns_edge_is_anchored_to_the_symbol_hash(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "refresh keeps the token immutable", concerns=[SYM])
+    mid = _remember(root, "refresh keeps the token immutable", concerns=[SYM])
     g = _graph(root)
-    edge = g.edges["mem:001", SYM]
+    edge = g.edges[mid, SYM]
     assert edge["anchor_algo"] == "astnorm-v1"
     assert edge["anchor"] == g.nodes[SYM]["content_hash"]  # freshly captured → no drift
 
@@ -115,15 +121,15 @@ def test_remember_soft_warns_and_dangles_an_unknown_concerns_symbol(tmp_path: Pa
     assert result.exit_code == 0
     assert "no such symbol" in result.output and "dangling concerns edge" in result.output
     assert "Did you mean: sym:auth/session.py#refresh?" in result.output  # still helps a typo
-    node = memory.read_memory(memory.find_memory(root, "mem:001"))  # captured anyway
+    node = memory.read_memory(memory.find_memory(root, _mid(result)))  # captured anyway
     assert node.concerns[0].sym == "sym:auth/session.py#ghost" and node.concerns[0].anchor is None
 
 
 def test_note_constraint_is_a_promotable_constraint(tmp_path: Path):
     root = _repo(tmp_path)
-    _run(["note-constraint", "refresh() must not block over 50ms", "--concerns", SYM,
-          "--repo", str(root)])
-    node = _graph(root).nodes["mem:001"]
+    mid = _mid(_run(["note-constraint", "refresh() must not block over 50ms", "--concerns", SYM,
+                     "--repo", str(root)]))
+    node = _graph(root).nodes[mid]
     assert node["kind"] == "constraint" and node["promotable"] is True
 
 
@@ -134,23 +140,23 @@ def test_note_constraint_is_a_promotable_constraint(tmp_path: Path):
 
 def test_editing_concerned_code_surfaces_concerns_drift(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "refresh keeps the token immutable", concerns=[SYM])
+    mid = _remember(root, "refresh keeps the token immutable", concerns=[SYM])
     (root / SRC).write_text("def refresh(token):\n    return token + 1\n")  # body changed
     graph, _ = build_graph(root, default_config())
     items = [i for i in compute_drift(graph) if i.relation == "concerns"]
     assert [i.kind for i in items] == ["soft"]
-    assert items[0].task_id == "mem:001" and items[0].locator == SYM
+    assert items[0].task_id == mid and items[0].locator == SYM
 
 
 def test_concerns_edge_auto_reanchors_on_rename(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "refresh keeps the token immutable", concerns=[SYM])
+    mid = _remember(root, "refresh keeps the token immutable", concerns=[SYM])
     (root / SRC).write_text("def renew(token):\n    return token\n")  # pure rename, identical body
     graph, _ = build_graph(root, default_config())
     new = "sym:auth/session.py#renew"
-    assert graph.has_edge("mem:001", new)
-    assert graph["mem:001"][new]["relation"] == "concerns"
-    assert graph["mem:001"][new]["renamed_from"] == SYM
+    assert graph.has_edge(mid, new)
+    assert graph[mid][new]["relation"] == "concerns"
+    assert graph[mid][new]["renamed_from"] == SYM
     assert [i.kind for i in compute_drift(graph) if i.relation == "concerns"] == ["renamed"]
 
 
@@ -166,27 +172,27 @@ def test_deleting_concerned_code_is_hard_concerns_drift(tmp_path: Path):
 def test_reaffirm_re_anchors_and_clears_concerns_drift(tmp_path: Path):
     """The honest counterpart to supersede: re-verify holds, re-stamp the anchor, drift clears in place."""
     root = _repo(tmp_path)
-    _remember(root, "refresh keeps the token immutable", concerns=[SYM])
+    mid = _remember(root, "refresh keeps the token immutable", concerns=[SYM])
     (root / SRC).write_text("def refresh(token):\n    return token + 1\n")  # body changed → soft drift
     graph, _ = build_graph(root, default_config())
     assert [i.kind for i in compute_drift(graph) if i.relation == "concerns"] == ["soft"]
 
-    out = _run(["reaffirm", "mem:001", "--repo", str(root)])
+    out = _run(["reaffirm", mid, "--repo", str(root)])
     assert "re-anchored" in out.output and SYM in out.output
 
     graph, _ = build_graph(root, default_config())
     assert [i for i in compute_drift(graph) if i.relation == "concerns"] == []  # drift cleared
     # the anchor now equals the *current* body hash, and the edge/claim is otherwise unchanged
-    assert graph.edges["mem:001", SYM]["anchor"] == graph.nodes[SYM]["content_hash"]
-    assert graph.nodes["mem:001"]["statement"] == "refresh keeps the token immutable"
-    assert graph.nodes["mem:001"]["status"] == "active"  # no supersede, no new node
-    assert memory.find_memory(root, "mem:002") is None
+    assert graph.edges[mid, SYM]["anchor"] == graph.nodes[SYM]["content_hash"]
+    assert graph.nodes[mid]["statement"] == "refresh keeps the token immutable"
+    assert graph.nodes[mid]["status"] == "active"  # no supersede, no new node
+    assert len(memory.iter_memories(root)) == 1  # reaffirm re-anchors in place, mints nothing
 
 
 def test_reaffirm_is_a_noop_when_there_is_no_drift(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "refresh keeps the token immutable", concerns=[SYM])
-    out = _run(["reaffirm", "mem:001", "--repo", str(root)])
+    mid = _remember(root, "refresh keeps the token immutable", concerns=[SYM])
+    out = _run(["reaffirm", mid, "--repo", str(root)])
     assert "already matched" in out.output
 
 
@@ -198,30 +204,30 @@ def test_reaffirm_unknown_memory_guides_and_exits_zero(tmp_path: Path):
 
 def test_reaffirm_without_concerns_has_nothing_to_do(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "a decision that governs no specific symbol", serves=["int:session-expiry"])
-    result = runner.invoke(app, ["reaffirm", "mem:001", "--repo", str(root)])
+    mid = _remember(root, "a decision that governs no specific symbol", serves=["int:session-expiry"])
+    result = runner.invoke(app, ["reaffirm", mid, "--repo", str(root)])
     assert result.exit_code == 0 and "concerns no symbol" in result.output
 
 
 def test_reaffirm_cannot_re_anchor_a_gone_symbol(tmp_path: Path):
     """A deleted symbol is hard drift, not a reaffirm case — guide toward supersede, don't crash."""
     root = _repo(tmp_path)
-    _remember(root, "refresh keeps the token immutable", concerns=[SYM])
+    mid = _remember(root, "refresh keeps the token immutable", concerns=[SYM])
     (root / SRC).write_text("def unrelated():\n    return 0\n")  # refresh is gone
-    out = _run(["reaffirm", "mem:001", "--repo", str(root)])
+    out = _run(["reaffirm", mid, "--repo", str(root)])
     assert "no longer resolve" in out.output and "supersede" in out.output
 
 
 def test_superseded_memory_does_not_drift_on_concerned_code_change(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "refresh keeps the token immutable", concerns=[SYM])
-    _run(["supersede", "mem:001", "refresh may rotate the token",
-          "--concerns", SYM, "--repo", str(root)])
+    m1 = _remember(root, "refresh keeps the token immutable", concerns=[SYM])
+    m2 = _mid(_run(["supersede", m1, "refresh may rotate the token",
+                    "--concerns", SYM, "--repo", str(root)]))
     (root / SRC).write_text("def refresh(token):\n    return token + 1\n")  # body changed
     graph, _ = build_graph(root, default_config())
     sources = {i.task_id for i in compute_drift(graph) if i.relation == "concerns"}
     # The active successor still drifts; the superseded predecessor is historical and stays silent.
-    assert "mem:002" in sources and "mem:001" not in sources
+    assert m2 in sources and m1 not in sources
 
 
 # --------------------------------------------------------------------------------------------------
@@ -231,25 +237,26 @@ def test_superseded_memory_does_not_drift_on_concerned_code_change(tmp_path: Pat
 
 def test_supersede_links_and_marks_the_predecessor_stale(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "session refresh uses optimistic locking", concerns=[SYM])
-    _run(["supersede", "mem:001", "session refresh uses pessimistic locking",
-          "--why", "contention is low; a row lock is simpler", "--concerns", SYM, "--repo", str(root)])
+    m1 = _remember(root, "session refresh uses optimistic locking", concerns=[SYM])
+    m2 = _mid(_run(["supersede", m1, "session refresh uses pessimistic locking",
+                    "--why", "contention is low; a row lock is simpler", "--concerns", SYM,
+                    "--repo", str(root)]))
     g = _graph(root)
-    assert g.edges["mem:002", "mem:001"]["relation"] == "supersedes"
-    assert g.nodes["mem:001"]["superseded_in"] == 1
-    assert g.nodes["mem:002"]["supersedes_out"] == 1
-    assert g.nodes["mem:002"]["superseded_in"] == 0
+    assert g.edges[m2, m1]["relation"] == "supersedes"
+    assert g.nodes[m1]["superseded_in"] == 1
+    assert g.nodes[m2]["supersedes_out"] == 1
+    assert g.nodes[m2]["superseded_in"] == 0
 
 
 def test_active_decision_outranks_its_superseded_predecessor(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "session refresh uses optimistic locking", concerns=[SYM])
-    _run(["supersede", "mem:001", "session refresh uses pessimistic locking",
-          "--concerns", SYM, "--repo", str(root)])
+    m1 = _remember(root, "session refresh uses optimistic locking", concerns=[SYM])
+    m2 = _mid(_run(["supersede", m1, "session refresh uses pessimistic locking",
+                    "--concerns", SYM, "--repo", str(root)]))
     graph, _ = build_graph(root, default_config())
     result = retrieval.context(graph, "session refresh locking", default_config(), family="memory")
-    # Both decisions render; the active one (mem:002) appears before the superseded mem:001.
-    assert result.text.index("mem:002") < result.text.index("mem:001")
+    # Both decisions render; the active successor appears before the superseded predecessor.
+    assert result.text.index(m2) < result.text.index(m1)
     assert "·superseded" in result.text
 
 
@@ -266,33 +273,24 @@ def test_supersede_rejects_an_unknown_old_id(tmp_path: Path):
 
 def test_context_renders_the_decision_with_its_why(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "session refresh uses optimistic locking", type="decision",
-              why="refresh path is hot", serves=["int:session-expiry"], concerns=[SYM])
+    mid = _remember(root, "session refresh uses optimistic locking", type="decision",
+                    why="refresh path is hot", serves=["int:session-expiry"], concerns=[SYM])
     graph, _ = build_graph(root, default_config())
     result = retrieval.context(graph, "optimistic locking refresh", default_config())
     assert "Decisions (why):" in result.text
-    assert "mem:001 [decision·inferred]" in result.text  # grounding rides the tag (C#6, default inferred)
+    assert f"{mid} [decision·inferred]" in result.text  # grounding rides the tag (C#6, default inferred)
     assert "why: refresh path is hot" in result.text
 
 
 def test_memory_artifact_round_trips(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "a decision", why="because", concerns=[SYM], rejected="the alternative")
-    path = memory.find_memory(root, "mem:001")
+    mid = _remember(root, "a decision", why="because", concerns=[SYM], rejected="the alternative")
+    path = memory.find_memory(root, mid)
     assert path is not None
     mem = memory.read_memory(path)
-    assert mem.id == "mem:001" and mem.statement == "a decision" and mem.why == "because"
+    assert mem.id == mid and mem.statement == "a decision" and mem.why == "because"
     assert mem.alternatives == "the alternative"
     assert mem.concerns[0].sym == SYM and mem.concerns[0].anchor is not None
-
-
-def test_next_seq_increments_across_captures(tmp_path: Path):
-    root = _repo(tmp_path)
-    assert memory.next_seq(root) == 1
-    _remember(root, "first")
-    assert memory.next_seq(root) == 2
-    _remember(root, "second")
-    assert memory.next_seq(root) == 3
 
 
 # --------------------------------------------------------------------------------------------------
@@ -302,16 +300,16 @@ def test_next_seq_increments_across_captures(tmp_path: Path):
 
 def test_grounding_defaults_to_inferred_and_round_trips(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "a reasoned guess")
-    mem = memory.read_memory(memory.find_memory(root, "mem:001"))
+    mid = _remember(root, "a reasoned guess")
+    mem = memory.read_memory(memory.find_memory(root, mid))
     assert mem.grounding == "inferred"  # default: an agent assertion is not yet evidence-backed
-    assert _graph(root).nodes["mem:001"]["grounding"] == "inferred"
+    assert _graph(root).nodes[mid]["grounding"] == "inferred"
 
 
 def test_grounding_override_persists(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "confirmed by a live spike", grounding="empirical", evidence=["commit:abc123"])
-    assert memory.read_memory(memory.find_memory(root, "mem:001")).grounding == "empirical"
+    mid = _remember(root, "confirmed by a live spike", grounding="empirical", evidence=["commit:abc123"])
+    assert memory.read_memory(memory.find_memory(root, mid)).grounding == "empirical"
 
 
 def test_invalid_grounding_is_guided_not_crashed(tmp_path: Path):
@@ -319,16 +317,16 @@ def test_invalid_grounding_is_guided_not_crashed(tmp_path: Path):
     result = runner.invoke(app, ["remember", "x", "--repo", str(root), "--grounding", "hunch"])
     assert result.exit_code == 0  # design-law #1: recoverable → exit 0 with guidance, not a stack trace
     assert "--grounding must be one of" in result.output
-    assert memory.find_memory(root, "mem:001") is None  # nothing was written
+    assert memory.iter_memories(root) == []  # nothing was written
 
 
 def test_context_shows_grounding_tag(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "empirical decision", grounding="empirical",
-              serves=["int:session-expiry"], concerns=[SYM], evidence=["commit:abc123"])
+    mid = _remember(root, "empirical decision", grounding="empirical",
+                    serves=["int:session-expiry"], concerns=[SYM], evidence=["commit:abc123"])
     graph, _ = build_graph(root, default_config())
     result = retrieval.context(graph, "empirical decision", default_config())
-    assert "mem:001 [decision·empirical]" in result.text
+    assert f"{mid} [decision·empirical]" in result.text
 
 
 def test_context_grounding_filter_drops_other_tiers(tmp_path: Path):
@@ -344,13 +342,13 @@ def test_context_grounding_filter_drops_other_tiers(tmp_path: Path):
 
 def test_reaffirm_upgrades_grounding_in_place(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "inferred then confirmed", concerns=[SYM])
-    assert memory.read_memory(memory.find_memory(root, "mem:001")).grounding == "inferred"
-    res = _run(["reaffirm", "mem:001", "--repo", str(root), "--grounding", "empirical",
+    mid = _remember(root, "inferred then confirmed", concerns=[SYM])
+    assert memory.read_memory(memory.find_memory(root, mid)).grounding == "inferred"
+    res = _run(["reaffirm", mid, "--repo", str(root), "--grounding", "empirical",
                 "--evidence", "commit:abc123"])  # empirical now requires naming the observation
     assert "grounding inferred → empirical" in res.output
-    # the claim is unchanged (no supersede), only the epistemic status advanced — still mem:001, active
-    mem = memory.read_memory(memory.find_memory(root, "mem:001"))
+    # the claim is unchanged (no supersede), only the epistemic status advanced — same node, active
+    mem = memory.read_memory(memory.find_memory(root, mid))
     assert mem.grounding == "empirical" and mem.statement == "inferred then confirmed"
 
 
@@ -370,9 +368,9 @@ def test_landing_maturity_maps_provenance_to_tier():
 def test_agent_remember_lands_working(tmp_path: Path):
     """An agent-asserted remember lands ``working`` — the shown-nowhere default, full weight."""
     root = _repo(tmp_path)
-    _remember(root, "an agent-asserted decision")
-    assert memory.read_memory(memory.find_memory(root, "mem:001")).maturity == "working"
-    assert _graph(root).nodes["mem:001"]["maturity"] == "working"
+    mid = _remember(root, "an agent-asserted decision")
+    assert memory.read_memory(memory.find_memory(root, mid)).maturity == "working"
+    assert _graph(root).nodes[mid]["maturity"] == "working"
 
 
 def test_proposed_candidate_shows_the_proposed_tag(tmp_path: Path):
@@ -385,10 +383,10 @@ def test_proposed_candidate_shows_the_proposed_tag(tmp_path: Path):
                                why="", serves=[], concern_syms=[SYM], rejected=None, supersedes=[],
                                promotable=False, provenance={"source": "mined"})
     assert node.maturity == "proposed"
-    assert memory.read_memory(memory.find_memory(root, "mem:001")).maturity == "proposed"
+    assert memory.read_memory(memory.find_memory(root, node.id)).maturity == "proposed"
     graph, _ = build_graph(root, default_config())
     result = retrieval.context(graph, "mined candidate", default_config())
-    assert "mem:001 [decision·inferred·proposed]" in result.text
+    assert f"{node.id} [decision·inferred·proposed]" in result.text
 
 
 # --------------------------------------------------------------------------------------------------
@@ -410,22 +408,22 @@ def test_propose_review_lands_a_proposed_constraint_anchored_to_the_locus(tmp_pa
     """#5: a confirmed review finding → proposed constraint, anchored (concerns) to the reviewed locus,
     carrying the anti-pattern as the rejected alternative."""
     root = _repo(tmp_path)
-    _propose(root, "never refresh without validating the token first", from_="review",
-             concerns=[SYM], rejected="returning the token unchecked — the current body")
-    node = memory.read_memory(memory.find_memory(root, "mem:001"))
+    mid = _mid(_propose(root, "never refresh without validating the token first", from_="review",
+                        concerns=[SYM], rejected="returning the token unchecked — the current body"))
+    node = memory.read_memory(memory.find_memory(root, mid))
     assert node.type == "constraint"           # review defaults to constraint
     assert node.maturity == "proposed"         # lands in quarantine
     assert node.provenance["source"] == "review"
     assert node.alternatives.startswith("returning the token unchecked")
-    assert _graph(root).edges["mem:001", SYM]["relation"] == "concerns"  # anchored to the locus
+    assert _graph(root).edges[mid, SYM]["relation"] == "concerns"  # anchored to the locus
 
 
 def test_propose_mined_defaults_to_decision_and_records_origin(tmp_path: Path):
     """#6: a distilled candidate from history → proposed decision; --origin rides the provenance trail."""
     root = _repo(tmp_path)
-    _propose(root, "refresh was made idempotent deliberately", from_="mined",
-             concerns=[SYM], origin="commit abc123")
-    node = memory.read_memory(memory.find_memory(root, "mem:001"))
+    mid = _mid(_propose(root, "refresh was made idempotent deliberately", from_="mined",
+                        concerns=[SYM], origin="commit abc123"))
+    node = memory.read_memory(memory.find_memory(root, mid))
     assert node.type == "decision" and node.maturity == "proposed"
     assert node.provenance == {"source": "mined", "origin": "commit abc123"}
 
@@ -435,30 +433,32 @@ def test_propose_rejects_an_unknown_from(tmp_path: Path):
     result = runner.invoke(app, ["propose", "x", "--from", "scraped", "--repo", str(root)])
     assert result.exit_code == 0  # design-law #1: recoverable → exit 0 with guidance
     assert "--from must be one of" in result.output
-    assert memory.find_memory(root, "mem:001") is None  # nothing written
+    assert memory.iter_memories(root) == []  # nothing written
 
 
 def test_proposed_finding_resurfaces_at_its_locus_via_the_edit_hook(tmp_path: Path):
     """The #5 done-test: the proposed finding is silent in the noise but re-surfaces at the edit hook
     for the exact locus it concerns (int:review-compound: 'at the moment of action')."""
     root = _repo(tmp_path)
-    _propose(root, "never refresh without validating the token first", from_="review", concerns=[SYM])
+    mid = _mid(_propose(root, "never refresh without validating the token first", from_="review",
+                        concerns=[SYM]))
     cfg = default_config()
     graph, _ = build_graph(root, cfg)
     result = retrieval.context_for_locus(graph, SRC, cfg)
-    assert result is not None and "mem:001" in result.text and "·proposed" in result.text
+    assert result is not None and mid in result.text and "·proposed" in result.text
 
 
 def test_a_real_encounter_confirms_a_proposed_candidate_up_to_working(tmp_path: Path):
     """The compounding payoff: enough survived edit-hook encounters (upholds ≥ maturity_confirm) graduate
     a proposed candidate to working — no new confirm machinery, it reuses the maturity uphold accumulator."""
     root = _repo(tmp_path)
-    _propose(root, "never refresh without validating the token first", from_="review", concerns=[SYM])
+    mid = _mid(_propose(root, "never refresh without validating the token first", from_="review",
+                        concerns=[SYM]))
     cfg = default_config()
-    assert _read_with_verdict(root).nodes["mem:001"]["maturity"] == "proposed"  # un-encountered
+    assert _read_with_verdict(root).nodes[mid]["maturity"] == "proposed"  # un-encountered
     graph, _ = build_graph(root, cfg)
-    counters.record_uphold(root, graph, ["mem:001"], cfg["maturity_confirm"])  # one real encounter
-    assert _read_with_verdict(root).nodes["mem:001"]["maturity"] == "working"   # confirmed out of quarantine
+    counters.record_uphold(root, graph, [mid], cfg["maturity_confirm"])  # one real encounter
+    assert _read_with_verdict(root).nodes[mid]["maturity"] == "working"   # confirmed out of quarantine
 
 
 # --------------------------------------------------------------------------------------------------
@@ -477,48 +477,55 @@ def _attest_human(root: Path, mem_id: str) -> None:
 
 def test_attestation_defaults_agent_and_round_trips(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "a decision")
-    assert memory.read_memory(memory.find_memory(root, "mem:001")).attestation == "agent"
-    assert _graph(root).nodes["mem:001"]["attestation"] == "agent"
+    mid = _remember(root, "a decision")
+    assert memory.read_memory(memory.find_memory(root, mid)).attestation == "agent"
+    assert _graph(root).nodes[mid]["attestation"] == "agent"
 
 
 def test_supersede_of_human_attested_node_is_held_pending(tmp_path: Path):
     """int:memory-attestation: an agent supersede of a human-attested node is captured but NOT applied."""
     root = _repo(tmp_path)
-    _remember(root, "human-endorsed decision", concerns=[SYM])
-    _attest_human(root, "mem:001")
-    res = _run(["supersede", "mem:001", "a competing decision", "--repo", str(root)])
+    m1 = _remember(root, "human-endorsed decision", concerns=[SYM])
+    _attest_human(root, m1)
+    res = _run(["supersede", m1, "a competing decision", "--repo", str(root)])
     assert "HELD PENDING" in res.output
+    m2 = _mid(res)
     g = _graph(root)
-    assert g.nodes["mem:001"].get("superseded_in", 0) == 0  # old node stays authoritative (not demoted)
-    new = memory.read_memory(memory.find_memory(root, "mem:002"))
-    assert new.pending_supersedes == ["mem:001"] and new.supersedes == []  # pending, not applied
+    assert g.nodes[m1].get("superseded_in", 0) == 0  # old node stays authoritative (not demoted)
+    new = memory.read_memory(memory.find_memory(root, m2))
+    assert new.pending_supersedes == [m1] and new.supersedes == []  # pending, not applied
 
 
 def test_agent_supersede_of_agent_node_applies_normally(tmp_path: Path):
     """Control: an agent-attested node supersedes normally (demotes the old) — stickiness is human-only."""
     root = _repo(tmp_path)
-    _remember(root, "an agent decision", concerns=[SYM])
-    _run(["supersede", "mem:001", "the replacement", "--repo", str(root)])
+    m1 = _remember(root, "an agent decision", concerns=[SYM])
+    m2 = _mid(_run(["supersede", m1, "the replacement", "--repo", str(root)]))
     g = _graph(root)
-    assert g.nodes["mem:001"]["superseded_in"] == 1  # demoted, applied
-    assert memory.read_memory(memory.find_memory(root, "mem:002")).supersedes == ["mem:001"]
+    assert g.nodes[m1]["superseded_in"] == 1  # demoted, applied
+    assert memory.read_memory(memory.find_memory(root, m2)).supersedes == [m1]
 
 
 def test_pending_conflict_surfaces_in_context(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "human decision about refresh", concerns=[SYM], serves=["int:session-expiry"])
-    _attest_human(root, "mem:001")
-    _run(["supersede", "mem:001", "a new refresh decision", "--concerns", SYM, "--repo", str(root)])
+    # Regression guard for the two-pass projection (mem:063): the SUCCESSOR's slug sorts BEFORE the
+    # predecessor's ("aaa…" < "zzz…"), so with content-addressed (<slug>-<hash>.md) filenames the
+    # superseding node is read/projected first — its ``pending`` supersedes edge points at a
+    # predecessor not yet in the graph. A one-pass projection would stash it as dangling and drop the
+    # conflict; the two-pass project_into must resolve it regardless of on-disk order.
+    m1 = _remember(root, "zzz human decision about refresh", concerns=[SYM],
+                   serves=["int:session-expiry"])
+    _attest_human(root, m1)
+    _run(["supersede", m1, "aaa new refresh decision", "--concerns", SYM, "--repo", str(root)])
     graph, _ = build_graph(root, default_config())
     text = retrieval.context(graph, "refresh decision", default_config()).text
-    assert "Conflict (pending" in text and "pending-supersedes human-attested mem:001" in text
+    assert "Conflict (pending" in text and f"pending-supersedes human-attested {m1}" in text
 
 
 def test_human_attestation_shows_in_the_memory_line(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "endorsed decision about refresh", concerns=[SYM], serves=["int:session-expiry"])
-    _attest_human(root, "mem:001")
+    mid = _remember(root, "endorsed decision about refresh", concerns=[SYM], serves=["int:session-expiry"])
+    _attest_human(root, mid)
     graph, _ = build_graph(root, default_config())
     text = retrieval.context(graph, "endorsed decision refresh", default_config()).text
     assert "·human]" in text or "·human·" in text  # the trust-floor marker rides the tag
@@ -531,10 +538,10 @@ def test_human_attestation_shows_in_the_memory_line(tmp_path: Path):
 
 def test_attest_marks_a_memory_human(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "a decision")
-    res = _run(["attest", "mem:001", "--repo", str(root)])
+    mid = _remember(root, "a decision")
+    res = _run(["attest", mid, "--repo", str(root)])
     assert "human" in res.output
-    assert _graph(root).nodes["mem:001"]["attestation"] == "human"
+    assert _graph(root).nodes[mid]["attestation"] == "human"
 
 
 def test_attest_marks_an_intent_human_and_shows_in_context(tmp_path: Path):
@@ -550,16 +557,16 @@ def test_attest_marks_an_intent_human_and_shows_in_context(tmp_path: Path):
 def test_attest_applies_a_pending_supersede_and_demotes_the_old(tmp_path: Path):
     """The full sticky cycle: human node → agent supersede (pending) → attest the new → applied."""
     root = _repo(tmp_path)
-    _remember(root, "human-endorsed decision", concerns=[SYM])
-    _run(["attest", "mem:001", "--repo", str(root)])                      # mem:001 human-attested
-    _run(["supersede", "mem:001", "the competing view", "--repo", str(root)])  # mem:002 pending
-    assert _graph(root).nodes["mem:001"].get("superseded_in", 0) == 0     # not demoted yet
-    res = _run(["attest", "mem:002", "--repo", str(root)])                # principal accepts the change
+    m1 = _remember(root, "human-endorsed decision", concerns=[SYM])
+    _run(["attest", m1, "--repo", str(root)])                          # m1 human-attested
+    m2 = _mid(_run(["supersede", m1, "the competing view", "--repo", str(root)]))  # m2 pending
+    assert _graph(root).nodes[m1].get("superseded_in", 0) == 0         # not demoted yet
+    res = _run(["attest", m2, "--repo", str(root)])                    # principal accepts the change
     assert "Applied the held supersede" in res.output
     g = _graph(root)
-    assert g.nodes["mem:001"]["superseded_in"] == 1                       # now demoted
-    new = memory.read_memory(memory.find_memory(root, "mem:002"))
-    assert new.supersedes == ["mem:001"] and new.pending_supersedes == []  # pending → applied
+    assert g.nodes[m1]["superseded_in"] == 1                           # now demoted
+    new = memory.read_memory(memory.find_memory(root, m2))
+    assert new.supersedes == [m1] and new.pending_supersedes == []  # pending → applied
 
 
 def test_attest_unknown_target_is_guided(tmp_path: Path):
@@ -591,35 +598,35 @@ def test_remember_empirical_without_evidence_is_guided(tmp_path: Path):
                                  "--repo", str(root)])
     assert result.exit_code == 0  # design-law #1: recoverable → guidance, not a crash
     assert "--grounding empirical means confirmed by a live observation" in result.output
-    assert memory.find_memory(root, "mem:001") is None  # nothing written — the claim was unearned
+    assert memory.iter_memories(root) == []  # nothing written — the claim was unearned
 
 
 def test_evidence_locus_projects_an_anchored_grounded_by_edge(tmp_path: Path):
     root = _repo(tmp_path)
     ev = _add_evidence_symbol(root)
-    _remember(root, "refresh is idempotent", grounding="empirical", concerns=[SYM], evidence=[ev])
+    mid = _remember(root, "refresh is idempotent", grounding="empirical", concerns=[SYM], evidence=[ev])
     g = _graph(root)
-    edge = g.edges["mem:001", ev]
+    edge = g.edges[mid, ev]
     assert edge["relation"] == "grounded_by"
     assert edge["anchor"] == g.nodes[ev]["content_hash"]  # freshly captured → anchored, no drift
 
 
 def test_opaque_evidence_is_recorded_but_not_an_edge(tmp_path: Path):
     root = _repo(tmp_path)
-    _remember(root, "matches the RFC", grounding="empirical", evidence=["commit:abc123"])
+    mid = _remember(root, "matches the RFC", grounding="empirical", evidence=["commit:abc123"])
     g = _graph(root)
-    assert not any(a.get("relation") == "grounded_by" for _, _, a in g.out_edges("mem:001", data=True))
-    assert g.nodes["mem:001"]["opaque_evidence"] == ["commit:abc123"]  # recorded, never drifts
+    assert not any(a.get("relation") == "grounded_by" for _, _, a in g.out_edges(mid, data=True))
+    assert g.nodes[mid]["opaque_evidence"] == ["commit:abc123"]  # recorded, never drifts
 
 
 def test_editing_evidence_surfaces_grounded_by_drift(tmp_path: Path):
     root = _repo(tmp_path)
     ev = _add_evidence_symbol(root)
-    _remember(root, "refresh is idempotent", grounding="empirical", concerns=[SYM], evidence=[ev])
+    mid = _remember(root, "refresh is idempotent", grounding="empirical", concerns=[SYM], evidence=[ev])
     _add_evidence_symbol(root, body="    return x + 1\n")  # the evidence's body changed
     graph, _ = build_graph(root, default_config())
     items = [i for i in compute_drift(graph) if i.relation == "grounded_by"]
-    assert [i.kind for i in items] == ["soft"] and items[0].task_id == "mem:001"
+    assert [i.kind for i in items] == ["soft"] and items[0].task_id == mid
     concerns_items = [i for i in compute_drift(graph) if i.relation == "concerns"]
     assert concerns_items == []  # the concern (refresh) is untouched — only the evidence drifted
 
@@ -627,20 +634,20 @@ def test_editing_evidence_surfaces_grounded_by_drift(tmp_path: Path):
 def test_renaming_evidence_reanchors_without_drift(tmp_path: Path):
     root = _repo(tmp_path)
     ev = _add_evidence_symbol(root)
-    _remember(root, "refresh is idempotent", grounding="empirical", concerns=[SYM], evidence=[ev])
+    mid = _remember(root, "refresh is idempotent", grounding="empirical", concerns=[SYM], evidence=[ev])
     # Rename the evidence symbol (same body) — the anchor excludes the name, so it re-anchors for free.
     (root / SRC).write_text("def refresh(token):\n    return token\n\n\ndef verify_renamed(x):\n    return x\n")
     graph, _ = build_graph(root, default_config())
     assert [i for i in compute_drift(graph) if i.relation == "grounded_by" and i.kind != "renamed"] == []
-    assert graph.edges["mem:001", "sym:auth/session.py#verify_renamed"]["relation"] == "grounded_by"
+    assert graph.edges[mid, "sym:auth/session.py#verify_renamed"]["relation"] == "grounded_by"
 
 
 def test_reaffirm_evidence_clears_grounds_drift(tmp_path: Path):
     root = _repo(tmp_path)
     ev = _add_evidence_symbol(root)
-    _remember(root, "refresh is idempotent", grounding="empirical", concerns=[SYM], evidence=[ev])
+    mid = _remember(root, "refresh is idempotent", grounding="empirical", concerns=[SYM], evidence=[ev])
     _add_evidence_symbol(root, body="    return x + 1\n")  # evidence drifts
-    res = _run(["reaffirm", "mem:001", "--repo", str(root), "--grounding", "empirical", "--evidence", ev])
+    res = _run(["reaffirm", mid, "--repo", str(root), "--grounding", "empirical", "--evidence", ev])
     assert "grounds-drift cleared" in res.output
     graph, _ = build_graph(root, default_config())
     assert [i for i in compute_drift(graph) if i.relation == "grounded_by"] == []  # re-anchored
@@ -649,11 +656,11 @@ def test_reaffirm_evidence_clears_grounds_drift(tmp_path: Path):
 def test_reaffirm_to_empirical_without_evidence_is_guided(tmp_path: Path):
     """Closes the loophole: upgrading grounding to empirical in place also requires naming evidence."""
     root = _repo(tmp_path)
-    _remember(root, "inferred belief", concerns=[SYM])  # inferred, no evidence
-    result = runner.invoke(app, ["reaffirm", "mem:001", "--repo", str(root), "--grounding", "empirical"])
+    mid = _remember(root, "inferred belief", concerns=[SYM])  # inferred, no evidence
+    result = runner.invoke(app, ["reaffirm", mid, "--repo", str(root), "--grounding", "empirical"])
     assert result.exit_code == 0
     assert "--grounding empirical requires naming the observation" in result.output
-    assert memory.read_memory(memory.find_memory(root, "mem:001")).grounding == "inferred"  # unchanged
+    assert memory.read_memory(memory.find_memory(root, mid)).grounding == "inferred"  # unchanged
 
 
 def test_context_shows_grounded_evidence(tmp_path: Path):
@@ -663,3 +670,61 @@ def test_context_shows_grounded_evidence(tmp_path: Path):
     graph, _ = build_graph(root, default_config())
     result = retrieval.context(graph, "idempotent", default_config())
     assert "[grounded: commit:abc123]" in result.text
+
+
+# --------------------------------------------------------------------------------------------------
+# Content-addressed ids (memid-v1, task:concurrent-write-v1/1, mem:063) — the seq counter's replacement
+# --------------------------------------------------------------------------------------------------
+
+
+def test_memory_id_is_content_addressed_not_sequential(tmp_path: Path):
+    """A remembered memory is keyed by a content hash (mem:<16 hex>), never the old mem:NNN counter."""
+    root = _repo(tmp_path)
+    mid = _remember(root, "session refresh uses optimistic locking", why="hot path")
+    assert re.fullmatch(r"mem:[0-9a-f]{16}", mid), mid
+    assert mid in _graph(root).nodes
+
+
+def test_identical_payloads_collapse_to_one_id():
+    """Two agents asserting the SAME decision mint the SAME id (int:concurrent-write-model, mem:060)."""
+    args = ("decision", "orders use optimistic locking", "hot path", "row lock",
+            ["int:x"], ["sym:o#u"], [], [])
+    assert memory.memory_id(*args) == memory.memory_id(*args)
+    # link lists are order-independent (sorted into the hash)
+    a = memory.memory_id("decision", "s", "w", None, ["int:a", "int:b"], ["sym:x", "sym:y"], [], [])
+    b = memory.memory_id("decision", "s", "w", None, ["int:b", "int:a"], ["sym:y", "sym:x"], [], [])
+    assert a == b
+
+
+def test_different_reasoning_yields_a_different_id():
+    """Identity spans the whole payload: same-claim-different-why diverges (conservative collapse, mem:063)."""
+    base = memory.memory_id("decision", "s", "why one", None, [], [], [], [])
+    assert base != memory.memory_id("decision", "s", "why two", None, [], [], [], [])
+    assert base != memory.memory_id("decision", "s2", "why one", None, [], [], [], [])
+    assert base != memory.memory_id("constraint", "s", "why one", None, [], [], [], [])
+
+
+def test_minted_id_matches_the_payload_hash(tmp_path: Path):
+    """The on-disk id is exactly memory_id() over the captured payload — no hidden inputs (provenance/ts)."""
+    root = _repo(tmp_path)
+    mid = _remember(root, "refresh keeps the token immutable", why="callers rely on it",
+                    concerns=[SYM], rejected="mutate in place", serves=["int:session-expiry"])
+    expected = memory.memory_id("decision", "refresh keeps the token immutable",
+                                "callers rely on it", "mutate in place",
+                                ["int:session-expiry"], [SYM], [], [])
+    assert mid == expected
+
+
+def test_legacy_seq_id_file_is_grandfathered(tmp_path: Path):
+    """A pre-memid NNN-slug.md carrying an explicit id: mem:NNN still resolves and projects unchanged."""
+    root = _repo(tmp_path)
+    legacy = root / "yigraf" / "memory" / "007-legacy.md"
+    legacy.write_text(
+        "---\nid: mem:007\nfamily: memory\ntype: decision\nstatus: active\n"
+        "maturity: working\ngrounding: inferred\nattestation: agent\n"
+        "serves: []\nconcerns: []\nsupersedes: []\nprovenance:\n  source: cli\n---\n"
+        "## a legacy decision\n\n**Why:** captured before memid-v1\n",
+        encoding="utf-8")
+    assert memory.find_memory(root, "mem:007") == legacy
+    _run(["build", str(root)])
+    assert "mem:007" in _graph(root).nodes

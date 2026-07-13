@@ -24,6 +24,7 @@ from pathlib import Path
 
 import networkx as nx
 
+from yigraf.contradiction import open_conflict_count
 from yigraf.drift import compute_drift, is_surfaced
 from yigraf.embeddings import load_index
 from yigraf.graph import to_node_link
@@ -83,6 +84,8 @@ class StatusSummary:
     ctx_used: int | None = None  # context tokens in use, if a host supplied it
     ctx_limit: int | None = None  # context window size, if a host supplied it
     ctx_soft_limit: int = 250_000  # usable-budget knee the gauge scales to (config status.ctx_soft_limit; mem:053)
+    coherence: int = 0  # open knowledge-conflicts awaiting a principal (mem:062) — the coherence-dirty
+    # dimension distinct from freshness; a cheap count only (the full findings go to the resolution UI)
 
     @property
     def _ctx_effective(self) -> int | None:
@@ -132,6 +135,8 @@ class StatusSummary:
             tasks = f"{self.tasks_total} task ✓"
         parts = [f"{brand} {self.symbols} sym", f"{self.intents} int", tasks, f"{self.decisions} dec",
                  f"⚠ {self.drifting} drift" if self.drifting else "no drift", self.freshness]
+        if self.coherence:  # only when there are open conflicts — silent when coherent (design law #4)
+            parts.append(f"⚠ {self.coherence} conflict")
         if self.semantic:
             parts.append(f"sem {self.embedded}")
         if self.ctx_pct is not None:
@@ -157,6 +162,8 @@ class StatusSummary:
             {"fresh": _c("● fresh", "32"), "stale": _c("○ stale", "33")}.get(
                 self.freshness, _c("○ none", "2")),
         ]
+        if self.coherence:  # coherence-dirty (mem:062): open conflicts for a principal, shown only when >0
+            segs.append(_c(f"⚠ {self.coherence} conflict", "1;33"))
         if self.semantic:
             segs.append(_c("✦", "35") + _c(f" sem {self.embedded}", "2"))
         if self.ctx_pct is not None:
@@ -233,6 +240,11 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
     index = load_index(root, config)
     embedded = len(index.ids) if index else 0
 
+    # Coherence-dirty (mem:062): open knowledge-conflicts awaiting a principal — a graph-health
+    # dimension distinct from freshness. Reuses the index just loaded (no model, no second read); a
+    # cheap count only, so a frequent statusline never pays for it and the agent's budget is untouched.
+    coherence = open_conflict_count(graph, root, config, index=index)
+
     # Single read-only git call; counters._head_sha is the canonical HEAD probe (fail-open ⇒ None).
     from yigraf.counters import _head_sha
     head = _head_sha(root)
@@ -248,7 +260,7 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
     return StatusSummary(
         symbols=symbols, intents=intents, plans=plans,
         tasks_total=tasks_total, tasks_open=tasks_open, decisions=decisions,
-        drifting=drifting, freshness=_freshness(root, graph),
+        drifting=drifting, freshness=_freshness(root, graph), coherence=coherence,
         semantic=embedded > 0, embedded=embedded,
         head=head[:7] if head else None, update=available,
         ctx_used=ctx_used, ctx_limit=ctx_limit, ctx_soft_limit=soft_limit,

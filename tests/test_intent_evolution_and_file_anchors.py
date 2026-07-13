@@ -3,6 +3,7 @@
 int→int supersedes was the biggest structural gap (a reversal couldn't be an edge); file: anchoring
 lets infra/glue files with no code symbol carry a governed decision, with region-scoped drift.
 """
+import re
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -78,8 +79,9 @@ def test_intent_status_updates_in_place_but_anti_clobber_holds(tmp_path: Path):
 def test_file_anchor_drifts_only_when_that_file_changes(tmp_path: Path):
     root = _repo(tmp_path)
     (root / "Dockerfile").write_text('FROM python:3.11\nENTRYPOINT ["python","-m","app"]\n')
-    _run(["remember", "entrypoint must be exec-form", "--repo", str(root),
-          "--why", "shell-form breaks signal handling", "--concerns", "file:Dockerfile"])
+    out = _run(["remember", "entrypoint must be exec-form", "--repo", str(root),
+                "--why", "shell-form breaks signal handling", "--concerns", "file:Dockerfile"]).output
+    mem = re.search(r"Captured (mem:[0-9a-f]{16})", out).group(1)
 
     # An unrelated code edit does not drift the Dockerfile decision.
     (root / "code.py").write_text("def f():\n    return 2\n")
@@ -91,7 +93,7 @@ def test_file_anchor_drifts_only_when_that_file_changes(tmp_path: Path):
     assert [(d.kind, d.locator) for d in drift] == [("soft", "file:Dockerfile")]
 
     # reaffirm re-stamps the file anchor and clears the drift.
-    _run(["reaffirm", "mem:001", "--repo", str(root)])
+    _run(["reaffirm", mem, "--repo", str(root)])
     assert _drift(root) == []
 
 
