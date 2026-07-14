@@ -344,6 +344,45 @@ def _pending_conflicts(graph: nx.DiGraph, scope: set[str] | None = None) -> list
     return sorted(lines)
 
 
+def _proof_obligations(graph: nx.DiGraph, seeds: list[str]) -> list[str]:
+    """Invariants the edit must PRESERVE (int:proof-obligations): the acceptance criteria of the
+    intents that govern the touched locus — surfaced at the action moment so the agent knows what its
+    change must keep true, not merely what exists.
+
+    Governing-ness is structural (mem:051), not ranked: an intent governs the locus when a task that
+    ``implements`` one of its symbols ``tracks`` that intent — the acceptance criteria of the work
+    anchored here. We deliberately do NOT walk ``concerns``→``serves`` (a memory *about* this code that
+    serves an intent): on a heavily-anchored file that floods the block with every goal a local decision
+    touches (measured: 22 lines on yigraf's own retrieval.py), and those decisions already render in the
+    Decisions section — an obligation must be what the code IMPLEMENTS, not merely relates to. We surface
+    each governing intent's ``scenarios`` — the concrete, falsifiable Given/When/Then criteria that must
+    still hold — because the SHALL ``statement`` already renders in the Intent section; repeating it
+    would just spend the agent's budget (design law #2). A scenario-less intent falls back to its
+    ``statement`` so a bare MUST contract still yields an obligation. ``archived`` intents are skipped (a
+    retired contract governs nothing), and ``[]`` keeps the block silent (design law #4).
+    """
+    bridge = {"implements": "tracks"}  # locus's tasks → the intents they implement (acceptance criteria)
+    intents: set[str] = set()
+    for s in seeds:
+        for src, _, a in graph.in_edges(s, data=True):
+            want = bridge.get(a.get("relation"))
+            if not want:
+                continue
+            for _, dst, b in graph.out_edges(src, data=True):
+                if (b.get("relation") == want
+                        and graph.nodes[dst].get("family") == "intent"
+                        and graph.nodes[dst].get("status") != "archived"):
+                    intents.add(dst)
+    lines: list[str] = []
+    for intent in sorted(intents):  # sorted → deterministic across hosts (folded-view stability)
+        attrs = graph.nodes[intent]
+        criteria = [c for c in (attrs.get("scenarios") or []) if c.strip()]
+        if not criteria:  # a bare MUST contract with no Given/When/Then still owes an obligation
+            criteria = [attrs.get("statement") or attrs.get("label", "")]
+        lines += [f"  ✔ {intent}: {c}" for c in criteria]
+    return lines
+
+
 #: Structure kinds whose source is a meaningful slice (a whole file/module is not — skip those).
 _SOURCE_KINDS = frozenset({"function", "method", "class", "type"})
 
@@ -391,17 +430,19 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
             config: dict | None = None, capture_lines: list[str] | None = None,
             relevance_note: str | None = None, scores: dict[str, float] | None = None,
             task_reconcile_lines: list[str] | None = None,
-            conflict_lines: list[str] | None = None) -> ContextResult:
+            conflict_lines: list[str] | None = None,
+            obligation_lines: list[str] | None = None) -> ContextResult:
     capture_lines = capture_lines or []
     task_reconcile_lines = task_reconcile_lines or []
     conflict_lines = conflict_lines or []
+    obligation_lines = obligation_lines or []
     char_budget = budget_tokens * 3  # Graphify's ≈3:1 char:token estimate (retrieval-design §9)
     rcfg = (config or {}).get("retrieval", {})
     # A3: top-ranked symbols render as verbatim source when the knob is on AND we know the repo root.
     source_mode = rcfg.get("render", "signature_only") == "source_for_seeds" and root is not None
     max_src, max_src_lines = rcfg.get("source_max_symbols", 3), rcfg.get("source_max_lines", 40)
     reserved = "\n".join(drift_lines + reconcile_lines + capture_lines + task_reconcile_lines
-                         + conflict_lines)
+                         + conflict_lines + obligation_lines)
     out = [f'Context for "{query}":', ""]
     if relevance_note:  # C#8: a one-line honesty banner when nothing matched the query strongly
         out.extend([relevance_note, ""])
@@ -438,6 +479,10 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
             out.extend(by_family[fam])
             out.append("")
 
+    if obligation_lines:  # int:proof-obligations: what the edit must keep true, not a ⚠ problem
+        out.append("Proof obligations — must still hold after this edit:")
+        out.extend(obligation_lines)
+        out.append("")
     if conflict_lines:
         out.append("⚠ Conflict (pending — needs human):")
         out.extend(conflict_lines)
@@ -610,8 +655,9 @@ def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict,
 
     ranked = _rank(graph, hops, {}, config)  # action-driven: no NL match
     reconcile = _verified_reconcile(graph, drifted_edges)
+    obligations = _proof_obligations(graph, seeds)  # what this edit must keep true (int:proof-obligations)
     return _render(graph, ranked, f"editing {file_relpath}", sorted(drift_lines), reconcile, budget,
-                   root=root, config=config)
+                   root=root, config=config, obligation_lines=obligations)
 
 
 def _plan_has_open_work(graph: nx.DiGraph, plan_id: str) -> bool:

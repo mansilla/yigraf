@@ -226,3 +226,52 @@ def test_scores_flag_appends_cosine(tmp_path: Path):
     assert "[sim 0.71]" in with_scores.text
     without = retrieval.context(graph, "session expiry", default_config(), semantic_match=sem)
     assert "[sim" not in without.text
+
+
+def _locus(root: Path, relpath: str):
+    graph, _ = build_graph(root, default_config())
+    return retrieval.context_for_locus(graph, relpath, default_config(), root=root)
+
+
+def test_editing_a_governed_symbol_surfaces_proof_obligations(tmp_path: Path):
+    """int:proof-obligations: the governing intent's acceptance criteria are injected at edit time —
+    the concrete Given/When/Then the change must keep true, attributed to the intent."""
+    result = _locus(_repo(tmp_path), SRC)
+    assert result is not None
+    assert "Proof obligations" in result.text
+    assert "✔ int:session-expiry: Given idle 30m" in result.text  # the scenario, as an obligation
+
+
+def test_ungoverned_edit_is_silent(tmp_path: Path):
+    """Silence-unless (design law #4): an edit to code no task/intent governs injects nothing."""
+    root = _repo(tmp_path)
+    (root / "util").mkdir()
+    (root / "util" / "misc.py").write_text("def helper():\n    return 1\n")
+    assert _locus(root, "util/misc.py") is None
+
+
+def test_proof_obligation_falls_back_to_statement_without_scenarios(tmp_path: Path):
+    """A bare MUST contract (no Given/When/Then) still owes an obligation — its statement stands in."""
+    root = _repo(tmp_path)
+    assert runner.invoke(app, ["intent", "single-use", "--repo", str(root),
+                               "-s", "Refresh tokens MUST be single-use."]).exit_code == 0
+    assert runner.invoke(app, ["plan", "tok", "--repo", str(root), "-t", "Tok",
+                               "--task", "enforce single-use"]).exit_code == 0
+    assert runner.invoke(app, ["link", "task:tok/1", "int:single-use", "--repo", str(root)]).exit_code == 0
+    assert runner.invoke(app, ["link", "task:tok/1", SYM, "--repo", str(root)]).exit_code == 0
+    assert "✔ int:single-use: Refresh tokens MUST be single-use." in _locus(root, SRC).text
+
+
+def test_proof_obligations_exclude_the_concerns_serves_path(tmp_path: Path):
+    """Anti-flood (measured 22→7 on yigraf's own retrieval.py): a memory that *concerns* the symbol and
+    *serves* an intent is NOT an obligation — an obligation is what the code IMPLEMENTS via a task, not
+    what a local decision merely relates to. The decision still renders in the Decisions section."""
+    root = _repo(tmp_path)
+    assert runner.invoke(app, ["intent", "audit-log", "--repo", str(root),
+                               "-s", "All refreshes SHALL be audit-logged.",
+                               "--scenario", "Given a refresh, When it completes, Then an audit row exists."]).exit_code == 0
+    assert runner.invoke(app, ["remember", "refresh writes an audit row", "--repo", str(root), "--new",
+                               "--serves", "int:audit-log", "--concerns", SYM]).exit_code == 0
+    text = _locus(root, SRC).text
+    assert "✔ int:session-expiry:" in text     # implements→tracks path still yields its obligation
+    assert "audit row exists" not in text       # concerns→serves scenario must NOT leak as an obligation
