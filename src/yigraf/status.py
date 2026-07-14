@@ -25,7 +25,7 @@ from pathlib import Path
 import networkx as nx
 
 from yigraf.contradiction import open_conflict_count
-from yigraf.drift import compute_drift, is_surfaced
+from yigraf.drift import compute_drift, is_surfaced, stale_completions
 from yigraf.embeddings import load_index
 from yigraf.graph import to_node_link
 from yigraf.scaffold import WORKSPACE_DIRNAME
@@ -86,6 +86,8 @@ class StatusSummary:
     ctx_soft_limit: int = 250_000  # usable-budget knee the gauge scales to (config status.ctx_soft_limit; mem:053)
     coherence: int = 0  # open knowledge-conflicts awaiting a principal (mem:062) — the coherence-dirty
     # dimension distinct from freshness; a cheap count only (the full findings go to the resolution UI)
+    stale: int = 0  # done-task completions whose implementing symbol drifted (int:drift-as-stale): the
+    # completion is no longer verified. Principal-facing, shown only when >0 — never at the edit hook (mem:056)
 
     @property
     def _ctx_effective(self) -> int | None:
@@ -137,6 +139,8 @@ class StatusSummary:
                  f"⚠ {self.drifting} drift" if self.drifting else "no drift", self.freshness]
         if self.coherence:  # only when there are open conflicts — silent when coherent (design law #4)
             parts.append(f"⚠ {self.coherence} conflict")
+        if self.stale:  # done completions whose evidence drifted (int:drift-as-stale) — shown only when >0
+            parts.append(f"⚠ {self.stale} stale")
         if self.semantic:
             parts.append(f"sem {self.embedded}")
         if self.ctx_pct is not None:
@@ -164,6 +168,8 @@ class StatusSummary:
         ]
         if self.coherence:  # coherence-dirty (mem:062): open conflicts for a principal, shown only when >0
             segs.append(_c(f"⚠ {self.coherence} conflict", "1;33"))
+        if self.stale:  # int:drift-as-stale: done completions whose evidence drifted, shown only when >0
+            segs.append(_c(f"⚠ {self.stale} stale", "1;33"))
         if self.semantic:
             segs.append(_c("✦", "35") + _c(f" sem {self.embedded}", "2"))
         if self.ctx_pct is not None:
@@ -236,6 +242,9 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
     # (int:drift-done-suppression); renames auto-re-anchor so they never count.
     drifting = sum(1 for d in compute_drift(graph)
                    if d.kind in ("soft", "hard") and is_surfaced(graph, d))
+    # The complement (int:drift-as-stale): a DONE task whose implementing symbol drifted — a stale
+    # completion, principal-facing here and in context/session, never at the edit hook (mem:056/mem:81edb).
+    stale = len(stale_completions(graph))
 
     index = load_index(root, config)
     embedded = len(index.ids) if index else 0
@@ -260,7 +269,7 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
     return StatusSummary(
         symbols=symbols, intents=intents, plans=plans,
         tasks_total=tasks_total, tasks_open=tasks_open, decisions=decisions,
-        drifting=drifting, freshness=_freshness(root, graph), coherence=coherence,
+        drifting=drifting, freshness=_freshness(root, graph), coherence=coherence, stale=stale,
         semantic=embedded > 0, embedded=embedded,
         head=head[:7] if head else None, update=available,
         ctx_used=ctx_used, ctx_limit=ctx_limit, ctx_soft_limit=soft_limit,

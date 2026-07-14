@@ -84,6 +84,20 @@ def test_body_edit_surfaces_as_drift_in_the_summary(tmp_path: Path):
     assert _summary(root).drifting == 1
 
 
+def test_done_task_drift_is_counted_as_stale_not_drift(tmp_path: Path):
+    """int:drift-as-stale / mem:056: a DONE task's implements drift is withheld from the agent's drift
+    count (not a nag) but surfaces as a stale completion for the principal — the complement of drift."""
+    root = _repo(tmp_path)
+    plan = root / "yigraf" / "plans" / "active" / "auth.md"
+    plan.write_text(plan.read_text().replace("- [ ] {#1}", "- [x] {#1}"))   # complete the task
+    (root / SRC).write_text("def refresh(token):\n    return token + 1\n")  # then drift its symbol
+    s = _summary(root)
+    assert s.drifting == 0 and s.stale == 1                     # suppressed as drift, counted as stale
+    assert "⚠ 1 stale" in s.render_line()                       # surfaced on the principal statusline
+    assert "1 stale" in s.render_line(color=True, icon=status.SPIN[0])
+    assert s.as_dict()["stale"] == 1                            # exposed to JSON consumers too
+
+
 def test_update_marker_shows_when_the_cache_has_a_newer_version(tmp_path: Path):
     root = _repo(tmp_path)
     # Simulate the daily check having found a newer release (a pure sidecar read — no network).

@@ -275,3 +275,31 @@ def test_proof_obligations_exclude_the_concerns_serves_path(tmp_path: Path):
     text = _locus(root, SRC).text
     assert "✔ int:session-expiry:" in text     # implements→tracks path still yields its obligation
     assert "audit row exists" not in text       # concerns→serves scenario must NOT leak as an obligation
+
+
+def _done_and_drifted(root: Path) -> None:
+    """Complete the linked auth task, then drift its implementing symbol's body."""
+    plan = root / "yigraf" / "plans" / "active" / "auth.md"
+    plan.write_text(plan.read_text().replace("- [ ] {#1}", "- [x] {#1}"))
+    (root / SRC).write_text("def refresh(token):\n    return token + 1\n")
+
+
+def test_done_task_drift_surfaces_as_stale_in_the_context_query(tmp_path: Path):
+    """int:drift-as-stale: a done task whose implementing symbol drifted is a STALE completion on the
+    principal-facing query surface — verification required, not a silent nothing, not reopened."""
+    root = _repo(tmp_path)
+    _done_and_drifted(root)
+    text = _ctx(root, "session expiry").text
+    assert "Stale" in text and "task:auth/1" in text and "completion STALE" in text
+    assert "reopen the task" in text  # STALE is re-verifiable (relink or reopen), never auto-false
+
+
+def test_done_task_drift_stays_silent_at_the_edit_hook(tmp_path: Path):
+    """mem:056/mem:81edb: STALE is principal-facing — the PostToolUse edit hook stays silent on a done
+    task's drift (no mid-edit nag, no reflexive-relink training), even though the locus is governed."""
+    root = _repo(tmp_path)
+    _done_and_drifted(root)
+    graph, _ = build_graph(root, default_config())
+    result = retrieval.context_for_locus(graph, SRC, default_config(), root=root)
+    assert result is not None                # still governed by int:session-expiry, so the hook fires
+    assert "Stale" not in result.text and "STALE" not in result.text  # but never the stale completion

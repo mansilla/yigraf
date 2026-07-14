@@ -261,6 +261,19 @@ def _drift_line(item) -> str:
     return f"  ⚠ {item.task_id} → {item.locator} {verb} — {tail}"
 
 
+def _stale_line(item) -> str:
+    """A STALE-completion line for a done task whose implementing symbol drifted (int:drift-as-stale).
+
+    Worded as a belief-state needing judgment, never a relink prompt: the completion is no longer
+    verified because its evidence changed, so the agent must decide whether the change UPHOLDS it (then
+    re-``link`` to re-anchor) or REGRESSED it (then reopen the task). STALE is not ``false`` — never an
+    auto-verb, which would be the rubber-stamp mem:031/mem:039/mem:056 guard against.
+    """
+    what = "changed since it was checked off" if item.kind == "soft" else "is gone"
+    return (f"  ⚠ {item.task_id}: completion STALE — {item.locator} {what}; re-verify it still holds, "
+            f"then re-`link` {item.task_id} to re-anchor, or reopen the task if the change undid it.")
+
+
 def _verified_reconcile(graph: nx.DiGraph, drifted_edges: set[tuple[str, str]]) -> list[str]:
     """R9c: intents marked ``satisfied`` but lacking a live, undrifted implementing link."""
     lines: list[str] = []
@@ -431,18 +444,20 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
             relevance_note: str | None = None, scores: dict[str, float] | None = None,
             task_reconcile_lines: list[str] | None = None,
             conflict_lines: list[str] | None = None,
-            obligation_lines: list[str] | None = None) -> ContextResult:
+            obligation_lines: list[str] | None = None,
+            stale_lines: list[str] | None = None) -> ContextResult:
     capture_lines = capture_lines or []
     task_reconcile_lines = task_reconcile_lines or []
     conflict_lines = conflict_lines or []
     obligation_lines = obligation_lines or []
+    stale_lines = stale_lines or []
     char_budget = budget_tokens * 3  # Graphify's ≈3:1 char:token estimate (retrieval-design §9)
     rcfg = (config or {}).get("retrieval", {})
     # A3: top-ranked symbols render as verbatim source when the knob is on AND we know the repo root.
     source_mode = rcfg.get("render", "signature_only") == "source_for_seeds" and root is not None
     max_src, max_src_lines = rcfg.get("source_max_symbols", 3), rcfg.get("source_max_lines", 40)
     reserved = "\n".join(drift_lines + reconcile_lines + capture_lines + task_reconcile_lines
-                         + conflict_lines + obligation_lines)
+                         + conflict_lines + obligation_lines + stale_lines)
     out = [f'Context for "{query}":', ""]
     if relevance_note:  # C#8: a one-line honesty banner when nothing matched the query strongly
         out.extend([relevance_note, ""])
@@ -490,6 +505,10 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
     if drift_lines:
         out.append("⚠ Drift:")
         out.extend(drift_lines)
+        out.append("")
+    if stale_lines:  # int:drift-as-stale: done-task completions whose evidence drifted (principal-facing)
+        out.append("⚠ Stale (re-verify completion):")
+        out.extend(stale_lines)
         out.append("")
     if reconcile_lines:
         out.append("⚠ Reconcile (R9c):")
@@ -707,15 +726,19 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
               if not (graph.nodes[n].get("kind") == "task" and graph.nodes[n].get("state") == "done")]
 
     drift_lines: list[str] = []
+    stale_lines: list[str] = []
     drifted_edges: set[tuple[str, str]] = set()
     in_scope = set(hops)
     for item in compute_drift(graph):
         if item.kind == "renamed":
             continue
         drifted_edges.add((item.task_id, item.locator))  # full set — _verified_reconcile needs it
-        if not is_surfaced(graph, item):  # a done task's implements drift is provenance, not a nag
+        in_view = item.task_id in in_scope or item.locator in in_scope
+        if not is_surfaced(graph, item):  # done-task implements drift → STALE completion (int:drift-as-stale)
+            if in_view:  # SessionStart orientation is a principal-facing dashboard, not the edit hook
+                stale_lines.append(_stale_line(item))
             continue
-        if item.task_id in in_scope or item.locator in in_scope:
+        if in_view:
             drift_lines.append(_drift_line(item))
 
     reconcile = _verified_reconcile(graph, drifted_edges)
@@ -724,7 +747,8 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
     conflicts = _pending_conflicts(graph)
     return _render(graph, ranked, "active plan & governing intents", sorted(drift_lines), reconcile,
                    budget, root=root, config=config, capture_lines=capture,
-                   task_reconcile_lines=task_reconcile, conflict_lines=conflicts)
+                   task_reconcile_lines=task_reconcile, conflict_lines=conflicts,
+                   stale_lines=sorted(stale_lines))
 
 
 def _merge_seeds(lex_match: dict[str, float], sem_match: dict[str, float], config: dict) -> list[str]:
@@ -796,14 +820,18 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
     drift_items = compute_drift(graph)
     in_scope = set(hops)
     drift_lines: list[str] = []
+    stale_lines: list[str] = []
     drifted_edges: set[tuple[str, str]] = set()
     for item in drift_items:
         if item.kind == "renamed":
             continue
         drifted_edges.add((item.task_id, item.locator))  # full set — _verified_reconcile needs it
-        if not is_surfaced(graph, item):  # a done task's implements drift is provenance, not a nag
+        in_view = item.task_id in in_scope or item.locator in in_scope
+        if not is_surfaced(graph, item):  # done-task implements drift → STALE completion (int:drift-as-stale)
+            if in_view:  # principal-facing here (a query), never the edit hook — mem:056/mem:81edb
+                stale_lines.append(_stale_line(item))
             continue
-        if item.task_id in in_scope or item.locator in in_scope:
+        if in_view:
             drift_lines.append(_drift_line(item))
 
     reconcile_lines = _verified_reconcile(graph, drifted_edges)
@@ -814,4 +842,5 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
     return _render(graph, ranked, query, sorted(drift_lines), reconcile_lines, budget,
                    root=root, config=config, capture_lines=capture_lines,
                    relevance_note=_relevance_note(sem_match, query, config), scores=scores,
-                   task_reconcile_lines=task_reconcile, conflict_lines=conflicts)
+                   task_reconcile_lines=task_reconcile, conflict_lines=conflicts,
+                   stale_lines=sorted(stale_lines))

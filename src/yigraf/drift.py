@@ -153,3 +153,20 @@ def is_surfaced(graph: nx.DiGraph, item: DriftItem) -> bool:
         if graph.nodes[item.task_id].get("state") == "done":
             return False
     return True
+
+
+def stale_completions(graph: nx.DiGraph) -> list[DriftItem]:
+    """Done tasks whose implementing symbol drifted (int:drift-as-stale): the *completion* is STALE —
+    the shipped work's evidence changed, so ``done`` is no longer verified.
+
+    This is exactly the implements drift :func:`is_surfaced` withholds from the agent's edit hook
+    (int:drift-done-suppression / mem:056): a closed task must not nag mid-edit or train the reflexive
+    relink mem:031/mem:039 guard against. But it *is* a coherence signal for the principal, so the
+    status / ``context`` query / SessionStart surfaces show it as STALE — never the action-moment edit
+    hook (mem:81edb: belief-state bookkeeping is principal-facing). Derived, never stored (R6); STALE is
+    not ``false`` — the completion is re-verifiable, cleared by re-``link`` re-anchoring (or reopened if
+    the change regressed it), never auto-flipped to ``todo``.
+    """
+    return [it for it in compute_drift(graph)
+            if it.relation == "implements" and it.kind in ("soft", "hard")
+            and not is_surfaced(graph, it)]
