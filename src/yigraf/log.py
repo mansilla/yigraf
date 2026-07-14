@@ -10,10 +10,14 @@ Two decisions shape every line here; both are executable contracts, not comments
 
 - **mem:063 — content id ≠ causal position.** An :class:`Assertion` splits into two layers, mirroring
   git's blob-vs-commit split. ``id``/``kind``/``body`` are pure CONTENT: the id is the content-hash of
-  the semantic ``body`` ONLY (never ``parents``/``provenance``), so two writers who independently
-  assert the same thing mint the SAME id and COLLAPSE on merge (:func:`InMemoryLog.append`). ``parents``
-  and ``provenance`` are the CAUSAL/attribution layer — never in the id; provenance MERGES as a list on
-  collapse, so N independent rediscoveries strengthen one node rather than duplicate (mem:060).
+  the semantic ``body`` ONLY (never ``parents``/``provenance``/``scope``), so two writers who
+  independently assert the same thing mint the SAME id and COLLAPSE on merge (:func:`InMemoryLog.append`).
+  ``parents``, ``provenance`` and ``scope`` are the CAUSAL/attribution/assumption layer — never in the
+  id; each MERGES (parents+scope union, provenance appends) on collapse, so N independent rediscoveries
+  strengthen one node rather than duplicate (mem:060). The *content* an assertion carries is always a
+  SOURCE CLAIM — never a derived belief (acceptance, supersession, maturity). That split is enforced by
+  the fold (:mod:`yigraf.fold`, task #5): derived belief is recomputed from the whole assertion set on
+  every fold, so merging two logs re-derives it deterministically instead of last-writer-wins.
 - **mem:056080f0 — causal order is its OWN layer.** :func:`causal_order` linearizes the causal-parent
   DAG deterministically (topological sort + content-id tiebreak). It NEVER infers order from file,
   slug, or insertion order — the bug that dropped a pending conflict when content-addressed filenames
@@ -63,6 +67,13 @@ class Assertion:
     #: content. A single write carries a one-element list; identical-content collapse UNIONs the lists
     #: (mem:060). Never part of the id.
     provenance: list[dict] = field(default_factory=list)
+    #: RESERVED assumption-set — the ATMS *environment* (a set of assumption-ids) this claim is made
+    #: under (epistemic-control-plane task #5, adopted as principle per mem:81edb04b2c41bdef; the label-
+    #: propagation ENGINE is deliberately NOT built here). Like ``parents``/``provenance`` it is a
+    #: contextual layer, NEVER part of the id (mem:063) — so the same claim asserted under two
+    #: environments collapses to one node whose ``scope`` is the UNION (:func:`merge_assertion`), not a
+    #: fork. Empty ``()`` means "no recorded assumptions" (the base environment), today's every write.
+    scope: tuple[str, ...] = ()
 
 
 def _canonical(value: Any) -> Any:
@@ -155,14 +166,17 @@ class Log(Protocol):
 
 def merge_assertion(existing: Assertion, incoming: Assertion) -> Assertion:
     """Collapse two assertions that share an id (⇒ identical content, mem:063): union their causal
-    frontier and concatenate provenance (dedup identical records). This is the mechanism by which
-    independent rediscoveries strengthen one node instead of forking it (mem:060)."""
+    frontier, concatenate provenance (dedup identical records), and union their assumption-sets. This
+    is the mechanism by which independent rediscoveries strengthen one node instead of forking it
+    (mem:060). ``scope`` is unioned and SORTED so the collapse is commutative — a merge of two logs
+    yields the byte-identical envelope regardless of which arrived first (the determinism task #5 needs)."""
     parents = list(existing.parents) + [p for p in incoming.parents if p not in existing.parents]
     provenance = list(existing.provenance)
     for record in incoming.provenance:
         if record not in provenance:
             provenance.append(record)
-    return replace(existing, parents=tuple(parents), provenance=provenance)
+    scope = tuple(sorted(set(existing.scope) | set(incoming.scope)))
+    return replace(existing, parents=tuple(parents), provenance=provenance, scope=scope)
 
 
 class InMemoryLog:

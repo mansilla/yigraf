@@ -16,9 +16,9 @@ from yigraf.log import (
 )
 
 
-def _a(id_, *parents, kind="memory", body=None, prov=None):
+def _a(id_, *parents, kind="memory", body=None, prov=None, scope=()):
     return Assertion(id=id_, kind=kind, body=body or {}, parents=tuple(parents),
-                     provenance=list(prov or []))
+                     provenance=list(prov or []), scope=tuple(scope))
 
 
 # -- mem:063: content-only identity ---------------------------------------------------------------
@@ -68,6 +68,31 @@ def test_merge_dedups_identical_provenance_records():
     merged = merge_assertion(_a("mem:1", "p0", prov=[rec]), _a("mem:1", "p0", prov=[rec]))
     assert merged.parents == ("p0",)
     assert merged.provenance == [rec]
+
+
+# -- task #5: the reserved scope (assumption-set) is a contextual layer, never in the id -------------
+
+
+def test_scope_never_moves_the_id():
+    """The ATMS assumption-set is contextual like parents/provenance — it can't change the content id."""
+    body = {"statement": "holds"}
+    assert assertion_id("memory", body) == assertion_id("memory", body)  # id ignores scope entirely
+    a = Assertion(id="mem:1", kind="memory", body=body, scope=("assume:online",))
+    b = Assertion(id="mem:1", kind="memory", body=body, scope=("assume:local",))
+    assert a.id == b.id  # same claim under different assumptions ⇒ same node, not a fork
+
+
+def test_collapse_unions_scope_commutatively():
+    """Same claim under two environments collapses to one node whose scope is the sorted union — and
+    the union is order-independent, so a log merge is byte-stable regardless of arrival order (task #5)."""
+    forward = merge_assertion(_a("mem:1", scope=("assume:b",)), _a("mem:1", scope=("assume:a",)))
+    reverse = merge_assertion(_a("mem:1", scope=("assume:a",)), _a("mem:1", scope=("assume:b",)))
+    assert forward.scope == reverse.scope == ("assume:a", "assume:b")
+
+
+def test_scope_defaults_to_empty_base_environment():
+    """Every write today carries no assumptions — the base environment — so scope defaults to ()."""
+    assert _a("mem:1").scope == ()
 
 
 # -- mem:056080f0: causal order is its own layer ---------------------------------------------------

@@ -13,6 +13,17 @@ so a superseding or edge-bearing assertion always sees its intra-log target alre
 two-pass projection ``project_into`` needed (mem:056080f0) — and the separate ``recompute_counters``
 sweep — are designed away here: supersession counters are maintained inline as the fold advances.
 
+**Source claim vs. derived belief (task #5).** An assertion's ``body`` carries only what a writer
+*claims* — never whether that claim is currently *believed*. Acceptance (``accepted``), supersession
+(``superseded_in``/``supersedes_out``) are :data:`_DERIVED_KEYS`: the fold's verdict over the WHOLE
+assertion set, recomputed every fold and stripped if a body tries to smuggle them. That split is what
+makes the intent's "never a silent last-writer-wins" hold under a log MERGE: two writers cannot assert
+contradictory acceptance of one claim (identical content ⇒ identical id ⇒ collapse, not a fork), so
+merging two logs is a set-union of source claims that re-derives belief deterministically — a genuine
+disagreement surfaces as two DIFFERENT claims the contradiction-detector flags, never one belief
+silently overwriting the other. ``accepted`` starts ``True`` and flips to ``False`` only when a
+*counted* (non-pending) supersede retracts the node — the queryable form of mem:058's belief revision.
+
 **The assertion body contract** (what the families emit, task #6 produces it from the markdown):
 ``Assertion.body`` describes the node this assertion introduces plus its outgoing edges — never its
 own id (that is :attr:`Assertion.id`, content-addressed) and never causal parents (mem:063)::
@@ -37,6 +48,15 @@ import networkx as nx
 from yigraf.graph import empty_graph
 from yigraf.log import Assertion, Log
 
+#: Node attributes that are DERIVED BELIEF — the fold's own output, recomputed from the whole assertion
+#: set on every fold — as opposed to the SOURCE CLAIM a writer asserts (task #5). Keeping these out of
+#: the content-addressed ``body`` is what lets a merge of two logs re-derive belief deterministically
+#: instead of last-writer-wins: two writers can never assert *contradictory acceptance* of the same
+#: claim (that would fork the id), so acceptance is always the fold's verdict over the union of claims.
+#: The fold STRIPS any of these that leak into ``body.attrs`` (a source claim may not assert its own
+#: belief) and sets them itself. ``provenance``/``family``/``scope`` come off the envelope, not attrs.
+_DERIVED_KEYS = frozenset({"accepted", "superseded_in", "supersedes_out"})
+
 
 def fold(log: Log, base: nx.DiGraph | None = None) -> nx.DiGraph:
     """Materialize the graph by folding ``log``'s assertions in causal order onto ``base``.
@@ -59,13 +79,18 @@ def _apply(graph: nx.DiGraph, assertion: Assertion) -> None:
     the fold never has to merge conflicting attributes for the same node.
     """
     body = assertion.body
+    # Split source claim from derived belief (task #5): a claim may not assert its own acceptance/
+    # supersession — those are the fold's verdict, so strip them before splatting and set them below.
+    attrs = {k: v for k, v in body.get("attrs", {}).items() if k not in _DERIVED_KEYS}
     graph.add_node(
         assertion.id,
         family=body.get("family"),
         provenance=list(assertion.provenance),  # attribution rides onto the view (mem:063)
+        scope=sorted(assertion.scope),  # reserved ATMS assumption-set, carried onto the view (task #5)
         superseded_in=0,  # maintained inline below (no separate recompute pass — see module docstring)
         supersedes_out=0,
-        **body.get("attrs", {}),
+        accepted=True,  # derived belief: live until a *counted* supersede retracts it (set in _apply_edge)
+        **attrs,
     )
     for edge in body.get("edges", []):
         _apply_edge(graph, assertion.id, edge)
@@ -86,5 +111,7 @@ def _apply_edge(graph: nx.DiGraph, source: str, edge: dict[str, Any]) -> None:
     # guarantees the target is already present, so no second pass is needed. A pending supersede (of a
     # human-attested node) is recorded above but not counted: the target stays authoritative (mem:062).
     if relation == "supersedes" and not attrs.get("pending"):
-        graph.nodes[target]["superseded_in"] = graph.nodes[target].get("superseded_in", 0) + 1
+        tgt = graph.nodes[target]
+        tgt["superseded_in"] = tgt.get("superseded_in", 0) + 1
+        tgt["accepted"] = tgt["superseded_in"] == 0  # derived belief retracted (mem:058: kept, not deleted)
         graph.nodes[source]["supersedes_out"] = graph.nodes[source].get("supersedes_out", 0) + 1

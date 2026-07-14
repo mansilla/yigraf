@@ -90,8 +90,13 @@ def landing_maturity(provenance: Any) -> str:
     ``remember`` lands ``working``. Promotion *above* the landed tier — the confirm of a proposed
     candidate, the settle of a working one — is the behavioral read-time verdict
     (:func:`yigraf.counters.apply_maturity_verdict`), never this.
+
+    Accepts either the verb-built ``dict`` (a single landing record) or the fold's envelope ``list``
+    (mem:063 — provenance rides the assertion as a list so identical-content collapse unions it): the
+    landing record is the first, so a lone-record memory reads exactly as it did pre-fold.
     """
-    source = provenance.get("source") if isinstance(provenance, dict) else None
+    record = provenance[0] if isinstance(provenance, list) and provenance else provenance
+    source = record.get("source") if isinstance(record, dict) else None
     return "proposed" if source in PROPOSED_SOURCES else "working"
 
 

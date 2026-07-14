@@ -20,9 +20,11 @@ from pathlib import Path, PurePosixPath
 
 import networkx as nx
 
-from yigraf import artifacts, counters, drift, memory
+from yigraf import artifacts, counters, drift, filelog, memory
 from yigraf.astnorm import ANCHOR_ALGO
 from yigraf.cache import StructureCache, file_sha
+from yigraf.filelog import FileLog
+from yigraf.fold import fold
 from yigraf.graph import empty_graph
 from yigraf.languages import (
     FileProjection,
@@ -115,10 +117,17 @@ def build_graph(root: Path, config: dict) -> tuple[nx.DiGraph, BuildStats]:
         lang_inherits = {fid: inh for fid, inh in file_inherits.items() if fid in lang_sources}
         extractor.add_inheritance_edges(graph, lang_inherits, lang_sources, root)
 
-    artifacts.project_into(graph, root)
-    memory.project_into(graph, root)  # memory nodes + serves/concerns/supersedes edges (M7)
+    # The intent/plan/memory families are materialized by folding the authored markdown as an assertion
+    # log (task #6): FileLog reads each artifact into an assertion whose body reproduces what project_into
+    # added, and the fold layers them onto the structure base — supersession counters + derived belief
+    # (accepted) maintained inline, so neither the two-pass projection nor the recompute_counters sweep
+    # is needed (fold docstring, mem:e83e1862). The file: anchor nodes those edges attach to are injected
+    # first; the fold's family-agnostic dangling_edges are re-expanded to the per-relation dangling_* keys
+    # drift + retrieval still read (filelog.denormalize_danglings).
+    filelog.inject_base_anchors(graph, root)
+    fold(FileLog(root), base=graph)
+    filelog.denormalize_danglings(graph)
     drift.resolve_renames(graph)  # re-anchor moved/renamed implements + concerns targets (M3/M7)
-    memory.recompute_counters(graph)  # edge-derived superseded_in/out for the relevance prior
     counters.apply_maturity(graph, root, config, cache=cache)  # git-derived working/settled, HEAD-cached (R2)
 
     cache.prune(set(relpaths))

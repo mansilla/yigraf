@@ -13,10 +13,10 @@ from yigraf.graph import empty_graph, to_node_link
 from yigraf.log import Assertion, InMemoryLog
 
 
-def _node(id_, family="memory", attrs=None, edges=None, parents=(), prov=None):
+def _node(id_, family="memory", attrs=None, edges=None, parents=(), prov=None, scope=()):
     body = {"family": family, "attrs": attrs or {}, "edges": edges or []}
     return Assertion(id=id_, kind=family, body=body, parents=tuple(parents),
-                     provenance=list(prov or []))
+                     provenance=list(prov or []), scope=tuple(scope))
 
 
 def _log(*assertions):
@@ -136,3 +136,66 @@ def test_collapsed_provenance_reaches_the_view():
     g = fold(log)
     actors = {p["actor"] for p in g.nodes["mem:1"]["provenance"]}
     assert actors == {"alice", "bob"}
+
+
+# -- task #5: source claim vs. derived accepted belief ---------------------------------------------
+
+
+def test_live_node_is_accepted_superseded_node_is_not():
+    """`accepted` is the fold's derived verdict: live ⇒ True, counted-superseded ⇒ False (but kept)."""
+    g = fold(_log(
+        _node("mem:old", attrs={"statement": "old"}),
+        _node("mem:new", attrs={"statement": "new"}, edges=[_supersedes("mem:old")], parents=("mem:old",)),
+    ))
+    assert g.nodes["mem:new"]["accepted"] is True
+    assert g.nodes["mem:old"]["accepted"] is False  # retracted belief …
+    assert "mem:old" in g                            # … but still present (mem:058)
+
+
+def test_pending_supersede_leaves_target_accepted():
+    """A pending supersede is uncounted (mem:062), so the human-attested target stays accepted."""
+    g = fold(_log(
+        _node("mem:human", attrs={"attestation": "human"}),
+        _node("mem:agent", edges=[_supersedes("mem:human", pending=True)], parents=("mem:human",)),
+    ))
+    assert g.nodes["mem:human"]["accepted"] is True
+
+
+def test_body_cannot_assert_its_own_belief():
+    """A source claim may not smuggle derived belief: `accepted`/`superseded_in` in a body are stripped
+    and the fold's own verdict wins — this is what stops a merged log from last-writer-winning belief."""
+    g = fold(_log(_node("mem:1", attrs={"accepted": False, "superseded_in": 99, "statement": "x"})))
+    assert g.nodes["mem:1"]["accepted"] is True      # fold's verdict, not the asserted lie
+    assert g.nodes["mem:1"]["superseded_in"] == 0
+    assert g.nodes["mem:1"]["statement"] == "x"      # genuine source content survives
+
+
+def test_merged_logs_rederive_belief_regardless_of_merge_order():
+    """Two writers' logs merged in EITHER order fold to the same view: belief is re-derived from the
+    set-union of source claims, never overwritten last-writer-wins (the intent's core guarantee)."""
+    # writer A introduced the claim; writer B, concurrently, superseded it.
+    a = _node("mem:claim", attrs={"statement": "the claim"})
+    b = _node("mem:rev", attrs={"statement": "revised"}, edges=[_supersedes("mem:claim")],
+              parents=("mem:claim",))
+    ab = to_node_link(fold(_log(a, b)))   # A's log merged before B's
+    ba = to_node_link(fold(_log(b, a)))   # B's log merged before A's
+    assert ab == ba
+    g = fold(_log(b, a))
+    assert g.nodes["mem:claim"]["accepted"] is False and g.nodes["mem:rev"]["accepted"] is True
+
+
+# -- task #5: the reserved scope (assumption-set) rides onto the view -------------------------------
+
+
+def test_scope_rides_onto_the_view_sorted():
+    g = fold(_log(_node("mem:1", scope=("assume:b", "assume:a"))))
+    assert g.nodes["mem:1"]["scope"] == ["assume:a", "assume:b"]
+
+
+def test_collapsed_scope_reaches_the_view():
+    """Same claim asserted under two environments collapses; the fold sees the unioned assumption-set."""
+    g = fold(_log(
+        _node("mem:1", scope=("assume:local",)),
+        _node("mem:1", scope=("assume:online",)),
+    ))
+    assert g.nodes["mem:1"]["scope"] == ["assume:local", "assume:online"]
