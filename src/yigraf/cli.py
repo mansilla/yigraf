@@ -735,6 +735,41 @@ def attest(
     _guidance(f"attest takes a memory id (mem:NNN) or an intent (int:<slug>), got: {target}")
 
 
+@app.command()
+def reconcile(
+    left: str = typer.Argument(..., help="A memory id (mem:NNN) — the pair's first belief."),
+    right: str = typer.Argument(..., help="A memory id (mem:NNN) — the belief it is compatible with."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Reconcile a co-anchored conflict: record that two live beliefs are *compatible*, not opposed.
+
+    The honest counterpart to ``supersede`` for a knowledge-conflict (the coherence sweep,
+    int:concurrent-write-model / mem:062): when two memories concerning the same locus read as
+    near-duplicates, the sweep surfaces the pair for a principal. If they are a redundant or
+    *complementary* restatement — both true, at different altitudes — reconcile them; if one is a
+    mind-change, ``supersede`` instead. This appends an ``equivalent_to`` edge (a *later append*, never
+    an edit of either belief) that :mod:`yigraf.contradiction` reads to drop the pair from the sweep.
+    Both beliefs stay live and fully weighted; only the redundant conflict-finding goes away.
+    """
+    _require_workspace(repo)
+    for mem_id in (left, right):
+        if not mem_id.startswith("mem:"):
+            _guidance(f"reconcile takes two memory ids (mem:NNN mem:NNN); got: {mem_id}")
+        if memory.find_memory(repo, mem_id) is None:
+            _guidance(f'No memory node with id {mem_id}. Find it with `yigraf context "<topic>"`.')
+    if left == right:
+        _guidance("A memory can't be reconciled with itself — pass the two distinct beliefs of the pair.")
+    path = memory.find_memory(repo, left)
+    node = memory.read_memory(path)
+    if right in node.equivalent_to:
+        _guidance(f"{left} is already reconciled with {right} — nothing to do.")
+    node.equivalent_to = sorted(dict.fromkeys(node.equivalent_to + [right]))
+    path.write_text(memory.render_memory(node), encoding="utf-8")
+    _rebuild(repo)
+    typer.echo(f"Reconciled {left} ↔ {right} (equivalent_to) — the co-anchored pair is marked "
+               f"compatible, so the coherence sweep no longer surfaces it. Both stay live.")
+
+
 def _reaffirm_concerns(repo: Path, config: dict, node: memory.Memory,
                        only: set[str]) -> tuple[list[str], list[str]]:
     """Re-stamp a memory's matching ``concerns`` anchors to current content; return ``(restamped, gone)``.

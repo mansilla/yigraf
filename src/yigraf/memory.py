@@ -184,6 +184,11 @@ class Memory:
     # projected as a supersedes edge marked ``pending`` — surfaced as a conflict, not applied (the old
     # node is NOT demoted) until a human resolves it.
     pending_supersedes: list[str] = field(default_factory=list)
+    #: Memory ids a principal has reviewed as *compatible* with this one and reconciled — projected as
+    #: an ``equivalent_to`` edge that :mod:`yigraf.contradiction` reads to drop the co-anchored pair
+    #: from the coherence sweep (mem:062). The reconcile append for a near-dup that is a redundant/
+    #: complementary restatement, not a mind-change (which is ``supersedes``).
+    equivalent_to: list[str] = field(default_factory=list)
     status: str = "active"
     maturity: str = "working"  # working → settled by survived review-encounters at read time (mem:033)
     grounding: str = DEFAULT_GROUNDING  # inferred | docs | empirical (int:memory-grounding, C#6)
@@ -258,6 +263,7 @@ def read_memory(path: Path) -> Memory:
         evidence=[_read_evidence(e) for e in (meta.get("evidence") or [])],
         supersedes=list(meta.get("supersedes") or []),
         pending_supersedes=list(meta.get("pending_supersedes") or []),
+        equivalent_to=list(meta.get("equivalent_to") or []),
         status=meta.get("status", "active"),
         maturity=meta.get("maturity", "working"),
         grounding=meta.get("grounding", DEFAULT_GROUNDING),
@@ -289,6 +295,8 @@ def render_memory(memory: Memory) -> str:
         ]
     if memory.pending_supersedes:
         meta["pending_supersedes"] = list(memory.pending_supersedes)
+    if memory.equivalent_to:
+        meta["equivalent_to"] = list(memory.equivalent_to)
     if memory.promotable:
         meta["promotable"] = True
     if memory.provenance:
@@ -507,6 +515,15 @@ def _project_memory_edges(graph: nx.DiGraph, memory: Memory) -> None:
             graph.add_edge(memory.id, old, relation="supersedes", confidence=CONF, pending=True)
         else:
             _stash(graph, memory.id, "dangling_supersedes", old)
+
+    # A principal-attested reconciliation (mem:062): the co-anchored pair is compatible, so
+    # yigraf.contradiction._reconciled drops it from the coherence sweep. Not a mind-change (no
+    # demotion, no counter) — both beliefs stay live; the edge only records "reviewed, compatible".
+    for peer in memory.equivalent_to:
+        if peer in graph:
+            graph.add_edge(memory.id, peer, relation="equivalent_to", confidence=CONF)
+        else:
+            _stash(graph, memory.id, "dangling_equivalent_to", peer)
 
 
 def _stash(graph: nx.DiGraph, node_id: str, attr: str, value: Any) -> None:

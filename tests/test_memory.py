@@ -506,6 +506,31 @@ def test_agent_supersede_of_agent_node_applies_normally(tmp_path: Path):
     assert memory.read_memory(memory.find_memory(root, m2)).supersedes == [m1]
 
 
+def test_reconcile_wires_an_equivalent_to_edge(tmp_path: Path):
+    """reconcile appends `equivalent_to` to the first belief's file (round-trips) and projects it as an
+    `equivalent_to` edge — the source-of-truth writer for the reconciliation relation the coherence
+    sweep (yigraf.contradiction._reconciled) reads. Both beliefs stay live (no supersede, no demotion)."""
+    root = _repo(tmp_path)
+    m1 = _remember(root, "first belief about refresh", concerns=[SYM])
+    m2 = _remember(root, "a compatible restatement about refresh", concerns=[SYM])
+    _run(["reconcile", m1, m2, "--repo", str(root)])
+
+    assert memory.read_memory(memory.find_memory(root, m1)).equivalent_to == [m2]  # round-trips
+    g = _graph(root)
+    assert g.edges[m1, m2]["relation"] == "equivalent_to"  # projected
+    assert not g.nodes[m1].get("superseded_in") and not g.nodes[m2].get("superseded_in")  # both live
+
+
+def test_reconcile_guards_unknown_and_self(tmp_path: Path):
+    """Recoverable misuse exits 0 with guidance (design law #1), never a crash."""
+    root = _repo(tmp_path)
+    m1 = _remember(root, "only belief", concerns=[SYM])
+    unknown = runner.invoke(app, ["reconcile", m1, "mem:0000000000000000", "--repo", str(root)])
+    assert unknown.exit_code == 0 and "No memory node" in unknown.output
+    itself = runner.invoke(app, ["reconcile", m1, m1, "--repo", str(root)])
+    assert itself.exit_code == 0 and "can't be reconciled with itself" in itself.output
+
+
 def test_pending_conflict_surfaces_in_context(tmp_path: Path):
     root = _repo(tmp_path)
     # Regression guard for the two-pass projection (mem:063): the SUCCESSOR's slug sorts BEFORE the
