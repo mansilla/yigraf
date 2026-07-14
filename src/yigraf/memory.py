@@ -173,6 +173,14 @@ class Memory:
     statement: str
     why: str = ""
     alternatives: str | None = None
+    #: Applicability premises for ``alternatives`` (task epistemic-control-plane/3, JTMS-style): graph
+    #: locators (``int:``/``mem:``/``sym:``/``file:``) whose *liveness* conditions whether the rejection
+    #: still applies. The rejection surfaces only while every ``rejected_valid_when`` premise holds and
+    #: no ``rejected_invalidated_when`` condition holds — so a rejection whose reason lapsed stops
+    #: mis-steering the agent away from a now-viable option. Evaluated at read time (never stored, R6)
+    #: by :func:`yigraf.retrieval.premise_holds`; empty ⇒ an unconditioned rejection that always applies.
+    rejected_valid_when: list[str] = field(default_factory=list)
+    rejected_invalidated_when: list[str] = field(default_factory=list)
     serves: list[str] = field(default_factory=list)
     concerns: list[Concern] = field(default_factory=list)
     # What grounds the belief (int:memory-grounding): required to claim ``grounding: empirical``. A
@@ -258,6 +266,8 @@ def read_memory(path: Path) -> Memory:
         statement=statement,
         why=why,
         alternatives=alternatives,
+        rejected_valid_when=list(meta.get("rejected_valid_when") or []),
+        rejected_invalidated_when=list(meta.get("rejected_invalidated_when") or []),
         serves=list(meta.get("serves") or []),
         concerns=[_read_concern(e) for e in (meta.get("concerns") or [])],
         evidence=[_read_evidence(e) for e in (meta.get("evidence") or [])],
@@ -293,6 +303,10 @@ def render_memory(memory: Memory) -> str:
         meta["evidence"] = [
             {"ref": e.ref, "anchor": e.anchor, "anchor_algo": e.anchor_algo} for e in memory.evidence
         ]
+    if memory.rejected_valid_when:  # applicability premises (task 3); written only when the rejection is conditioned
+        meta["rejected_valid_when"] = list(memory.rejected_valid_when)
+    if memory.rejected_invalidated_when:
+        meta["rejected_invalidated_when"] = list(memory.rejected_invalidated_when)
     if memory.pending_supersedes:
         meta["pending_supersedes"] = list(memory.pending_supersedes)
     if memory.equivalent_to:
@@ -348,15 +362,20 @@ def memory_path(root: Path, seq: int, slug: str) -> Path:
 
 def memory_id(type_: str, statement: str, why: str, alternatives: str | None,
               serves: list[str], concern_syms: list[str], evidence_refs: list[str],
-              supersedes: list[str]) -> str:
+              supersedes: list[str], rejected_valid_when: list[str] | None = None,
+              rejected_invalidated_when: list[str] | None = None) -> str:
     """Content-address a memory by its SEMANTIC payload (``memid-v1``, mem:063).
 
     The id hashes *what the memory says and what it links to* — never provenance, timestamp, or causal
     position — so two agents who independently record the same decision mint the SAME id and collapse
     to one node on merge (int:concurrent-write-model, mem:060). Coordinator-free, so it replaces the
     racy global sequence counter (:func:`next_seq`). Identity spans the whole payload (incl. ``why`` /
-    ``alternatives``), so collapse is conservative: only genuinely identical reasoning merges for free;
-    a same-claim-different-``why`` pair diverges and is left to the near-duplicate / reconcile path.
+    ``alternatives`` and its applicability premises), so collapse is conservative: only genuinely
+    identical reasoning merges for free; a same-claim-different-``why`` pair diverges and is left to the
+    near-duplicate / reconcile path.
+
+    The applicability premises (task 3) join the payload ONLY when present, so a premise-less memory
+    hashes to exactly its pre-task-3 blob — no existing id is re-identified, and ``memid-v1`` stands.
     """
     payload = {
         "algo": MEMORY_ID_ALGO,
@@ -369,6 +388,10 @@ def memory_id(type_: str, statement: str, why: str, alternatives: str | None,
         "evidence": sorted(evidence_refs),
         "supersedes": sorted(supersedes),
     }
+    if rejected_valid_when:
+        payload["rejected_valid_when"] = sorted(rejected_valid_when)
+    if rejected_invalidated_when:
+        payload["rejected_invalidated_when"] = sorted(rejected_invalidated_when)
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
     return "mem:" + hashlib.sha256(blob).hexdigest()[:16]
 
@@ -439,12 +462,20 @@ def project_into(graph: nx.DiGraph, root: Path) -> None:
             provenance=dict(memory.provenance),  # the landing tier is recomputed from this (R1)
             source_file=memory.source_file or f"memory/{memory.seq:03d}-{memory.slug}.md",
         )
+        # Applicability premises (task 3) — set only when the rejection is conditioned, so graph.json
+        # stays terse and retrieval reads them with a ``[]`` default. Node attrs (not edges): they are
+        # read-time liveness checks (:func:`yigraf.retrieval.premise_holds`), not drift-bearing anchors.
+        if memory.rejected_valid_when:
+            graph.nodes[memory.id]["rejected_valid_when"] = list(memory.rejected_valid_when)
+        if memory.rejected_invalidated_when:
+            graph.nodes[memory.id]["rejected_invalidated_when"] = list(memory.rejected_invalidated_when)
     for memory in memories:  # second pass: every memory target now exists (see two-pass note above)
         _project_memory_edges(graph, memory)
 
 
 def _project_file_anchor_nodes(graph: nx.DiGraph, root: Path, memories: list[Memory]) -> None:
-    """Inject a node for each ``file:`` target a memory ``concerns``, carrying its *current* hash (#12).
+    """Inject a node for each ``file:`` target a memory concerns / is grounded by / is conditioned on,
+    carrying its *current* hash (#12; premises reuse the node for a presence check, task 3).
 
     Infra/glue files (Dockerfile, buildspec, ``*.sh``) have no code symbol to anchor to, so a decision
     about them targets ``file:<path>[:L<a>-L<b>]``. The extractor never produced such a node, so we add
@@ -453,9 +484,13 @@ def _project_file_anchor_nodes(graph: nx.DiGraph, root: Path, memories: list[Mem
     the edge stays dangling → hard drift, matching a gone symbol.
     """
     for memory in memories:
-        # Both drift-bearing memory→file relations need a file-anchor node: ``concerns`` (what it
-        # governs) and ``grounded_by`` (a file that is its evidence). Same treatment for each locus.
-        loci = [c.sym for c in memory.concerns] + [e.ref for e in memory.evidence]
+        # Three memory→file relations need a file-anchor node: ``concerns`` (what it governs) and
+        # ``grounded_by`` (a file that is its evidence) — both drift-bearing — plus a ``file:``
+        # applicability premise (task 3), whose whole point is to track whether the file EXISTS: a
+        # ``file:infra/redis.tf`` invalidated-when premise withdraws the rejection the moment that file
+        # appears, so it needs the node so :func:`yigraf.retrieval.premise_holds` sees its presence.
+        loci = ([c.sym for c in memory.concerns] + [e.ref for e in memory.evidence]
+                + list(memory.rejected_valid_when) + list(memory.rejected_invalidated_when))
         for locus in loci:
             if not locus.startswith("file:") or locus in graph:
                 continue

@@ -552,6 +552,47 @@ def _node_line(graph: nx.DiGraph, node_id: str) -> str:
     return f"  {node_id}" + (f"  {sig}" if sig else "")
 
 
+def premise_holds(graph: nx.DiGraph, ref: str) -> bool:
+    """Is a rejection's applicability premise currently true in the graph? (task 3, JTMS-style.)
+
+    A premise is a graph locator whose *liveness* yigraf evaluates deterministically at read time
+    (never stored, R6) — not prose it must interpret:
+
+    - ``int:<slug>`` holds while the intent is live (any status but ``archived`` — the retired/reversed
+      state ``supersede-intent`` stamps): the goal that justified the rejection is still in force.
+    - ``mem:<id>`` holds while the belief is not superseded (``superseded_in == 0``): a ``pending``
+      supersede doesn't count, so a human-attested node stays authoritative until adjudicated.
+    - ``sym:``/``file:`` holds while the locus still exists (present in the graph): a gone symbol/file
+      is a hard-drift lapse; a mere body change (soft drift) leaves the node present, so it still holds.
+
+    A ref whose target is absent does NOT hold — we never assert a condition we cannot confirm. This
+    single sign convention makes the two premise kinds compose cleanly in :func:`_rejection_applicable`.
+    """
+    if ref not in graph:
+        return False
+    attrs = graph.nodes[ref]
+    fam = attrs.get("family")
+    if fam == "intent":
+        return attrs.get("status") != "archived"
+    if fam == "memory":
+        return not attrs.get("superseded_in", 0)
+    return True  # a present structure locus (sym:/file:) still exists ⇒ the premise holds
+
+
+def _rejection_applicable(graph: nx.DiGraph, attrs: dict) -> bool:
+    """Does a conditioned rejection still apply? (task 3.)
+
+    Surfaces iff every ``rejected_valid_when`` premise holds AND no ``rejected_invalidated_when``
+    condition holds — the JTMS in-list / out-list of the "we ruled this out" belief. An unconditioned
+    rejection (no premises) always applies, preserving the pre-task-3 behavior for legacy nodes.
+    """
+    if any(not premise_holds(graph, ref) for ref in attrs.get("rejected_valid_when", [])):
+        return False
+    if any(premise_holds(graph, ref) for ref in attrs.get("rejected_invalidated_when", [])):
+        return False
+    return True
+
+
 def _memory_line(graph: nx.DiGraph, node_id: str, attrs: dict) -> str:
     """A compact decision line: ``mem:001 [decision·inferred]: <statement> — why: <why> (serves …)``.
 
@@ -576,7 +617,9 @@ def _memory_line(graph: nx.DiGraph, node_id: str, attrs: dict) -> str:
     line = f"  {node_id} [{tag}]: {attrs.get('statement') or attrs.get('label', '')}"
     if attrs.get("why"):
         line += f" — why: {attrs['why']}"
-    if attrs.get("alternatives"):
+    # Surface the rejection only while its premises still hold (task 3): a rejection whose reason lapsed
+    # must not keep steering the agent away from a now-viable option. Unconditioned rejections always show.
+    if attrs.get("alternatives") and _rejection_applicable(graph, attrs):
         line += f" (rejected: {attrs['alternatives']})"
     evidence = _evidence_refs(graph, node_id, attrs)
     if evidence:  # the agent sees WHAT grounds an ·empirical belief — a defended, checkable claim

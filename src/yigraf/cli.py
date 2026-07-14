@@ -499,6 +499,8 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
                     supersedes: list[str], promotable: bool, force_new: bool = False,
                     grounding: str | None = None, evidence_refs: list[str] | None = None,
                     pending_supersedes: list[str] | None = None,
+                    rejected_valid_when: list[str] | None = None,
+                    rejected_invalidated_when: list[str] | None = None,
                     provenance: dict | None = None) -> memory.Memory:
     """Write a new memory artifact, then rebuild graph.json. Shared by remember/supersede/note-constraint.
 
@@ -521,7 +523,23 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
                   "(repeatable). If it's a reasoned assertion rather than an observation, use "
                   "--grounding inferred (the default).")
     pending_supersedes = pending_supersedes or []
+    rejected_valid_when = rejected_valid_when or []
+    rejected_invalidated_when = rejected_invalidated_when or []
     provenance = provenance or {"source": "cli"}
+
+    # Applicability premises condition a rejection (task 3), so they only make sense alongside one, and
+    # each must be a locator yigraf can evaluate the liveness of — not prose (retrieval.premise_holds).
+    premises = rejected_valid_when + rejected_invalidated_when
+    if premises and not rejected:
+        _guidance("--rejected-valid-when / --rejected-invalidated-when condition WHEN a rejected "
+                  "alternative still applies — pass --rejected \"<the ruled-out option + why>\" too, "
+                  "or drop the premises.")
+    bad = [p for p in premises if not p.startswith(("int:", "mem:", "sym:", "file:"))]
+    if bad:
+        _guidance(f"a rejection premise must be a graph locator yigraf can evaluate the liveness of — "
+                  f"int:<slug> | mem:<id> | sym:<path>#<name> | file:<path> (got: {', '.join(bad)}). "
+                  f"valid-when = surfaces only while the premise holds; invalidated-when = withdrawn "
+                  f"once it holds (e.g. --rejected-invalidated-when file:infra/redis.tf).")
 
     config = load_config(workspace / "config.yaml")
     graph, _ = build_graph(repo, config)  # built once, reused for concern/serves resolution + dedup
@@ -529,6 +547,11 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
     evidence, ev_warnings = _resolve_evidence(repo, config, graph, evidence_refs)
     warnings += ev_warnings
     warnings += _serves_warnings(graph, serves)
+    # A valid-when premise that doesn't resolve NOW would hide the rejection until it does — usually a
+    # typo. An invalidated-when premise legitimately names something not-yet-present (that's the point),
+    # so it is never warned on. Soft-warn only (D#3): the edge is still captured.
+    warnings += [f"⚠ --rejected-valid-when {p} doesn't resolve to a known node — the rejection stays "
+                 f"hidden until it does (typo?)." for p in rejected_valid_when if p not in graph]
     # A supersede (applied or pending) is a deliberate mind-change → skip the near-duplicate guard.
     if not supersedes and not pending_supersedes and not force_new:
         _dedup_guard(repo, config, graph, statement, why, concerns, serves)
@@ -536,11 +559,15 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
     # Content-addressed id (memid-v1, mem:063): coordinator-free, so no racy next_seq — and two agents
     # who assert the same decision mint the same id and collapse on merge (int:concurrent-write-model).
     mem_id = memory.memory_id(type_, statement, why, rejected, list(serves),
-                              [c.sym for c in concerns], [e.ref for e in evidence], list(supersedes))
+                              [c.sym for c in concerns], [e.ref for e in evidence], list(supersedes),
+                              rejected_valid_when=rejected_valid_when,
+                              rejected_invalidated_when=rejected_invalidated_when)
     dest = memory.hashed_memory_path(repo, slug, mem_id)
     node = memory.Memory(
         id=mem_id, seq=0, slug=slug, type=type_, statement=statement, why=why,
-        alternatives=rejected, serves=list(serves), concerns=concerns, evidence=evidence,
+        alternatives=rejected, rejected_valid_when=list(rejected_valid_when),
+        rejected_invalidated_when=list(rejected_invalidated_when),
+        serves=list(serves), concerns=concerns, evidence=evidence,
         supersedes=list(supersedes), pending_supersedes=list(pending_supersedes),
         grounding=grounding, promotable=promotable, provenance=provenance,
         maturity=memory.landing_maturity(provenance),  # proposed for mined/review, else working (task #1)
@@ -572,6 +599,8 @@ def remember(
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
     concerns: list[str] = typer.Option(None, "--concerns", help="A symbol this governs, sym:<path>#<name> (repeatable, anchored)."),
     rejected: str = typer.Option(None, "--rejected", help="The rejected alternative + why (the most perishable content)."),
+    rejected_valid_when: list[str] = typer.Option(None, "--rejected-valid-when", help="A premise the rejection depends on: int:<slug> | mem:<id> | sym:<path>#<name> | file:<path> (repeatable). The rejection surfaces ONLY while every one of these still holds."),
+    rejected_invalidated_when: list[str] = typer.Option(None, "--rejected-invalidated-when", help="A condition that WITHDRAWS the rejection once true (same locator forms, repeatable), e.g. --rejected \"no Redis in deploy\" --rejected-invalidated-when file:infra/redis.tf."),
     grounding: str = typer.Option(None, "--grounding", help=f"How the belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred). empirical = confirmed by a live observation."),
     evidence: list[str] = typer.Option(None, "--evidence", help="What grounds the belief (required for --grounding empirical): sym:<path>#<test> | file:<path> (drift-checked) | commit:<sha> | <url> (repeatable)."),
     new: bool = typer.Option(False, "--new", help="Capture even if it looks like a near-duplicate (skip the dedup guard)."),
@@ -582,7 +611,8 @@ def remember(
     node = _capture_memory(repo, workspace, statement=statement, type_=type, why=why,
                            serves=serves or [], concern_syms=concerns or [], rejected=rejected,
                            supersedes=[], promotable=False, force_new=new, grounding=grounding,
-                           evidence_refs=evidence or [])
+                           evidence_refs=evidence or [], rejected_valid_when=rejected_valid_when or [],
+                           rejected_invalidated_when=rejected_invalidated_when or [])
     _report_capture(node)
 
 
@@ -593,6 +623,8 @@ def note_constraint(
     why: str = typer.Option("", "--why", help="Why the constraint holds (optional)."),
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
     rejected: str = typer.Option(None, "--rejected", help="The ruled-out alternative + why (a constraint often exists *because* one was rejected)."),
+    rejected_valid_when: list[str] = typer.Option(None, "--rejected-valid-when", help="A premise the rejection depends on: int:<slug> | mem:<id> | sym:<path>#<name> | file:<path> (repeatable). The rejection surfaces ONLY while every one of these still holds."),
+    rejected_invalidated_when: list[str] = typer.Option(None, "--rejected-invalidated-when", help="A condition that WITHDRAWS the rejection once true (same locator forms, repeatable)."),
     grounding: str = typer.Option(None, "--grounding", help=f"How the belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred). empirical = confirmed by a live observation."),
     evidence: list[str] = typer.Option(None, "--evidence", help="What grounds the constraint (required for --grounding empirical): sym:<path>#<test> | file:<path> (drift-checked) | commit:<sha> | <url> (repeatable)."),
     new: bool = typer.Option(False, "--new", help="Capture even if it looks like a near-duplicate (skip the dedup guard)."),
@@ -603,7 +635,8 @@ def note_constraint(
     node = _capture_memory(repo, workspace, statement=rule, type_="constraint", why=why,
                            serves=serves or [], concern_syms=concerns or [], rejected=rejected,
                            supersedes=[], promotable=True, force_new=new, grounding=grounding,
-                           evidence_refs=evidence or [])
+                           evidence_refs=evidence or [], rejected_valid_when=rejected_valid_when or [],
+                           rejected_invalidated_when=rejected_invalidated_when or [])
     _report_capture(node)
 
 
@@ -614,6 +647,8 @@ def propose(
     type: str = typer.Option(None, "--type", help=f"One of: {', '.join(memory.MEMORY_TYPES)} (default: constraint for review, decision for mined)."),
     concerns: list[str] = typer.Option(None, "--concerns", help="The locus this candidate governs, sym:<path>#<name> or file:<path> (repeatable, anchored — this is what re-surfaces it at the edit hook)."),
     rejected: str = typer.Option(None, "--rejected", help="The anti-pattern (review) / rejected alternative (mined) — the ruled-out shape the finding warns against."),
+    rejected_valid_when: list[str] = typer.Option(None, "--rejected-valid-when", help="A premise the rejection depends on: int:<slug> | mem:<id> | sym:<path>#<name> | file:<path> (repeatable). The rejection surfaces ONLY while every one of these still holds."),
+    rejected_invalidated_when: list[str] = typer.Option(None, "--rejected-invalidated-when", help="A condition that WITHDRAWS the rejection once true (same locator forms, repeatable)."),
     why: str = typer.Option("", "--why", help="The reasoning behind the candidate (optional)."),
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
     origin: str = typer.Option(None, "--origin", help="Free-text provenance detail for the audit trail, e.g. 'security-review', 'commit abc123', 'docs/DESIGN.md'."),
@@ -642,7 +677,9 @@ def propose(
     node = _capture_memory(repo, workspace, statement=statement, type_=type_, why=why,
                            serves=serves or [], concern_syms=concerns or [], rejected=rejected,
                            supersedes=[], promotable=(type_ == "constraint"), force_new=new,
-                           grounding=grounding, evidence_refs=evidence or [], provenance=provenance)
+                           grounding=grounding, evidence_refs=evidence or [], provenance=provenance,
+                           rejected_valid_when=rejected_valid_when or [],
+                           rejected_invalidated_when=rejected_invalidated_when or [])
     _report_capture(node)
 
 
@@ -655,6 +692,8 @@ def supersede(
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
     concerns: list[str] = typer.Option(None, "--concerns", help="A symbol this governs (repeatable, anchored)."),
     rejected: str = typer.Option(None, "--rejected", help="The rejected alternative + why."),
+    rejected_valid_when: list[str] = typer.Option(None, "--rejected-valid-when", help="A premise the rejection depends on: int:<slug> | mem:<id> | sym:<path>#<name> | file:<path> (repeatable). The rejection surfaces ONLY while every one of these still holds."),
+    rejected_invalidated_when: list[str] = typer.Option(None, "--rejected-invalidated-when", help="A condition that WITHDRAWS the rejection once true (same locator forms, repeatable)."),
     grounding: str = typer.Option(None, "--grounding", help=f"How the new belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred)."),
     evidence: list[str] = typer.Option(None, "--evidence", help="What grounds the new belief (required for --grounding empirical): sym:<path>#<test> | file:<path> (drift-checked) | commit:<sha> | <url> (repeatable)."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
@@ -678,7 +717,9 @@ def supersede(
         serves=serves or [], concern_syms=concerns or [], rejected=rejected,
         supersedes=[] if human_attested else [old_id],
         pending_supersedes=[old_id] if human_attested else [],
-        promotable=False, grounding=grounding, evidence_refs=evidence or [])
+        promotable=False, grounding=grounding, evidence_refs=evidence or [],
+        rejected_valid_when=rejected_valid_when or [],
+        rejected_invalidated_when=rejected_invalidated_when or [])
     _report_capture(node)
     if human_attested:
         typer.echo(f"⚠ {old_id} is human-attested — this supersede is HELD PENDING: {node.id} is captured "

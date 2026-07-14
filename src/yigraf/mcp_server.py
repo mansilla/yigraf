@@ -115,16 +115,25 @@ def run_link(repo: str | None, task: str, target: str) -> str:
     return _run_cli("link", [task, target], repo)
 
 
+def _rejection_premise_args(valid_when: list[str] | None,
+                            invalidated_when: list[str] | None) -> list[str]:
+    """CLI args for a rejection's applicability premises (task 3), shared by every --rejected verb."""
+    return (_multi("--rejected-valid-when", valid_when)
+            + _multi("--rejected-invalidated-when", invalidated_when))
+
+
 def run_remember(repo: str | None, statement: str, why: str = "", serves: list[str] | None = None,
                  concerns: list[str] | None = None, rejected: str | None = None,
                  type: str = "decision", grounding: str | None = None,
-                 evidence: list[str] | None = None) -> str:
+                 evidence: list[str] | None = None, rejected_valid_when: list[str] | None = None,
+                 rejected_invalidated_when: list[str] | None = None) -> str:
     args = [statement, "--type", type]
     if why:
         args += ["--why", why]
     args += _multi("--serves", serves) + _multi("--concerns", concerns)
     if rejected:
         args += ["--rejected", rejected]
+    args += _rejection_premise_args(rejected_valid_when, rejected_invalidated_when)
     if grounding:
         args += ["--grounding", grounding]
     args += _multi("--evidence", evidence)
@@ -134,13 +143,15 @@ def run_remember(repo: str | None, statement: str, why: str = "", serves: list[s
 def run_note_constraint(repo: str | None, rule: str, concerns: list[str] | None = None,
                         why: str = "", serves: list[str] | None = None,
                         rejected: str | None = None, grounding: str | None = None,
-                        evidence: list[str] | None = None) -> str:
+                        evidence: list[str] | None = None, rejected_valid_when: list[str] | None = None,
+                        rejected_invalidated_when: list[str] | None = None) -> str:
     args = [rule] + _multi("--concerns", concerns)
     if why:
         args += ["--why", why]
     args += _multi("--serves", serves)
     if rejected:
         args += ["--rejected", rejected]
+    args += _rejection_premise_args(rejected_valid_when, rejected_invalidated_when)
     if grounding:
         args += ["--grounding", grounding]
     args += _multi("--evidence", evidence)
@@ -150,13 +161,16 @@ def run_note_constraint(repo: str | None, rule: str, concerns: list[str] | None 
 def run_propose(repo: str | None, statement: str, from_: str, concerns: list[str] | None = None,
                 rejected: str | None = None, why: str = "", serves: list[str] | None = None,
                 type: str | None = None, origin: str | None = None,
-                grounding: str | None = None, evidence: list[str] | None = None) -> str:
+                grounding: str | None = None, evidence: list[str] | None = None,
+                rejected_valid_when: list[str] | None = None,
+                rejected_invalidated_when: list[str] | None = None) -> str:
     args = [statement, "--from", from_]
     if type:
         args += ["--type", type]
     args += _multi("--concerns", concerns) + _multi("--serves", serves)
     if rejected:
         args += ["--rejected", rejected]
+    args += _rejection_premise_args(rejected_valid_when, rejected_invalidated_when)
     if why:
         args += ["--why", why]
     if origin:
@@ -170,13 +184,16 @@ def run_propose(repo: str | None, statement: str, from_: str, concerns: list[str
 def run_supersede(repo: str | None, old_id: str, statement: str, why: str = "",
                   serves: list[str] | None = None, concerns: list[str] | None = None,
                   rejected: str | None = None, type: str = "decision",
-                  grounding: str | None = None, evidence: list[str] | None = None) -> str:
+                  grounding: str | None = None, evidence: list[str] | None = None,
+                  rejected_valid_when: list[str] | None = None,
+                  rejected_invalidated_when: list[str] | None = None) -> str:
     args = [old_id, statement, "--type", type]
     if why:
         args += ["--why", why]
     args += _multi("--serves", serves) + _multi("--concerns", concerns)
     if rejected:
         args += ["--rejected", rejected]
+    args += _rejection_premise_args(rejected_valid_when, rejected_invalidated_when)
     if grounding:
         args += ["--grounding", grounding]
     args += _multi("--evidence", evidence)
@@ -259,7 +276,8 @@ def build_server(default_repo: str | None = None):
     def remember(statement: str, why: str = "", serves: list[str] | None = None,
                  concerns: list[str] | None = None, rejected: str | None = None,
                  type: str = "decision", grounding: str | None = None,
-                 evidence: list[str] | None = None, repo: str | None = None) -> str:
+                 evidence: list[str] | None = None, rejected_valid_when: list[str] | None = None,
+                 rejected_invalidated_when: list[str] | None = None, repo: str | None = None) -> str:
         """Persist a non-obvious decision/rationale as a durable memory node — the *why* a reset loses.
 
         Capture at a conclusion (a chosen approach, a worked-around constraint), not mid-thinking. A
@@ -280,14 +298,22 @@ def build_server(default_repo: str | None = None):
                 ["sym:tests/test_x.py#test_case", "file:path"]) is drift-checked, so the evidence
                 changing later re-surfaces the belief as unearned; an opaque ref ("commit:abc", a URL)
                 is recorded but not drift-checked.
+            rejected_valid_when: premises the rejection depends on (int:/mem:/sym:/file: locators). The
+                rejection surfaces ONLY while every one still holds — so a stale rejection stops
+                mis-steering you once its reason lapses.
+            rejected_invalidated_when: conditions that WITHDRAW the rejection once true (same locator
+                forms), e.g. rejected "no Redis in deploy" + rejected_invalidated_when
+                ["file:infra/redis.tf"] — the rejection vanishes the moment that file appears.
         """
         return run_remember(repo or default_repo, statement, why, serves, concerns, rejected, type,
-                            grounding, evidence)
+                            grounding, evidence, rejected_valid_when, rejected_invalidated_when)
 
     @server.tool()
     def note_constraint(rule: str, concerns: list[str] | None = None, why: str = "",
                         serves: list[str] | None = None, rejected: str | None = None,
                         grounding: str | None = None, evidence: list[str] | None = None,
+                        rejected_valid_when: list[str] | None = None,
+                        rejected_invalidated_when: list[str] | None = None,
                         repo: str | None = None) -> str:
         """Capture a constraint/rule governing code (flagged as a candidate to promote to a check).
 
@@ -299,15 +325,18 @@ def build_server(default_repo: str | None = None):
             rejected: the ruled-out alternative + why (a constraint often exists *because* one was).
             grounding: inferred|docs|empirical (default inferred) — see `remember`.
             evidence: what grounds it — REQUIRED for grounding=empirical; see `remember`.
+            rejected_valid_when / rejected_invalidated_when: applicability premises for the rejection
+                (int:/mem:/sym:/file: locators) — see `remember`.
         """
         return run_note_constraint(repo or default_repo, rule, concerns, why, serves, rejected,
-                                   grounding, evidence)
+                                   grounding, evidence, rejected_valid_when, rejected_invalidated_when)
 
     @server.tool()
     def propose(statement: str, from_: str, concerns: list[str] | None = None,
                 rejected: str | None = None, why: str = "", serves: list[str] | None = None,
                 type: str | None = None, origin: str | None = None, grounding: str | None = None,
-                evidence: list[str] | None = None, repo: str | None = None) -> str:
+                evidence: list[str] | None = None, rejected_valid_when: list[str] | None = None,
+                rejected_invalidated_when: list[str] | None = None, repo: str | None = None) -> str:
         """Land a distilled CANDIDATE memory in quarantine (the `proposed` tier) — near-zero weight.
 
         Two callers: (1) a code-/security-review finding you confirmed and chose to keep, and (2) the
@@ -329,15 +358,19 @@ def build_server(default_repo: str | None = None):
             origin: free-text provenance detail for the audit trail (e.g. "security-review", "commit abc").
             grounding: inferred|docs|empirical (default inferred) — see `remember`.
             evidence: what grounds it — REQUIRED for grounding=empirical; see `remember`.
+            rejected_valid_when / rejected_invalidated_when: applicability premises for the anti-pattern
+                (int:/mem:/sym:/file: locators) — see `remember`.
         """
         return run_propose(repo or default_repo, statement, from_, concerns, rejected, why, serves,
-                          type, origin, grounding, evidence)
+                          type, origin, grounding, evidence, rejected_valid_when,
+                          rejected_invalidated_when)
 
     @server.tool()
     def supersede(old_id: str, statement: str, why: str = "", serves: list[str] | None = None,
                   concerns: list[str] | None = None, rejected: str | None = None,
                   type: str = "decision", grounding: str | None = None,
-                  evidence: list[str] | None = None, repo: str | None = None) -> str:
+                  evidence: list[str] | None = None, rejected_valid_when: list[str] | None = None,
+                  rejected_invalidated_when: list[str] | None = None, repo: str | None = None) -> str:
         """Record a mind-change: a new memory node that supersedes an old one (never edit in place).
 
         Args:
@@ -345,9 +378,11 @@ def build_server(default_repo: str | None = None):
             statement: the new decision in one line.
             why: what changed.
             serves/concerns/rejected/type/grounding/evidence: as for `remember`.
+            rejected_valid_when / rejected_invalidated_when: applicability premises for the rejection
+                (int:/mem:/sym:/file: locators) — see `remember`.
         """
         return run_supersede(repo or default_repo, old_id, statement, why, serves, concerns, rejected,
-                            type, grounding, evidence)
+                            type, grounding, evidence, rejected_valid_when, rejected_invalidated_when)
 
     @server.tool()
     def reaffirm(target: str, concerns: list[str] | None = None, grounding: str | None = None,
