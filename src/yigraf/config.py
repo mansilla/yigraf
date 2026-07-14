@@ -55,6 +55,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "render": "signature_only",   # signature_only | source_for_seeds
         "source_max_symbols": 3,
         "source_max_lines": 40,
+        # Reserved per-family budget floors (epistemic-control-plane task 4): the render splits the
+        # packet so a flood of code symbols can't starve the "why" families (intent/memory). Floors,
+        # not partitions — a family that doesn't use its share yields it to the others (design law #2).
+        "family_shares": {"intent": 0.25, "plan": 0.15, "structure": 0.30, "memory": 0.30},
     },
     # Relevance prior weights (graph-design §3). Tuned empirically later.
     #   w1·log(1+refs_in) + w2·recency(last_seen) + w3·maturity − w4·[superseded_in>0] − w5·[proposed]
@@ -153,6 +157,13 @@ retrieval:
   render: signature_only       # signature_only | source_for_seeds
   source_max_symbols: 3        # source_for_seeds: top-ranked symbols rendered as source
   source_max_lines: 40         # per-symbol source line cap (longer bodies truncated)
+  # Reserved per-family budget floors (epistemic-control-plane task 4) — a code-symbol flood can't
+  # starve the "why" families; floors, not partitions (unused share flows to the others).
+  family_shares:
+    intent: 0.25
+    plan: 0.15
+    structure: 0.30
+    memory: 0.30
 
 # --- Relevance prior (docs/graph-design.md §3) ---
 relevance:                     # w1·log(1+refs_in) + w2·recency + w3·maturity − w4·[superseded] − w5·[proposed]

@@ -36,6 +36,13 @@ _FAMILY_HEADING = {
     "memory": "Decisions (why)",
 }
 
+#: Reserved-share fallback if config omits ``family_shares`` (task 4). Floors, not partitions.
+_DEFAULT_FAMILY_SHARES = {"intent": 0.25, "plan": 0.15, "structure": 0.30, "memory": 0.30}
+
+#: Any graph locator, extracted from a surfaced signal line to *pin* its explanation (task 4 / task 7
+#: invariant: budget reduction must never drop the node a shown conflict/drift/obligation names).
+_LOCATOR_RE = re.compile(r"(?:sym|int|mem|task|file|module|plan):[^\s,;()]+")
+
 
 # --------------------------------------------------------------------------------------------------
 # Tokenization + corpus
@@ -151,13 +158,27 @@ def _percentile(sorted_vals: list[int], p: float) -> float:
     return sorted_vals[idx]
 
 
-def _traverse(graph: nx.DiGraph, seeds: list[str], config: dict) -> dict[str, int]:
-    """Bounded, hub-aware BFS over the *undirected* edge set; returns ``{node_id: hops}``."""
+def _edge_relation(graph: nx.DiGraph, a: str, b: str) -> str:
+    """The ``relation`` on the edge between ``a`` and ``b`` in whichever direction it runs (BFS is
+    undirected, so the justifying edge may point either way)."""
+    data = graph.get_edge_data(a, b) or graph.get_edge_data(b, a) or {}
+    return data.get("relation", "")
+
+
+def _traverse(graph: nx.DiGraph, seeds: list[str],
+              config: dict) -> tuple[dict[str, int], dict[str, tuple[str, str]]]:
+    """Bounded, hub-aware BFS over the *undirected* edge set.
+
+    Returns ``({node_id: hops}, {node_id: (parent, relation)})``. The parent map records, for every
+    non-seed node, the edge by which it *first entered the slice* — its retrieval justification, which
+    the render turns into a per-node "why" annotation (task 4). Seeds have no parent (hop 0).
+    """
     r = config.get("retrieval", {})
     max_hops, budget = r.get("max_hops", 2), r.get("node_budget", 60)
     hubs = _hubs(graph, config)
 
     hops = {s: 0 for s in seeds if s in graph}
+    parent: dict[str, tuple[str, str]] = {}
     frontier = list(hops)
     depth = 0
     while frontier and depth < max_hops and len(hops) < budget:
@@ -170,11 +191,12 @@ def _traverse(graph: nx.DiGraph, seeds: list[str], config: dict) -> dict[str, in
             for neighbor in sorted(neighbors):
                 if neighbor not in hops:
                     hops[neighbor] = depth
+                    parent[neighbor] = (node, _edge_relation(graph, node, neighbor))
                     nxt.append(neighbor)
                     if len(hops) >= budget:
-                        return hops
+                        return hops, parent
         frontier = nxt
-    return hops
+    return hops, parent
 
 
 def _refs_in(graph: nx.DiGraph, node_id: str) -> int:
@@ -438,6 +460,45 @@ def _source_block(graph: nx.DiGraph, node_id: str, root: Path, max_lines: int) -
     return f"  {node_id}  ({src_file}:{start_row + 1})\n" + "\n".join(numbered)
 
 
+def _explanation_ids(signal_lines: list[str]) -> set[str]:
+    """Every graph locator named by a surfaced ⚠/✔ signal line — the nodes that *explain* those
+    signals. The render pins any of these that are render candidates so budget reduction can never drop
+    the sole explanation of a shown conflict/drift/obligation (task 4; the task-7 invariant). Ids that
+    aren't real render candidates (a ``sym:<path>#<name>`` placeholder in a capture-gap hint, an intent
+    named only in an obligation line) simply miss the ``& renderable`` intersection — harmless.
+    """
+    ids: set[str] = set()
+    for line in signal_lines:
+        ids.update(_LOCATOR_RE.findall(line))
+    return ids
+
+
+def _provenance(graph: nx.DiGraph, node_id: str, parent: dict[str, tuple[str, str]],
+                in_packet: set[str]) -> str:
+    """Why this node entered the packet — the one-line "why" annotation (task 4, the question yigraf's
+    name asks). It names the edge by which BFS first reached the node (:func:`_traverse`'s parent map):
+    a code symbol here because ``task:x implements`` it, or because the symbol you're editing ``calls``
+    it, reads very differently from ambient context, and the agent shouldn't have to guess which.
+
+    Scoped to **structure** nodes on purpose (design law #4 — silence unless it adds signal): a memory
+    already renders its ``serves``/``concerns`` links, a task its ``tracks``/``implements``, an intent
+    its statement — those lines already answer "why is this here"; only a bare ``sym: signature`` line
+    doesn't. Silent for a seed (no parent — you queried it / are editing it), when the justifying edge
+    is unlabelled, and when the parent isn't itself a render candidate (``in_packet``): attribute only
+    to something the agent can also see here, which keeps session-start from re-naming a done task it
+    deliberately dropped from the render (design law #4).
+    """
+    if graph.nodes[node_id].get("family") != "structure":
+        return ""
+    p = parent.get(node_id)
+    if not p:
+        return ""  # a seed: it matched the query or is the touched locus — the "why" is self-evident
+    parent_id, relation = p
+    if not relation or parent_id not in in_packet:
+        return ""
+    return f"via {relation} {parent_id}"
+
+
 def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[str],
             reconcile_lines: list[str], budget_tokens: int, root: Path | None = None,
             config: dict | None = None, capture_lines: list[str] | None = None,
@@ -445,31 +506,39 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
             task_reconcile_lines: list[str] | None = None,
             conflict_lines: list[str] | None = None,
             obligation_lines: list[str] | None = None,
-            stale_lines: list[str] | None = None) -> ContextResult:
+            stale_lines: list[str] | None = None,
+            parent: dict[str, tuple[str, str]] | None = None) -> ContextResult:
     capture_lines = capture_lines or []
     task_reconcile_lines = task_reconcile_lines or []
     conflict_lines = conflict_lines or []
     obligation_lines = obligation_lines or []
     stale_lines = stale_lines or []
+    parent = parent or {}
     char_budget = budget_tokens * 3  # Graphify's ≈3:1 char:token estimate (retrieval-design §9)
     rcfg = (config or {}).get("retrieval", {})
     # A3: top-ranked symbols render as verbatim source when the knob is on AND we know the repo root.
     source_mode = rcfg.get("render", "signature_only") == "source_for_seeds" and root is not None
     max_src, max_src_lines = rcfg.get("source_max_symbols", 3), rcfg.get("source_max_lines", 40)
-    reserved = "\n".join(drift_lines + reconcile_lines + capture_lines + task_reconcile_lines
-                         + conflict_lines + obligation_lines + stale_lines)
+    signal_lines = (drift_lines + reconcile_lines + capture_lines + task_reconcile_lines
+                    + conflict_lines + obligation_lines + stale_lines)
+    reserved = "\n".join(signal_lines)
     out = [f'Context for "{query}":', ""]
     if relevance_note:  # C#8: a one-line honesty banner when nothing matched the query strongly
         out.extend([relevance_note, ""])
     used = len(reserved) + len(relevance_note or "")
-    rendered = 0
     src_emitted = 0
 
     # Drop file:/module: containers before rendering — they only eat budget and bury intent/drift.
     renderable = [n for n in ranked if graph.nodes[n].get("kind") not in _RENDER_SKIP_KINDS]
+    renderable_set = set(renderable)
     by_family: dict[str, list[str]] = {fam: [] for fam in _FAMILY_ORDER}
     rendered_ids: list[str] = []
-    for node_id in renderable:
+    rendered_set: set[str] = set()
+    spent: dict[str, int] = {fam: 0 for fam in _FAMILY_ORDER}
+
+    def _line_for(node_id: str) -> tuple[str, bool]:
+        """The render line for a node (source block vs signature + provenance + score) and whether it
+        consumed a source-block slot — computed lazily so the source cap counts real emissions only."""
         fam = graph.nodes[node_id].get("family", "structure")
         line = None
         if source_mode and fam == "structure" and src_emitted < max_src:
@@ -477,17 +546,53 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
         used_source = line is not None
         if line is None:
             line = _node_line(graph, node_id)
+            prov = _provenance(graph, node_id, parent, renderable_set)  # the per-node "why" (task 4)
+            if prov:
+                line += f"  ({prov})"
         if scores is not None and node_id in scores and not used_source:  # C#8: --scores per-node cosine
             line += f"  [sim {scores[node_id]:.2f}]"
-        if used + len(line) > char_budget:
-            break
+        return line, used_source
+
+    def _place(node_id: str, cap: int | None) -> None:
+        """Render ``node_id`` if it fits the global budget and (unless it's a pinned explanation) its
+        family's reserved cap. ``cap=None`` bypasses the family cap (pinned pass + leftover pass)."""
+        nonlocal used, src_emitted
+        if node_id in rendered_set:
+            return
+        fam = graph.nodes[node_id].get("family", "structure")
+        line, used_source = _line_for(node_id)
+        cost = len(line) + 1
+        if used + cost > char_budget:
+            return
+        if cap is not None and spent[fam] + cost > cap:
+            return
         by_family.setdefault(fam, []).append(line)
         rendered_ids.append(node_id)
-        used += len(line) + 1
-        rendered += 1
+        rendered_set.add(node_id)
+        used += cost
+        spent[fam] += cost
         if used_source:
             src_emitted += 1
 
+    # Task-7 invariant: pin the nodes a surfaced signal line names — the *explanation* of a shown
+    # conflict/drift/obligation — and place them first, so budget reduction can never drop them.
+    pinned = _explanation_ids(signal_lines) & set(renderable)
+    for node_id in renderable:
+        if node_id in pinned:
+            _place(node_id, cap=None)
+
+    # Reserved per-family shares (task 4): split the budget left after signals + pins so a code-symbol
+    # flood can't starve the "why" families. Caps are floors — the leftover pass below redistributes any
+    # family's unused share, so a single-family slice still fills the whole budget (design law #2).
+    shares = rcfg.get("family_shares", _DEFAULT_FAMILY_SHARES)
+    reserved_budget = max(0, char_budget - used)
+    caps = {fam: int(shares.get(fam, 0.0) * reserved_budget) for fam in _FAMILY_ORDER}
+    for node_id in renderable:
+        _place(node_id, cap=caps.get(graph.nodes[node_id].get("family", "structure"), 0))
+    for node_id in renderable:  # leftover: unused shares flow to whoever still has ranked nodes waiting
+        _place(node_id, cap=None)
+
+    rendered = len(rendered_ids)
     for fam in _FAMILY_ORDER:
         if by_family.get(fam):
             out.append(f"{_FAMILY_HEADING[fam]}:")
@@ -691,7 +796,7 @@ def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict,
         return None
 
     budget = budget_tokens or config.get("retrieval", {}).get("hook_token_budget", 800)
-    hops = _traverse(graph, seeds, config)
+    hops, parent = _traverse(graph, seeds, config)
     seedset = set(seeds)
 
     governing = any(
@@ -719,7 +824,7 @@ def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict,
     reconcile = _verified_reconcile(graph, drifted_edges)
     obligations = _proof_obligations(graph, seeds)  # what this edit must keep true (int:proof-obligations)
     return _render(graph, ranked, f"editing {file_relpath}", sorted(drift_lines), reconcile, budget,
-                   root=root, config=config, obligation_lines=obligations)
+                   root=root, config=config, obligation_lines=obligations, parent=parent)
 
 
 def _plan_has_open_work(graph: nx.DiGraph, plan_id: str) -> bool:
@@ -759,7 +864,7 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
     if not seeds:
         return None
 
-    hops = _traverse(graph, seeds, config)
+    hops, parent = _traverse(graph, seeds, config)
     ranked = _rank(graph, hops, {}, config)
     # Orient on what's *left*, not a ledger of shipped work: drop done tasks from the render so a
     # part-done plan shows only its open steps, and a done task pulled in via its (still-governing)
@@ -791,7 +896,7 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
     return _render(graph, ranked, "active plan & governing intents", sorted(drift_lines), reconcile,
                    budget, root=root, config=config, capture_lines=capture,
                    task_reconcile_lines=task_reconcile, conflict_lines=conflicts,
-                   stale_lines=sorted(stale_lines))
+                   stale_lines=sorted(stale_lines), parent=parent)
 
 
 def _merge_seeds(lex_match: dict[str, float], sem_match: dict[str, float], config: dict) -> list[str]:
@@ -849,7 +954,7 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
     corpus = _build_corpus(graph)
     lex_match = _match_scores(corpus, terms(query))
     seeds = _merge_seeds(lex_match, sem_match, config)
-    hops = _traverse(graph, seeds, config)
+    hops, parent = _traverse(graph, seeds, config)
 
     if family:
         hops = {n: h for n, h in hops.items() if graph.nodes[n].get("family") == family}
@@ -886,4 +991,4 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
                    root=root, config=config, capture_lines=capture_lines,
                    relevance_note=_relevance_note(sem_match, query, config), scores=scores,
                    task_reconcile_lines=task_reconcile, conflict_lines=conflicts,
-                   stale_lines=sorted(stale_lines))
+                   stale_lines=sorted(stale_lines), parent=parent)
