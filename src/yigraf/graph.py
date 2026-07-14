@@ -1,9 +1,13 @@
 """The yigraf graph: a directed NetworkX graph serialized as node-link JSON.
 
-Per ``docs/DESIGN.md`` R1, ``graph.json`` is committed but holds only *recomputable* state (nodes,
-edges, and edge-derived counters). Volatile telemetry (``usage`` / ``last_seen``) lives in the
-gitignored ``.local/`` sidecar, not here. Serialization is deterministic (sorted keys) so an
-unchanged graph re-serializes byte-for-byte — which M1's "re-run is byte-identical" done-test needs.
+Per ``docs/DESIGN.md`` R1, ``graph.json`` is committed but holds only *recomputable, HEAD-stable*
+state (nodes, edges, and edge-derived counters). Volatile telemetry (``usage`` / ``last_seen`` /
+``upholds``) lives in the gitignored ``.local/`` sidecar, and git-derived ``survival`` is a read-time
+overlay — neither is serialized here. Both are stamped onto the *in-memory* graph on read paths (for
+ranking + the maturity verdict/GC) but stripped at serialization, because a committed value that moves
+every commit (``survival`` = commits since a memory landed) churned ``graph.json`` on every commit for
+no default benefit (mem:034 #10; the floor defaults off). Serialization is deterministic (sorted keys)
+so an unchanged graph re-serializes byte-for-byte — which M1's "re-run is byte-identical" done-test needs.
 """
 from __future__ import annotations
 
@@ -18,6 +22,12 @@ SCHEMA_VERSION = 0
 #: node-link edges key. Pinned to "links" so the format is stable across networkx versions
 #: (networkx >=3.4 otherwise warns that the implicit default key is changing to "edges").
 _EDGES_KEY = "links"
+
+#: Node attrs that are read-time overlays, never persisted (R1): the committed projection must be
+#: recomputable AND HEAD-stable. ``survival`` is git-derived (commits since a memory landed → moves
+#: every commit, the mem:034 #10 churn); ``usage``/``last_seen``/``upholds`` are the machine-local
+#: sidecar overlay. All are re-derived on read paths, so dropping them from graph.json loses nothing.
+_VOLATILE_NODE_ATTRS = ("survival", "usage", "last_seen", "upholds")
 
 
 def empty_graph() -> nx.DiGraph:
@@ -36,6 +46,9 @@ def to_node_link(g: nx.DiGraph) -> dict:
     sorts the keys *within* each object.
     """
     data = nx.node_link_data(g, edges=_EDGES_KEY)
+    for node in data["nodes"]:  # R1: the committed projection carries no volatile/read-time state
+        for attr in _VOLATILE_NODE_ATTRS:
+            node.pop(attr, None)
     data["nodes"].sort(key=lambda n: n["id"])
     data[_EDGES_KEY].sort(key=lambda e: (e["source"], e["target"], e.get("relation", "")))
     return data

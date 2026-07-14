@@ -139,10 +139,13 @@ def apply_maturity(graph: nx.DiGraph, root: Path, config: dict, cache=None) -> N
     Promotion is no longer git-derived (mem:033 — commit-age treats un-touched code as validated, the
     "silence is not evidence" fallacy). ``settled`` is a **read-time verdict** from survived
     review-encounters in the telemetry sidecar (:func:`apply_maturity_verdict`), so *promotion* never
-    touches the committed ``graph.json``. This build pass keeps only recomputable state: ``survival``
-    (git — an optional durability floor + informational) and the **landed tier** — ``proposed`` for a
-    mined/review candidate, ``working`` otherwise — derived from the committed ``provenance`` so it is
-    itself recomputable (:func:`yigraf.memory.landing_maturity`, task #1).
+    touches the committed ``graph.json``. This build pass stamps two recomputable attrs on the
+    *in-memory* graph: ``survival`` (git — an optional durability floor + the proposed-TTL clock) and
+    the **landed tier** — ``proposed`` for a mined/review candidate, ``working`` otherwise — derived
+    from the committed ``provenance`` (:func:`yigraf.memory.landing_maturity`, task #1). ``survival`` is
+    HEAD-relative (it moves every commit), so it is a read-time overlay only: serialization strips it
+    (:data:`yigraf.graph._VOLATILE_NODE_ATTRS`) so it never churns the committed graph (mem:034 #10).
+    The landed tier is HEAD-stable and stays.
 
     Survival is derived in a flat number of git calls — batched across all memory paths and, given a
     ``cache`` (the build path), memoized by ``HEAD`` so an edit-triggered rebuild that hasn't committed

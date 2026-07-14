@@ -103,6 +103,19 @@ def test_build_maturity_lands_proposed_for_mined_provenance(monkeypatch):
     assert g.nodes["mem:001"]["maturity"] == "proposed"
 
 
+def test_survival_is_not_persisted_to_committed_graph_json(tmp_path: Path):
+    """mem:034 #10: git-derived ``survival`` moved every commit, churning graph.json for no default gain
+    (the floor defaults off). It's now stripped at serialization — the committed projection carries
+    none, while the in-memory build still stamps it so the optional floor + proposed-TTL clock work."""
+    root = _repo(tmp_path)
+    _run(["remember", "refresh returns its token unchanged", "--repo", str(root),
+          "--concerns", SYM, "--new"])
+    assert '"survival"' not in (root / "yigraf" / "graph.json").read_text()  # no churn source committed
+    g, _ = build_graph(root, default_config())
+    mem_nodes = [n for n, a in g.nodes(data=True) if a.get("family") == "memory"]
+    assert mem_nodes and all("survival" in g.nodes[n] for n in mem_nodes)  # in-memory graph still has it
+
+
 def test_verdict_proposed_stays_until_confirmed():
     """task #1: an un-confirmed candidate (no uphold) stays ``proposed`` — near-zero weight."""
     g = _mem_graph(maturity="proposed", upholds=0.0)
