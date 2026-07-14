@@ -1,4 +1,5 @@
 """Whole-repo build: cache hits, byte-identical rebuilds, intra-repo import edges (M1 done-test)."""
+import subprocess
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -91,6 +92,40 @@ def test_ignore_supports_path_prefixes_not_just_dir_names(tmp_path: Path):
     graph, _ = build_graph(tmp_path, cfg)
     assert "sym:keep.py#a" in graph
     assert not any("scripts/eval/runs" in n for n in graph)  # path-prefix pruned the snapshot copy
+
+
+def _git_init(root: Path) -> None:
+    subprocess.run(["git", "-C", str(root), "init", "-q"], check=True, capture_output=True)
+
+
+def test_gitignored_dir_is_never_indexed(tmp_path: Path):
+    # The motivating crash: a build dir full of generated source (`.next/`) gets indexed and exhausts
+    # RAM. In a git work tree, `.gitignore` is the arbiter — a gitignored tree is never enumerated.
+    init_workspace(tmp_path)
+    _git_init(tmp_path)
+    (tmp_path / ".gitignore").write_text(".next/\n")
+    (tmp_path / "app.py").write_text("def real():\n    return 1\n")
+    generated = tmp_path / ".next" / "server" / "chunks"
+    generated.mkdir(parents=True)
+    (generated / "bundle.js").write_text("export function junk(){return 0}\n")
+
+    graph, _ = build_graph(tmp_path, default_config())
+    assert "sym:app.py#real" in graph
+    assert not any(".next/" in n for n in graph)  # gitignored build output pruned wholesale
+
+
+def test_explicit_ignore_excludes_a_git_tracked_dir(tmp_path: Path):
+    # git would keep a *tracked* dir; the explicit `ignore` config must still prune it on the git path.
+    init_workspace(tmp_path)
+    _git_init(tmp_path)
+    (tmp_path / "keep.py").write_text("def a():\n    return 1\n")
+    tracked = tmp_path / "origins" / "clone"
+    tracked.mkdir(parents=True)
+    (tracked / "vendored.py").write_text("def b():\n    return 2\n")  # tracked, NOT gitignored here
+
+    graph, _ = build_graph(tmp_path, default_config())  # default ignore lists `origins/`
+    assert "sym:keep.py#a" in graph
+    assert not any("origins/" in n for n in graph)
 
 
 def test_go_import_edges_resolve_via_go_mod(tmp_path: Path):

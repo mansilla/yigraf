@@ -18,7 +18,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # core set are bundled and light up as their extractors land.
     "languages": ["python", "go", "javascript", "typescript", "rust", "java", "c", "cpp",
                   "ruby", "php", "c_sharp", "kotlin", "scala", "swift", "bash", "sql"],
-    "ignore": [".git/", "__pycache__/", ".venv/", "node_modules/", "origins/"],
+    # Extraction skips these paths. When the repo is a git work tree, `.gitignore` is honored FIRST
+    # (build/cache trees like `.next/` never get enumerated — see extract._iter_source_files), so this
+    # list is (a) the non-git fallback floor and (b) a way to exclude a git-TRACKED dir. It stays a
+    # cross-language build/cache floor so a non-git checkout can't blow up RAM indexing `.next/`.
+    "ignore": [".git/", "__pycache__/", ".venv/", "node_modules/", "origins/",
+               ".next/", ".nuxt/", ".svelte-kit/", ".turbo/", "dist/", "build/", "out/", "target/",
+               "vendor/", "coverage/", ".gradle/", ".pytest_cache/", ".mypy_cache/", ".ruff_cache/"],
     # Maturity (mem:033): a memory settles once its accumulated survived-encounter *upholds* reach
     # `maturity_k` and it isn't superseded. Upholds are read-time, sidecar-derived — a reaffirm books
     # `maturity_uphold_review`, a silent edit-hook survival books `maturity_uphold_edit`. Git-survival
@@ -95,12 +101,29 @@ schema_version: 0
 # swift, bash, sql).
 languages: [python, go, javascript, typescript, rust, java, c, cpp, ruby, php,
             c_sharp, kotlin, scala, swift, bash, sql]
-ignore:                        # path prefixes skipped when indexing the repo
+# Paths skipped when indexing. In a git repo, `.gitignore` is honored FIRST (build/cache trees like
+# `.next/` are never enumerated), so this is the non-git fallback floor + a way to skip a git-TRACKED
+# dir. Keep the build/cache floor so a non-git checkout can't exhaust RAM indexing generated source.
+ignore:
   - .git/
   - __pycache__/
   - .venv/
   - node_modules/
   - origins/
+  - .next/
+  - .nuxt/
+  - .svelte-kit/
+  - .turbo/
+  - dist/
+  - build/
+  - out/
+  - target/
+  - vendor/
+  - coverage/
+  - .gradle/
+  - .pytest_cache/
+  - .mypy_cache/
+  - .ruff_cache/
 
 # --- Maturity (mem:033) — settled = survived review-encounters, read-time from the sidecar ---
 maturity_k: 3                  # accumulated uphold weight (un-superseded) before a memory "settles"

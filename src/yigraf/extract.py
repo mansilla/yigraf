@@ -14,6 +14,7 @@ Go extractors; the other core grammars are bundled and light up as their extract
 from __future__ import annotations
 
 import os
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -146,11 +147,58 @@ def symbol_content_hash(root: Path, symbol_id: str, config: dict) -> str | None:
 
 
 def _iter_source_files(root: Path, ignore_dirs: set[str], extensions: set[str]) -> list[str]:
-    """Sorted POSIX relpaths of files under ``root`` with a handled suffix, skipping ignored dirs.
+    """Sorted POSIX relpaths of source files under ``root`` with a handled suffix.
 
-    An ignore entry prunes a directory either by **bare name at any depth** (``origins``, ``.git``) or by
-    **exact repo-relative path prefix** (``scripts/eval/runs``) — matching the config's documented
-    "path prefixes" intent (a bare name is just the one-segment case).
+    Discovery honors **git's own ignore rules first**: when ``root`` is a git work tree, the candidate
+    set is what git shows as real files — tracked plus untracked-not-ignored (``git ls-files --cached
+    --others --exclude-standard``) — so the repo's ``.gitignore`` (``.next/``, ``dist/``,
+    ``node_modules/``, …) prunes build/cache trees wholesale and yigraf never enumerates a
+    10k-file ``.next/`` (the RAM blowup that motivated this; design law #6 — git is the arbiter of
+    what counts as source). When ``root`` is not a git work tree (or git is absent), it falls back to
+    an ``os.walk`` pruned by the explicit ``ignore`` config alone.
+
+    The explicit ``ignore`` config is applied on TOP of either candidate set — a **bare name at any
+    depth** (``origins``, ``.git``) or an **exact repo-relative path prefix** (``scripts/eval/runs``) —
+    so a *tracked* directory git would keep can still be excluded, and the non-git fallback keeps its
+    build/cache floor. (A bare name is just the one-segment prefix case.)
+    """
+    candidates = _git_candidate_files(root)
+    if candidates is None:
+        candidates = _walk_candidate_files(root, ignore_dirs)
+    out = [
+        rel for rel in candidates
+        if PurePosixPath(rel).suffix in extensions and not _path_ignored(rel, ignore_dirs)
+    ]
+    return sorted(out)
+
+
+def _git_candidate_files(root: Path) -> list[str] | None:
+    """git-tracked + untracked-not-ignored relpaths under ``root``, or ``None`` if it isn't a git tree.
+
+    One ``git ls-files`` call reads the index and applies all standard excludes (``.gitignore``,
+    nested ignores, ``.git/info/exclude``, and the user's global ``core.excludesFile``), so ignored
+    build/cache trees are never listed. Fail-open (design law #5): any git error — not installed, not
+    a repo — returns ``None`` so the caller drops to the ``os.walk`` fallback. Deleted-in-worktree
+    tracked files are dropped (``ls-files --cached`` still lists them) so the caller's read never fails.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            capture_output=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    rels = [p for p in proc.stdout.decode("utf-8", "surrogateescape").split("\0") if p]
+    return [rel for rel in rels if (root / rel).is_file()]
+
+
+def _walk_candidate_files(root: Path, ignore_dirs: set[str]) -> list[str]:
+    """``os.walk`` fallback: every relpath under ``root``, pruning ignored dirs so we never descend them.
+
+    Pruning at the ``dirnames`` level (not post-filtering a flat list) is what keeps a non-git checkout
+    of a build-heavy repo from ever *entering* a huge ignored tree.
     """
     out: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root):
@@ -160,7 +208,18 @@ def _iter_source_files(root: Path, ignore_dirs: set[str], extensions: set[str]) 
             d for d in dirnames if d not in ignore_dirs and (prefix + d) not in ignore_dirs
         )
         for filename in sorted(filenames):
-            if PurePosixPath(filename).suffix in extensions:
-                rel = (Path(dirpath) / filename).relative_to(root).as_posix()
-                out.append(rel)
+            out.append((Path(dirpath) / filename).relative_to(root).as_posix())
     return out
+
+
+def _path_ignored(rel: str, ignore_dirs: set[str]) -> bool:
+    """True if ``rel`` sits under an ``ignore`` entry — a bare dir name at any depth, or an exact
+    repo-relative path prefix. Applied to both discovery paths so the explicit config can exclude even
+    a git-tracked directory the ``.gitignore`` keeps.
+    """
+    if not ignore_dirs:
+        return False
+    segments = rel.split("/")
+    if any(seg in ignore_dirs for seg in segments[:-1]):  # bare name at any depth
+        return True
+    return any("/".join(segments[:i]) in ignore_dirs for i in range(1, len(segments)))  # path prefix
