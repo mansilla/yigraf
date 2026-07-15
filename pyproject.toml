@@ -67,6 +67,14 @@ dependencies = [
 embeddings-torch = [
     "sentence-transformers>=2.2",
 ]
+# The production Postgres substrate for yigraf online v1 (int:yigraf-online-v1, plan tasks #7–#9). Not
+# a hard dependency (mirrors the embeddings extras): the online engine is written against the
+# AssertionStore port and fully proven offline against the stdlib SqliteAssertionStore reference
+# adapter, so psycopg is needed ONLY to point a hosted deployment at a real Postgres. Absent it, the
+# local git-file/SQLite path (int:yigraf-local-v1) is unaffected — the import is lazy.
+postgres = [
+    "psycopg[binary]>=3.1",
+]
 
 [project.urls]
 Homepage = "https://github.com/mansilla/yigraf"
