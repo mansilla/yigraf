@@ -1,8 +1,10 @@
-"""Git hook installation: keep ``graph.json`` synced to HEAD at the commit boundary (R5, M2b).
+"""Git hook installation: keep the materialized view warm at the commit boundary (R5, M2b).
 
-``yigraf install-hooks`` writes a ``post-commit`` hook that rebuilds the graph after each commit —
-the BUILD-PLAN's "detached AST rebuild." It is **fail-open** (never blocks or fails a commit) and
-bakes in the absolute interpreter path + repo root, so it runs even when ``PATH`` lacks the venv.
+``yigraf install-hooks`` writes a ``post-commit`` hook that re-materializes the gitignored SQLite view
+(``.local/graph.db``) after each commit — the BUILD-PLAN's "detached AST rebuild." It is **fail-open**
+(never blocks or fails a commit) and bakes in the absolute interpreter path + repo root, so it runs even
+when ``PATH`` lacks the venv. No git merge driver is registered: the view is gitignored, never committed,
+so there is nothing for concurrent branches to conflict on (mem:059 — this retired the whole-graph lock).
 
 Anchors themselves are stamped at ``yigraf link`` time, not here (docs/m2-notes.md §4): the hook
 only refreshes the projection. A symbol edited after linking, without a re-link, is left to surface
@@ -12,16 +14,12 @@ from __future__ import annotations
 
 import json
 import stat
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 #: Marks a hook as yigraf-authored, so re-install overwrites ours but never a user's own hook.
 _MARKER = "# yigraf-managed post-commit hook"
-
-#: The git merge-driver name keyed in .gitattributes (``graph.json merge=yigraf-graph``).
-_MERGE_DRIVER = "yigraf-graph"
 
 #: Markers bounding the always-on block yigraf maintains in AGENTS.md (idempotent replace).
 _AGENTS_START = "<!-- yigraf:start -->"
@@ -32,14 +30,13 @@ _AGENTS_END = "<!-- yigraf:end -->"
 class HookResult:
     path: Path
     installed: bool  # False when an unmanaged hook is already present (left untouched)
-    merge_driver: bool = False  # whether the graph.json union-merge driver was registered (M9)
 
 
 def _hook_body(python: str, root: Path) -> str:
     return (
         "#!/bin/sh\n"
         f"{_MARKER}\n"
-        "# Rebuild yigraf/graph.json to match HEAD. Fail-open: never block a commit.\n"
+        "# Re-materialize yigraf's gitignored view (.local/graph.db) at HEAD. Fail-open: never block a commit.\n"
         f'"{python}" -m yigraf build "{root}" >/dev/null 2>&1 || true\n'
     )
 
@@ -76,33 +73,7 @@ def install_post_commit_hook(root: Path) -> HookResult:
 
     hook_path.write_text(_hook_body(sys.executable, root), encoding="utf-8")
     hook_path.chmod(hook_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    merge_driver = register_merge_driver(root)
-    return HookResult(path=hook_path, installed=True, merge_driver=merge_driver)
-
-
-def register_merge_driver(root: Path) -> bool:
-    """Register the ``graph.json`` union-merge driver in ``.git/config`` (DESIGN R1).
-
-    ``.gitattributes`` already routes ``graph.json`` to ``merge=yigraf-graph``; this points that name
-    at ``yigraf graph-merge`` so a merge/rebase unions the two sides instead of throwing a line-level
-    JSON conflict. v0 ``graph.json`` is recomputable, so the post-merge build re-projects it exactly —
-    the driver just keeps the merge clean in the meantime. Bakes in the absolute interpreter (like the
-    hook) so it runs without the venv on ``PATH``. Fail-open: returns ``False`` if ``git config`` is
-    unavailable rather than aborting the install.
-    """
-    driver = f'"{sys.executable}" -m yigraf graph-merge %O %A %B'
-    try:
-        for key, value in (
-            (f"merge.{_MERGE_DRIVER}.name", "yigraf graph union-merge driver"),
-            (f"merge.{_MERGE_DRIVER}.driver", driver),
-        ):
-            done = subprocess.run(["git", "-C", str(root), "config", key, value],
-                                  capture_output=True, timeout=5)
-            if done.returncode != 0:
-                return False
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return True
+    return HookResult(path=hook_path, installed=True)
 
 
 # --------------------------------------------------------------------------------------------------

@@ -28,7 +28,7 @@ def test_version_matches_installed_package_metadata():
 def test_init_via_cli(tmp_path):
     result = runner.invoke(app, ["init", str(tmp_path)])
     assert result.exit_code == 0, result.output
-    assert (tmp_path / "yigraf" / "graph.json").is_file()
+    assert (tmp_path / "yigraf" / "config.yaml").is_file()
     assert "Initialized yigraf workspace" in result.output
 
 

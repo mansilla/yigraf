@@ -1,5 +1,4 @@
 """The post-commit git hook: installation safety + a real-git rebuild-at-commit integration test."""
-import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -7,6 +6,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from yigraf import graphdb
 from yigraf.cli import app
 from yigraf.hooks import _MARKER, git_dir, install_post_commit_hook
 from yigraf.scaffold import init_workspace
@@ -69,8 +69,7 @@ def test_commit_triggers_a_rebuild(tmp_path: Path):
     (tmp_path / "m.py").write_text("def f():\n    return 1\n")
     assert runner.invoke(app, ["install-hooks", str(tmp_path)]).exit_code == 0
 
-    before = json.loads((tmp_path / "yigraf" / "graph.json").read_text())
-    assert before["nodes"] == []  # the init stub, untouched until a commit
+    assert graphdb.load_workspace(tmp_path) is None  # no materialized view until a commit fires the hook
 
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(
@@ -78,6 +77,5 @@ def test_commit_triggers_a_rebuild(tmp_path: Path):
         cwd=tmp_path, check=True,
     )
 
-    after = json.loads((tmp_path / "yigraf" / "graph.json").read_text())
-    ids = {n["id"] for n in after["nodes"]}
-    assert "sym:m.py#f" in ids  # the post-commit hook rebuilt the graph from HEAD
+    after = graphdb.load_workspace(tmp_path)
+    assert after is not None and "sym:m.py#f" in after  # the post-commit hook materialized the view from HEAD

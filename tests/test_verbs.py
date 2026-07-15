@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 from yigraf.cli import app
 from yigraf.config import default_config
 from yigraf.extract import build_graph
-from yigraf.graph import read_graph
+from yigraf import graphdb
 
 runner = CliRunner()
 
@@ -31,7 +31,7 @@ def _run(args: list[str]):
 
 
 def _graph(root: Path):
-    return read_graph(root / "yigraf" / "graph.json")
+    return graphdb.load_workspace(root)
 
 
 def test_intent_verb_projects_an_enriched_node(tmp_path: Path):

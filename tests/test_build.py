@@ -225,7 +225,7 @@ def test_build_cli_writes_the_graph(tmp_path: Path):
     result = runner.invoke(app, ["build", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert "Indexed 3 file(s)" in result.output
-    assert (tmp_path / "yigraf" / "graph.json").is_file()
+    assert (tmp_path / "yigraf" / ".local" / "graph.db").is_file()  # gitignored materialized view
 
 
 def test_build_cli_requires_a_workspace(tmp_path: Path):

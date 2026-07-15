@@ -251,7 +251,7 @@ def build_server(default_repo: str | None = None):
     @server.tool()
     def status(repo: str | None = None) -> str:
         """A compact status line for the yigraf graph: counts (symbols/intents/tasks/decisions),
-        drift count, freshness (committed graph.json vs source), and the semantic index size.
+        drift count, freshness (the gitignored materialized view vs source), and the semantic index size.
 
         Note: `sem N` counts only the embedded families — memory + intent nodes — not the whole graph
         (code is never embedded; retrieval-design §10). So `sem` staying flat while `sym` grows is

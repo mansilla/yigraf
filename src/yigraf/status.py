@@ -13,8 +13,8 @@ Host-agnostic by construction: :func:`compute_status` never reads a transcript o
 one datum that *can't* be agnostic — context-window occupancy — is an **injected optional input**
 (``ctx_used``/``ctx_limit``); a host that can supply it fills those, every other host omits the line.
 (Mirrors ``mem:005``: a host doesn't hand a hook its token usage, so reading it can't live in the
-agnostic core.) Freshness is derived by comparing the rebuilt graph to the committed ``graph.json``
-(R6: graph.json is a recomputable projection) — nothing volatile is written anywhere.
+agnostic core.) Freshness is derived by comparing the rebuilt graph to the gitignored SQLite
+materialized view (R6: the view is a recomputable projection) — nothing volatile is written anywhere.
 """
 from __future__ import annotations
 
@@ -24,11 +24,11 @@ from pathlib import Path
 
 import networkx as nx
 
+from yigraf import graphdb
 from yigraf.contradiction import open_conflict_count
 from yigraf.drift import compute_drift, is_surfaced, stale_completions
 from yigraf.embeddings import load_index
 from yigraf.graph import to_node_link
-from yigraf.scaffold import WORKSPACE_DIRNAME
 
 #: Structure kinds that are *containers*, not symbols — excluded from the symbol count.
 _CONTAINER_KINDS = frozenset({"file", "module"})
@@ -195,21 +195,18 @@ class StatusSummary:
 
 
 def _freshness(root: Path, graph: nx.DiGraph) -> str:
-    """Is the committed ``graph.json`` in sync with the rebuilt graph? (R6 — graph.json is derived.)
+    """Is the gitignored SQLite materialized view in sync with the rebuilt graph? (R6 — the view is derived.)
 
-    ``write_graph`` is deterministic (``sort_keys=True``), so a byte-equal canonical projection means
-    the committed file reflects the current source + HEAD-derived maturity. Absent/unreadable ⇒ no
-    claim of freshness rather than a crash (fail-open).
+    :func:`yigraf.graph.to_node_link` is deterministic (sorted), so a byte-equal canonical projection of
+    the persisted view and the fresh rebuild means the view reflects the current source + landed maturity
+    (the volatile git-HEAD overlays are stripped from both). Absent/unreadable ⇒ no claim of freshness
+    rather than a crash (fail-open). Pure read: comparing never re-materializes the view.
     """
-    path = root / WORKSPACE_DIRNAME / "graph.json"
-    if not path.exists():
+    persisted = graphdb.load(graphdb.db_path(root))
+    if persisted is None:
         return "absent"
-    try:
-        committed = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return "absent"
-    canon = lambda d: json.dumps(d, sort_keys=True)
-    return "fresh" if canon(committed) == canon(to_node_link(graph)) else "stale"
+    canon = lambda g: json.dumps(to_node_link(g), sort_keys=True)
+    return "fresh" if canon(persisted) == canon(graph) else "stale"
 
 
 def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,

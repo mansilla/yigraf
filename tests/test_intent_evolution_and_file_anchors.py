@@ -12,7 +12,7 @@ from yigraf.cli import app
 from yigraf.config import default_config
 from yigraf.drift import compute_drift
 from yigraf.extract import build_graph
-from yigraf.graph import read_graph
+from yigraf import graphdb
 
 runner = CliRunner()
 
@@ -31,7 +31,7 @@ def _run(args: list[str]):
 
 
 def _graph(root: Path):
-    return read_graph(root / "yigraf" / "graph.json")
+    return graphdb.load_workspace(root)
 
 
 def _drift(root: Path):

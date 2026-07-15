@@ -4,7 +4,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from yigraf import status
+from yigraf import graphdb, status
 from yigraf.cli import app
 from yigraf.config import default_config
 from yigraf.extract import build_graph
@@ -72,9 +72,9 @@ def test_empty_and_all_done_render_differently(tmp_path: Path):
 def test_freshness_fresh_then_stale_then_absent(tmp_path: Path):
     root = _repo(tmp_path)
     assert _summary(root).freshness == "fresh"
-    (root / SRC).write_text("def refresh(token):\n    return token + 1\n")  # source moved past graph.json
+    (root / SRC).write_text("def refresh(token):\n    return token + 1\n")  # source moved past the view
     assert _summary(root).freshness == "stale"
-    (root / "yigraf" / "graph.json").unlink()
+    graphdb.db_path(root).unlink()
     assert _summary(root).freshness == "absent"
 
 

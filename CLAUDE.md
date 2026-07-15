@@ -44,9 +44,12 @@ does, and the shape you must preserve:
    (`retrieval.py:context_for_locus`)
 5. **Fail-open, always.** A hook or a query must never block or break the agent's work — every hook
    handler swallows exceptions and exits 0. (`cli.py:_run_hook`)
-6. **Files are truth; `graph.json` is a derived, recomputable projection.** Never write volatile state
-   (usage/last_seen) into the committed graph — it lives in the gitignored `.local/` sidecar.
-   (DESIGN.md R1)
+6. **Files are truth; the graph is a derived, recomputable projection.** The queryable graph is a
+   *gitignored* SQLite materialized view (`.local/graph.db`) — never committed (a binary `.db` can't
+   git-union-merge; the committed `graph.json` + its whole-graph merge lock are retired, mem:059). It's
+   keyed by a content fingerprint of its inputs, so a read loads it and rebuilds only when source or
+   assertion files changed. Never write volatile state (usage/last_seen/survival) into it — that's
+   stripped at store time and re-applied as a read-time overlay. (DESIGN.md R1; `graphdb.py`)
 
 If a proposed change optimizes for human ergonomics at the cost of any of these, it is probably wrong
 for yigraf. State the agent-cost/benefit in the change, not the human-readability.

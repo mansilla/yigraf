@@ -1,9 +1,10 @@
 """``yigraf init``: lay down the per-repo ``yigraf/`` workspace.
 
-Creates the committed artifact tree (intents / plans / memory + ``config.yaml`` + a ``graph.json``
-stub) plus the gitignored runtime dirs, and writes a self-contained ``.gitignore`` and
-``.gitattributes`` *inside* the workspace so any repo gets correct ignore + merge behavior. The
-operation is idempotent: existing files are reported and left untouched.
+Creates the committed artifact tree (intents / plans / memory + ``config.yaml``) plus the gitignored
+runtime dirs, and writes a self-contained ``.gitignore`` *inside* the workspace so any repo gets correct
+ignore behavior. The queryable graph is a *derived, gitignored* SQLite materialized view
+(``.local/graph.db``), never committed (mem:059) — so init lays down no committed projection and no
+merge driver. The operation is idempotent: existing files are reported and left untouched.
 """
 from __future__ import annotations
 
@@ -11,7 +12,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from yigraf.config import DEFAULT_CONFIG_YAML
-from yigraf.graph import empty_graph, write_graph
 
 WORKSPACE_DIRNAME = "yigraf"
 
@@ -27,19 +27,14 @@ _WORKSPACE_GITIGNORE = """\
 # yigraf runtime state — rebuildable or machine-local, never committed (DESIGN.md R1).
 # index/  : embedding index, rebuilt from memory+intent text
 # cache/  : SHA256 content-extraction cache
-# .local/ : machine-local telemetry (telemetry.json: usage / last_seen) — a soft recency/popularity
-#           ranking nudge only; graph.json itself stays fully recomputable (maturity is git-derived)
+# .local/ : machine-local runtime state — telemetry (usage / last_seen) + the SQLite materialized
+#           view (graph.db). The graph is a derived projection of the committed assertion files
+#           (mem:059), so it is never committed; a stale ``graph.json`` from a pre-v1 workspace is
+#           ignored too, so it drops out of git once removed.
 index/
 cache/
 .local/
-"""
-
-_WORKSPACE_GITATTRIBUTES = """\
-# graph.json holds only recomputable state (DESIGN.md R1), so branches reconcile by rebuilding.
-# yigraf's union merge driver (registered in .git/config by `yigraf install-hooks`) just unions
-# nodes+edges to avoid a line-level JSON conflict in the meantime; until it's registered, git falls
-# back to an ordinary 3-way merge.
-graph.json merge=yigraf-graph
+graph.json
 """
 
 
@@ -89,14 +84,7 @@ def init_workspace(root: Path) -> InitResult:
 
     _write_if_absent(ws / "config.yaml", DEFAULT_CONFIG_YAML, root, result)
     _write_if_absent(ws / ".gitignore", _WORKSPACE_GITIGNORE, root, result)
-    _write_if_absent(ws / ".gitattributes", _WORKSPACE_GITATTRIBUTES, root, result)
 
-    graph_path = ws / "graph.json"
-    rel = str(graph_path.relative_to(root))
-    if graph_path.exists():
-        result.skipped.append(rel)
-    else:
-        write_graph(empty_graph(), graph_path)
-        result.created.append(rel)
-
+    # No committed projection: the graph materializes into the gitignored SQLite view (.local/graph.db)
+    # on the first `yigraf build`/query. Truth is the assertion files under the artifact dirs (mem:059).
     return result

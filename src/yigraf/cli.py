@@ -16,12 +16,13 @@ from typing import NoReturn
 
 import typer
 
-from yigraf import __version__, artifacts, counters, embeddings, memory, retrieval, status, update
+from yigraf import (__version__, artifacts, counters, embeddings, graphdb, memory,
+                    retrieval, status, update)
 from yigraf.astnorm import ANCHOR_ALGO, FILE_ANCHOR_ALGO, file_content_hash, parse_file_target
 from yigraf.config import load_config
 from yigraf.drift import compute_drift, is_surfaced
 from yigraf.extract import build_graph, symbol_content_hash
-from yigraf.graph import from_node_link, write_graph
+from yigraf.graph import from_node_link, write_graph  # legacy graph.json union-merge driver only
 from yigraf.languages import available_extractors, extension_map
 from yigraf.hooks import (_write_agents_block, detect_hosts, install_antigravity,
                           install_claude_hooks, install_codex_hooks, install_post_commit_hook)
@@ -146,7 +147,7 @@ def build(
         help="Repo root to index (must contain a yigraf/ workspace from `yigraf init`).",
     ),
 ) -> None:
-    """Extract the structure graph from the repo's Python source into yigraf/graph.json."""
+    """Extract the structure graph into the gitignored SQLite materialized view (yigraf/.local/graph.db)."""
     root = Path(path)
     workspace = root / WORKSPACE_DIRNAME
     if not workspace.is_dir():
@@ -154,8 +155,7 @@ def build(
         raise typer.Exit(code=1)
 
     config = load_config(workspace / "config.yaml")
-    graph, stats = build_graph(root, config)  # maturity is git-derived inside build_graph (R2)
-    write_graph(graph, workspace / "graph.json")
+    graph, stats = graphdb.rebuild(root, config)  # build + materialize the view (maturity git-derived, R2)
     reindexed = embeddings.refresh_index(root, graph, config)  # scoped semantic index (M8; no-op if no backend)
 
     typer.echo(
@@ -175,14 +175,13 @@ def _require_workspace(root: Path) -> Path:
 
 
 def _rebuild(root: Path) -> None:
-    """Re-project the graph so graph.json reflects a just-written artifact, and refresh the index.
+    """Re-project the graph so the materialized view reflects a just-written artifact, and refresh the index.
 
     ``refresh_index`` re-embeds only memory/intent nodes whose text changed (a no-op — no model load —
     when nothing did), so a captured decision/intent becomes semantically searchable immediately.
     """
     config = load_config(root / WORKSPACE_DIRNAME / "config.yaml")
-    graph, _ = build_graph(root, config)
-    write_graph(graph, root / WORKSPACE_DIRNAME / "graph.json")
+    graph, _ = graphdb.rebuild(root, config)  # build + re-materialize the gitignored view
     embeddings.refresh_index(root, graph, config)
 
 
@@ -502,7 +501,7 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
                     rejected_valid_when: list[str] | None = None,
                     rejected_invalidated_when: list[str] | None = None,
                     provenance: dict | None = None) -> memory.Memory:
-    """Write a new memory artifact, then rebuild graph.json. Shared by remember/supersede/note-constraint.
+    """Write a new memory artifact, then re-materialize the view. Shared by remember/supersede/note-constraint.
 
     ``provenance`` (default agent-asserted ``{"source": "cli"}``) drives the *landed* maturity tier
     (:func:`yigraf.memory.landing_maturity`, task #1): an agent ``remember`` lands ``working``; the
@@ -988,7 +987,7 @@ def context(
     if grounding is not None and grounding not in memory.GROUNDINGS:
         _guidance(f"--grounding must be one of {', '.join(memory.GROUNDINGS)} (got {grounding}).")
     config = load_config(workspace / "config.yaml")
-    graph, _ = build_graph(repo, config)
+    graph, _ = graphdb.load_or_build(repo, config)  # materialized view; rebuilt only when inputs changed
     _ranked_with_telemetry(repo, graph, config)  # recency/popularity + maturity verdict (R1)
     semantic = embeddings.semantic_scores(repo, graph, config, query)  # {} ⇒ lexical-only (M8 / v0)
     result = retrieval.context(graph, query, config, family=family, budget_tokens=budget,
@@ -1239,19 +1238,20 @@ def gc(
     typer.echo(f"Archived {len(actions)} node(s) → {archive_dir.relative_to(path)}/.")
 
 
-@app.command(name="graph-merge")
+@app.command(name="graph-merge", hidden=True)
 def graph_merge(
-    base: Path = typer.Argument(..., help="Common-ancestor graph.json (git %O; ignored — v0 graph.json is recomputable)."),
+    base: Path = typer.Argument(..., help="Common-ancestor graph.json (git %O; ignored — graph.json is recomputable)."),
     ours: Path = typer.Argument(..., help="Our graph.json (git %A) — the merged result is written here."),
     theirs: Path = typer.Argument(..., help="Their graph.json (git %B)."),
 ) -> None:
-    """Union-merge driver for graph.json (DESIGN R1): union nodes+edges so branches don't conflict.
+    """LEGACY union-merge driver for a committed ``graph.json`` (pre-v1 workspaces only).
 
-    Registered as ``merge=yigraf-graph`` (see ``.gitattributes``) by ``yigraf install-hooks``. v0
-    ``graph.json`` holds only *recomputable* state, so the post-merge build re-projects it exactly —
-    this driver just avoids a line-level JSON conflict in the meantime (no counter reconciliation;
-    that's the v1/Enterprise shared-counter model). git invokes it as ``graph-merge %O %A %B`` and
-    expects the result in %A with exit 0.
+    v1 retired the committed ``graph.json``: the projection is now a gitignored SQLite view, never
+    committed, so there is nothing to merge and ``install-hooks`` no longer registers this driver
+    (mem:059). It is kept hidden and functional purely so a repo that *still* has the old
+    ``merge=yigraf-graph`` driver wired in ``.git/config`` doesn't break mid-merge — it unions
+    nodes+edges (the post-merge build re-projects exactly). git invokes it as ``graph-merge %O %A %B``
+    and expects the result in %A with exit 0.
     """
     def _load(p: Path) -> dict:
         try:
@@ -1267,7 +1267,7 @@ def graph_merge(
 def install_hooks(
     path: Path = typer.Argument(Path("."), help="Repo root (must be a git repository)."),
 ) -> None:
-    """Install the post-commit git hook that keeps graph.json synced to HEAD (fail-open)."""
+    """Install the post-commit git hook that re-materializes the gitignored view at HEAD (fail-open)."""
     _require_workspace(path)
     try:
         result = install_post_commit_hook(path)
@@ -1278,11 +1278,6 @@ def install_hooks(
         typer.echo(f"A non-yigraf post-commit hook already exists at {result.path} — left untouched.")
         raise typer.Exit(code=1)
     typer.echo(f"Installed post-commit hook at {result.path}")
-    if result.merge_driver:
-        typer.echo("Registered graph.json union-merge driver (merge=yigraf-graph).")
-    else:
-        typer.echo("Could not register the graph.json merge driver (git config unavailable) — "
-                   "graph.json will fall back to an ordinary 3-way merge.")
 
 
 @app.command(name="install-claude-hooks")
@@ -1377,7 +1372,7 @@ def _build_install_plan(path: Path, config: dict, host: str) -> dict:
         "hosts": {"detected": detected, "target": choice, "push_targets": push_targets},
         # The generic channel is host-independent and always wired — it works with any agent.
         "generic_channel": [
-            "post-commit hook — rebuilds graph.json on every commit (+ graph.json merge driver)",
+            "post-commit hook — re-materializes the gitignored view (.local/graph.db) on every commit",
             "AGENTS.md instruction block — any agent reads it",
             "MCP pull server (`yigraf mcp`) — the universal channel every MCP host speaks",
         ],
@@ -1459,7 +1454,7 @@ def install_cmd(
     detected host's native push hooks layered on top.
 
     The **generic** channel installs unconditionally, because it works regardless of agent host: the
-    post-commit rebuild hook + graph.json merge driver (keep graph.json fresh across commits/merges),
+    post-commit hook (re-materializes the gitignored view at each commit),
     the AGENTS.md instruction block (any agent reads it), and the MCP pull server (the universal
     channel every MCP host speaks). Then ``auto`` detects Claude Code / Codex / Antigravity and layers
     each host's native hooks over that; ``--host`` forces one. Semantic recall is on by default (the
@@ -1482,9 +1477,7 @@ def install_cmd(
     try:
         r = install_post_commit_hook(path)
         if r.installed:
-            typer.echo(f"  post-commit → {r.path} (rebuilds graph.json on commit)")
-            typer.echo("  merge-driver → " + ("registered (merge=yigraf-graph)" if r.merge_driver
-                       else "skipped — git config unavailable; graph.json uses a plain 3-way merge"))
+            typer.echo(f"  post-commit → {r.path} (re-materializes the gitignored view on commit)")
         else:
             typer.echo(f"  post-commit → left your existing non-yigraf hook at {r.path} untouched")
     except FileNotFoundError:
@@ -1561,7 +1554,7 @@ def _hook_graph(root: Path):
     if not (root / WORKSPACE_DIRNAME).is_dir():
         return None
     config = load_config(root / WORKSPACE_DIRNAME / "config.yaml")
-    graph, _ = build_graph(root, config)
+    graph, _ = graphdb.load_or_build(root, config)  # materialized view keeps the hot edit path cheap
     return graph, config
 
 
