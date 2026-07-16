@@ -83,8 +83,10 @@ decisions; after a task, `link` the symbols and `remember` the non-obvious choic
   in git, and the authoritative *current* state is the code, the tests, and this file.
 - **Layout:** package under `src/yigraf/` (src-layout is deliberate — `yigraf init` creates a data dir
   named `yigraf/` at a repo root, and the two must not collide).
-- **Status:** v0 spine (M0–M6) + memory milestone (M7–M9) complete and self-hosted. Counters are
-  local + recomputable (v0); the shared/committed counter model is v1/Enterprise (cloud) work.
+- **Status:** **1.0 (local)** — the self-contained, no-network belief-revision engine is complete,
+  self-hosted, and released (26 design intents `satisfied`). Counters are local + recomputable.
+  The shared/committed counter model and hosted multi-user operation are **2.0 (online)** work
+  (`int:yigraf-online-v1`, proposed).
 
 ## Conventions
 

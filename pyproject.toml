@@ -1,6 +1,6 @@
 [project]
 name = "yigraf"
-version = "0.1.13"
+version = "1.0.0"
 description = "A harness primitive for AI coding agents: one connected graph over code, intent, plan, and memory — legible (token-cheap retrieval) and enforceable (intent↔code drift checks)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -8,7 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Ricardo Mansilla", email = "rick.mansilla@gmail.com" }]
 keywords = ["ai", "agents", "llm", "claude", "code-intelligence", "tree-sitter", "knowledge-graph"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
