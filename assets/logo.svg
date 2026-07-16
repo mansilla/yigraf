@@ -1,4 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="yigraf">
-  <rect width="512" height="512" rx="112" fill="#0D1117"/>
-  <g transform="translate(109.15,403.75) scale(0.44978,-0.44978)"><path d="M660 657H610L406 303H404L184 657H-7L252 241V0H416V238ZM373 42H295V254L70 615H161L373 275Z" fill="#22C55E"/></g>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="yigraf">
+  <title>yigraf</title>
+  <defs>
+    <linearGradient id="cy" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8DF6FF"/>
+      <stop offset="1" stop-color="#00D2F5"/>
+    </linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="7" result="soft"/>
+      <feMerge>
+        <feMergeNode in="soft"/>
+        <feMergeNode in="soft"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="#000000"/>
+  <!-- inverted Y (U+2144 "⅄"): stem up, fork pointing down — the "down" frame of the [Yigraf] spinner -->
+  <g fill="none" stroke="url(#cy)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
+    <path d="M128 60 V118"/>
+    <path d="M128 118 L74 196"/>
+    <path d="M128 118 L182 196"/>
+  </g>
 </svg>
