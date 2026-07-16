@@ -85,7 +85,9 @@ Issues = "https://github.com/mansilla/yigraf/issues"
 yigraf = "yigraf.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+# hypothesis powers the property-based invariant suite (epistemic-control-plane #7) — dev-only,
+# pure-Python, no network at test time.
+dev = ["pytest>=8.0", "hypothesis>=6.0"]
 
 [build-system]
 requires = ["hatchling"]

@@ -30,6 +30,7 @@ from pathlib import Path
 
 import networkx as nx
 
+from yigraf import revision
 from yigraf.embeddings import load_index
 
 MEMORY_FAMILY = "memory"
@@ -58,6 +59,7 @@ class Conflict:
     right: str
     cosine: float  # how close the two beliefs read — the surfacing signal
     pending: bool = False  # a supersede between them is held pending (mem:062): resolution proposed, awaiting a human
+    dominant: str | None = None  # which side the provenance order prefers (yigraf.revision), None if same-tier
 
 
 def _is_live_memory(attrs: dict) -> bool:
@@ -120,8 +122,13 @@ def detect_conflicts(graph: nx.DiGraph, root: Path, config: dict, index=None) ->
                 cosine = float(va @ vb)  # both rows L2-normalized ⇒ dot == cosine
                 if cosine >= threshold:
                     seen.add((left, right))
-                    conflicts.append(Conflict(anchor, left, right, cosine,
-                                              pending=_pending(graph, left, right)))
+                    conflicts.append(Conflict(
+                        anchor, left, right, cosine,
+                        pending=_pending(graph, left, right),
+                        # Provenance-typed guidance for the human resolving this (epistemic-control-plane
+                        # #6): which side the order prefers, or None when they are the same tier — never
+                        # an auto-resolution (mem:062), never last-writer-wins.
+                        dominant=revision.dominant_id(left, graph.nodes[left], right, graph.nodes[right])))
     conflicts.sort(key=lambda c: (-c.cosine, c.anchor, c.left, c.right))
     return conflicts
 
