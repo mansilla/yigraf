@@ -2,7 +2,7 @@
 
 The config file is committed (it governs extraction, drift, and retrieval). Only a subset matters in
 M0 — the retrieval/relevance tunables are written now so later milestones read them from one place.
-Values trace to ``docs/retrieval-design.md`` §9 and ``docs/graph-design.md`` §3.
+What each knob does is documented for users in ``docs/guide.md``; the code here is the authority.
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # has aged this many commits un-referenced. Only the quarantine tier expires by silence — a genuine
     # working/settled decision never does (mem:033). 0 would expire same-commit; keep a real grace window.
     "proposed_ttl": 30,
-    # Retrieval (M4) — tunables from retrieval-design §9.
+    # Retrieval (M4) — seeding, bounded traversal, and ranking of the token-budgeted context slice.
     "retrieval": {
         "seeds": 5,
         "seed_cap": 6,
@@ -60,10 +60,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # not partitions — a family that doesn't use its share yields it to the others (design law #2).
         "family_shares": {"intent": 0.25, "plan": 0.15, "structure": 0.30, "memory": 0.30},
     },
-    # Relevance prior weights (graph-design §3). Tuned empirically later.
+    # Relevance prior weights (a node's standing weight, scored at read time).
     #   w1·log(1+refs_in) + w2·recency(last_seen) + w3·maturity − w4·[superseded_in>0] − w5·[proposed]
     "relevance": {"w1": 1.0, "w2": 1.0, "w3": 1.0, "w4": 1.0, "w5": 3.0, "half_life_days": 14},
-    # Embeddings (M8) — scoped semantic recall over memory+intent only (retrieval-design §10).
+    # Embeddings (M8) — scoped semantic recall over the memory + intent families only.
     # On by default: fastembed (ONNX) is a core dep, so no extra install. Set backend: none to disable
     # (⇒ graceful lexical-only fallback), or sentence-transformers to use the opt-in torch backend.
     "embeddings": {
@@ -96,7 +96,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
 # friendly file and the in-code defaults can never silently drift apart.
 DEFAULT_CONFIG_YAML = """\
 # yigraf config — committed. Governs structure extraction, drift, and retrieval.
-# Written by `yigraf init`; safe to edit. See docs/DESIGN.md for the authority on each knob.
+# Written by `yigraf init`; safe to edit. What each knob does: https://github.com/mansilla/yigraf/blob/main/docs/guide.md
 schema_version: 0
 
 # --- Structure extraction (M1) ---
@@ -137,7 +137,7 @@ maturity_uphold_edit: 0.25     # uphold booked by a silent edit-hook survival (n
 maturity_survival_floor: 0     # optional git-durability gate (commits since intro); 0 = off
 proposed_ttl: 30               # GC archives a never-confirmed `proposed` candidate after this many commits (task #7)
 
-# --- Retrieval (M4) — tunables from docs/retrieval-design.md §9 ---
+# --- Retrieval (M4) — how the token-budgeted context slice is seeded, traversed, and ranked ---
 retrieval:
   seeds: 5                     # seed matches kept from the lexical/IDF seeder
   seed_cap: 6                  # hard cap on seeds
@@ -165,7 +165,7 @@ retrieval:
     structure: 0.30
     memory: 0.30
 
-# --- Relevance prior (docs/graph-design.md §3) ---
+# --- Relevance prior (how a node's standing weight is scored at read time) ---
 relevance:                     # w1·log(1+refs_in) + w2·recency + w3·maturity − w4·[superseded] − w5·[proposed]
   w1: 1.0
   w2: 1.0
@@ -174,7 +174,7 @@ relevance:                     # w1·log(1+refs_in) + w2·recency + w3·maturity
   w5: 3.0                       # dock for a `proposed` mined/review candidate (near-zero weight until confirmed)
   half_life_days: 14           # recency exp-decay half-life on last_seen (M9 runtime counter)
 
-# --- Embeddings (M8) — scoped semantic recall over memory+intent (docs/retrieval-design.md §10) ---
+# --- Embeddings (M8) — scoped semantic recall over the memory + intent families ---
 # On by default: fastembed (ONNX, ~no torch) is bundled in core, so semantic recall works out of the
 # box. Set backend: none to disable (retrieval degrades gracefully to the lexical/IDF seeder = v0), or
 # sentence-transformers to use the opt-in torch backend (`pip install 'yigraf[embeddings-torch]'`).
