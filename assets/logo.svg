@@ -15,10 +15,19 @@
     </filter>
   </defs>
   <rect width="256" height="256" rx="56" fill="#000000"/>
-  <!-- inverted Y (U+2144 "⅄"): stem up, fork pointing down — the "down" frame of the [Yigraf] spinner.
-       ONE continuous stroke (left leg → center → apex → center → right leg) so the fork is a single
-       smooth join, not three round caps stacked at (128,152). Keeps the glow even instead of tripling. -->
-  <g fill="none" stroke="url(#cy)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
-    <path d="M82 208 L128 152 L128 44 L128 152 L174 208"/>
+  <!-- inverted Y (U+2144 "⅄"), slab-serif cut: stem up with a crossbar terminal, fork pointing down
+       to two footed legs — the "down" frame of the [Yigraf] spinner. Stem/serifs are filled bars,
+       legs are butt-capped strokes; no vertical stroke path (some SVG rasterisers drop those). -->
+  <g filter="url(#glow)">
+    <g fill="none" stroke="url(#cy)" stroke-width="16" stroke-linecap="butt">
+      <path d="M128 165 L68 220"/>
+      <path d="M128 165 L190 220"/>
+    </g>
+    <g fill="url(#cy)">
+      <rect x="120" y="34" width="16" height="134"/>
+      <rect x="105" y="23" width="46" height="16"/>
+      <rect x="48" y="212" width="41" height="16"/>
+      <rect x="169" y="212" width="41" height="16"/>
+    </g>
   </g>
 </svg>
