@@ -1,0 +1,336 @@
+<title>yigraf — the memory your coding agent doesn't have</title>
+<meta name="description" content="yigraf gives your AI coding agent a persistent memory: one graph over code, intent, plan, and the why — fed back at the moment it acts.">
+
+<style>
+  :root {
+    --void: #000000;
+    --panel: #0a0f13;
+    --panel-2: #0c1418;
+    --line: #16232a;
+    --line-bright: #1f3540;
+    --cyan-hi: #8df6ff;
+    --cyan: #00d2f5;
+    --cyan-dim: #0a7f92;
+    --ink: #cfe3e8;
+    --mute: #5e727a;
+    --mute-2: #7c9099;
+    --amber: #f5c542;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, "Cascadia Code", Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --maxw: 940px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--void);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* faint terminal grid + top-left cyan bloom, both non-interactive */
+  body::before {
+    content: "";
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(900px 520px at 12% -8%, rgba(0,150,180,0.14), transparent 60%),
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.014) 0 1px, transparent 1px 3px);
+  }
+
+  .wrap { position: relative; z-index: 1; max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+  a { color: var(--cyan); text-decoration: none; }
+  a:hover { color: var(--cyan-hi); }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; border-radius: 2px; }
+
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--cyan-dim);
+  }
+
+  /* ---------- top bar ---------- */
+  header.top {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 22px 0 10px;
+  }
+  .brand { display: flex; align-items: center; gap: 11px; }
+  .brand svg { width: 26px; height: 26px; display: block; }
+  .brand .name { font-family: var(--mono); font-weight: 600; font-size: 18px; letter-spacing: 0.02em; color: var(--ink); }
+  .nav { display: flex; gap: 22px; font-family: var(--mono); font-size: 13.5px; }
+  .nav a { color: var(--mute-2); }
+  .nav a:hover { color: var(--cyan-hi); }
+
+  /* ---------- hero ---------- */
+  .hero { padding: 64px 0 40px; }
+  .statusline {
+    display: inline-flex; align-items: center; gap: 12px;
+    font-family: var(--mono); font-size: 13px;
+    padding: 7px 14px; border: 1px solid var(--line-bright); border-radius: 7px;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    color: var(--mute-2); margin-bottom: 34px;
+  }
+  .statusline .yg { color: var(--cyan-hi); font-weight: 600; text-shadow: 0 0 10px rgba(0,210,245,0.55); }
+  .statusline .spin { display: inline-block; width: 1ch; text-align: center; }
+  .statusline b { color: var(--ink); font-weight: 600; }
+  .statusline .dim { color: var(--mute); }
+  .statusline .ok { color: #49d0a0; }
+
+  .hero-mark { width: 92px; height: 92px; margin-bottom: 30px; filter: drop-shadow(0 0 26px rgba(0,210,245,0.32)); }
+
+  h1 {
+    font-family: var(--sans);
+    font-size: clamp(38px, 6.4vw, 68px);
+    line-height: 1.03; letter-spacing: -0.025em; font-weight: 680;
+    margin: 0 0 22px; text-wrap: balance; color: #eef7f9;
+  }
+  h1 .accent {
+    background: linear-gradient(180deg, var(--cyan-hi), var(--cyan));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .lede { font-size: 20px; color: var(--mute-2); max-width: 60ch; margin: 0 0 38px; }
+  .lede b { color: var(--ink); font-weight: 600; }
+
+  .cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+  .install {
+    font-family: var(--mono); font-size: 14.5px; color: var(--ink);
+    background: var(--panel); border: 1px solid var(--line-bright); border-radius: 9px;
+    padding: 13px 16px; display: inline-flex; align-items: center; gap: 12px;
+  }
+  .install .prompt { color: var(--cyan); user-select: none; }
+  .install button {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--mute-2); background: transparent; border: 1px solid var(--line-bright);
+    border-radius: 6px; padding: 5px 9px; cursor: pointer; transition: color .15s, border-color .15s;
+  }
+  .install button:hover { color: var(--cyan-hi); border-color: var(--cyan-dim); }
+  .tag { font-family: var(--mono); font-size: 12.5px; color: var(--mute); letter-spacing: 0.04em; }
+  .tag .sep { color: var(--line-bright); margin: 0 8px; }
+
+  /* ---------- sections ---------- */
+  section { padding: 56px 0; border-top: 1px solid var(--line); }
+  .sec-head { margin-bottom: 34px; }
+  .sec-head h2 {
+    font-family: var(--sans); font-size: clamp(26px, 3.4vw, 34px); font-weight: 640;
+    letter-spacing: -0.02em; margin: 10px 0 0; color: #e9f5f7; text-wrap: balance;
+  }
+  .sec-head p { color: var(--mute-2); margin: 12px 0 0; max-width: 64ch; }
+
+  /* problem */
+  .problem p { font-size: 20px; max-width: 66ch; color: var(--mute-2); }
+  .problem p b { color: var(--ink); font-weight: 600; }
+  .problem .kick { color: var(--cyan-hi); }
+
+  /* four questions */
+  .grid4 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .q { background: var(--panel); padding: 26px 24px; display: flex; flex-direction: column; gap: 8px; }
+  .q .qq { font-family: var(--sans); font-size: 19px; font-weight: 640; color: var(--ink); }
+  .q .fam { font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--cyan); }
+  .q .desc { color: var(--mute-2); font-size: 15.5px; }
+  .grid4 .q:hover { background: var(--panel-2); }
+
+  .edge-note { margin-top: 22px; font-size: 16px; color: var(--mute-2); }
+  .edge-note code { font-family: var(--mono); font-size: 13.5px; color: var(--cyan-hi); background: var(--panel); padding: 2px 7px; border-radius: 5px; border: 1px solid var(--line); }
+
+  /* terminal transcript */
+  .term { border: 1px solid var(--line-bright); border-radius: 12px; overflow: hidden; background: var(--panel); }
+  .term-bar { display: flex; align-items: center; gap: 10px; padding: 10px 15px; border-bottom: 1px solid var(--line); background: var(--panel-2); font-family: var(--mono); font-size: 12px; color: var(--mute); }
+  .term-bar .yg { color: var(--cyan-hi); }
+  .term-body { padding: 20px 20px 22px; font-family: var(--mono); font-size: 14px; line-height: 1.75; overflow-x: auto; }
+  .term-body .you { color: var(--ink); }
+  .term-body .you .p { color: var(--cyan); user-select: none; margin-right: 8px; }
+  .term-body .agent { color: var(--mute-2); }
+  .term-body .agent::before { content: "→ "; color: var(--cyan-dim); }
+  .inject { margin: 10px 0 20px; border-left: 2px solid var(--cyan-dim); padding: 9px 0 9px 16px; color: var(--mute-2); background: linear-gradient(90deg, rgba(0,150,180,0.06), transparent 80%); }
+  .inject .lbl { color: var(--cyan); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; display: block; margin-bottom: 6px; }
+  .inject .k { color: var(--cyan-hi); }
+  .inject .drift { color: var(--amber); }
+  .inject .row { white-space: pre-wrap; }
+  .term-body .grp + .grp { margin-top: 14px; }
+
+  /* hosts / channels */
+  .channels { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .chan { border: 1px solid var(--line); border-radius: 12px; padding: 24px; background: var(--panel); }
+  .chan h3 { font-family: var(--mono); font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--cyan); margin: 0 0 10px; }
+  .chan p { margin: 0; color: var(--mute-2); font-size: 15.5px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 42px; }
+  .chip { font-family: var(--mono); font-size: 12.5px; color: var(--mute-2); border: 1px solid var(--line-bright); border-radius: 20px; padding: 6px 13px; }
+  .chip b { color: var(--cyan-hi); font-weight: 500; }
+
+  /* footer */
+  footer { border-top: 1px solid var(--line); padding: 44px 0 60px; }
+  .foot-grid { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 28px; align-items: flex-start; }
+  .foot-links { display: flex; flex-wrap: wrap; gap: 26px; font-family: var(--mono); font-size: 14px; }
+  .foot-links a { color: var(--mute-2); }
+  .foot-links a:hover { color: var(--cyan-hi); }
+  .foot-note { font-family: var(--mono); font-size: 12.5px; color: var(--mute); max-width: 46ch; line-height: 1.7; }
+  .foot-note .roadmap { color: var(--mute-2); }
+
+  @media (max-width: 720px) {
+    .grid4, .channels { grid-template-columns: 1fr; }
+    body { font-size: 16px; }
+    .nav { display: none; }
+    .lede, .problem p { font-size: 18px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spin, .hero-mark { animation: none !important; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 256 256" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8df6ff"/><stop offset="1" stop-color="#00d2f5"/></linearGradient></defs><g fill="none" stroke="url(#g)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"><path d="M128 44 V152"/><path d="M128 152 L82 208"/><path d="M128 152 L174 208"/></g></svg>
+      <span class="name">yigraf</span>
+    </div>
+    <nav class="nav">
+      <a href="#work">How it works</a>
+      <a href="#talk">Using it</a>
+      <a href="https://github.com/mansilla/yigraf/blob/main/docs/guide.md">Guide</a>
+      <a href="https://github.com/mansilla/yigraf">GitHub</a>
+    </nav>
+  </header>
+
+  <section class="hero" style="border-top:none; padding-top:40px;">
+    <div class="statusline" role="img" aria-label="yigraf statusline: 1266 symbols, 27 intents, 57 tasks done, no drift, fresh">
+      <span class="yg">[<span class="spin" id="spin">Y</span>𝚒𝚐𝚛𝚊𝚏]</span>
+      <span><b>1266</b> <span class="dim">sym</span></span>
+      <span><b>27</b> <span class="dim">int</span></span>
+      <span><b>57</b> <span class="dim">task</span> <span class="ok">✓</span></span>
+      <span class="ok">✓ no drift</span>
+      <span class="dim">● fresh</span>
+    </div>
+
+    <svg class="hero-mark" viewBox="0 0 256 256" aria-hidden="true"><defs><linearGradient id="gm" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8df6ff"/><stop offset="1" stop-color="#00d2f5"/></linearGradient></defs><g fill="none" stroke="url(#gm)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"><path d="M128 44 V152"/><path d="M128 152 L82 208"/><path d="M128 152 L174 208"/></g></svg>
+
+    <h1>The memory your coding&nbsp;agent <span class="accent">doesn't have.</span></h1>
+    <p class="lede">yigraf keeps one connected graph over your code, what it's <b>for</b>, what's <b>left</b>, and <b>why</b> it ended up this way — and hands your agent exactly the right slice, right when it acts. It stops starting over.</p>
+
+    <div class="cta-row">
+      <div class="install">
+        <span><span class="prompt">❯</span> pipx install yigraf</span>
+        <button id="copy" aria-label="Copy install command">Copy</button>
+      </div>
+      <span class="tag">v1.0<span class="sep">·</span>local, no network<span class="sep">·</span>MIT</span>
+    </div>
+  </section>
+
+  <section class="problem" id="why">
+    <div class="eyebrow">Why</div>
+    <div class="sec-head"><h2>Your agent is brilliant and amnesiac.</h2></div>
+    <p>Every <code style="font-family:var(--mono);color:var(--cyan-hi);font-size:0.85em;">/clear</code> wipes what it knew. And the code never told the whole story — it records <b>what</b> runs, never <b>why</b> it's shaped that way or <b>what</b> it must guarantee. So every session your agent relearns the repo, re-reads files it already understood, and sometimes undoes decisions you settled weeks ago. <span class="kick">yigraf remembers, so it doesn't.</span></p>
+  </section>
+
+  <section id="work">
+    <div class="eyebrow">What it holds</div>
+    <div class="sec-head">
+      <h2>Four questions source code can't answer.</h2>
+      <p>The ones an agent loses on every reset — kept as a living graph beside your code, with the links between them doing the real work.</p>
+    </div>
+    <div class="grid4">
+      <div class="q"><span class="fam">structure</span><span class="qq">What is this?</span><span class="desc">Your code — files, symbols, calls. Parsed across 16 languages, hashed so reformatting isn't "change."</span></div>
+      <div class="q"><span class="fam">intent</span><span class="qq">What is it for?</span><span class="desc">The specs and guarantees the code has to uphold — the SHALL/MUST contracts it serves.</span></div>
+      <div class="q"><span class="fam">plan</span><span class="qq">What am I doing?</span><span class="desc">Goals and tasks, and exactly which symbols implement each one.</span></div>
+      <div class="q"><span class="fam">memory</span><span class="qq">Why is it this way?</span><span class="desc">The decisions, the reasoning, and the roads you deliberately didn't take.</span></div>
+    </div>
+    <p class="edge-note">A task points at the code that implements it. A decision is pinned to the code it concerns. So when the code drifts away from what was supposed to hold, yigraf notices — ask it <code>what governs this file?</code> and it can answer.</p>
+  </section>
+
+  <section id="talk">
+    <div class="eyebrow">Using it</div>
+    <div class="sec-head">
+      <h2>You don't run yigraf. You talk to your agent.</h2>
+      <p>It listens on your repo and speaks up at the right moments — but you can always prompt it in plain language.</p>
+    </div>
+
+    <div class="term">
+      <div class="term-bar"><span class="yg">[Y𝚒𝚐𝚛𝚊𝚏]</span> <span>— your-repo — agent session</span></div>
+      <div class="term-body">
+        <div class="grp">
+          <div class="you"><span class="p">❯</span>Before you change the auth flow, ask yigraf what governs it.</div>
+          <div class="inject">
+            <span class="lbl">yigraf context "auth flow"</span>
+            <div class="row"><span class="k">intent</span>  session-expiry — SHALL expire a session after 30m idle</div>
+            <div class="row"><span class="k">memory</span>  chose a monotonic clock — wall-clock skews under NTP</div>
+            <div class="row"><span class="k">plan</span>    task auth/1 — add idle-timeout · implements session.refresh</div>
+          </div>
+          <div class="agent">Got it — I'll keep the 30-minute idle contract and stay on the monotonic clock.</div>
+        </div>
+
+        <div class="grp">
+          <div class="you"><span class="p">❯</span>Check what yigraf's drifts are about.</div>
+          <div class="inject">
+            <span class="lbl">yigraf drift</span>
+            <div class="row"><span class="drift">⚠ soft</span>  session.refresh changed since task auth/1 was anchored</div>
+          </div>
+          <div class="agent">The refactor kept the idle-timeout behavior — the contract still holds. Re-anchoring the link.</div>
+        </div>
+
+        <div class="grp">
+          <div class="you"><span class="p">❯</span>Remember why we did this, and what we ruled out.</div>
+          <div class="agent">Saved. It'll resurface the next time someone touches session.refresh.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Reaches your agent</div>
+    <div class="sec-head"><h2>Two channels, every host.</h2></div>
+    <div class="channels">
+      <div class="chan"><h3>Pull</h3><p>Your agent asks yigraf for the governing slice over MCP. Works with every MCP-capable host — the universal floor.</p></div>
+      <div class="chan"><h3>Push</h3><p>yigraf injects the slice the moment your agent edits a file, at the best fidelity your host's hooks allow.</p></div>
+    </div>
+    <div class="chips" aria-label="Supported hosts">
+      <span class="chip"><b>Claude Code</b> · edit hooks</span>
+      <span class="chip"><b>Codex</b> · edit hooks</span>
+      <span class="chip"><b>Cursor</b> · rule</span>
+      <span class="chip"><b>Windsurf</b> · rule</span>
+      <span class="chip"><b>Kilo</b> · rule</span>
+      <span class="chip"><b>Antigravity</b> · rule</span>
+      <span class="chip">any MCP host · pull</span>
+    </div>
+  </section>
+
+  <footer>
+    <div class="foot-grid">
+      <div class="foot-links">
+        <a href="https://github.com/mansilla/yigraf">GitHub</a>
+        <a href="https://github.com/mansilla/yigraf/blob/main/docs/guide.md">Guide</a>
+        <a href="https://github.com/mansilla/yigraf/blob/main/docs/hosts.md">Hosts</a>
+        <a href="https://github.com/mansilla/yigraf/blob/main/docs/language-support.md">Languages</a>
+      </div>
+      <div class="foot-note">
+        <b style="color:var(--cyan-dim);">yigraf</b> — "Why I Graph?" A tool for your coding agent, not another dashboard for you.<br>
+        <span class="roadmap">v1.0 is local — one repo, no network, no account. Multi-user &amp; hosted is the 2.0 roadmap. MIT.</span>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<script>
+  // The [Yigraf] Y spins on its axis — the same Y≻⅄≺ frames the real statusline uses.
+  (function () {
+    var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var el = document.getElementById("spin");
+    if (el && !reduce) {
+      var frames = ["Y", "≻", "⅄", "≺"]; // Y ≻ ⅄ ≺
+      var i = 0;
+      setInterval(function () { i = (i + 1) % frames.length; el.textContent = frames[i]; }, 620);
+    } else if (el) {
+      el.textContent = "⅄"; // static inverted-Y under reduced motion
+    }
+
+    var btn = document.getElementById("copy");
+    if (btn) btn.addEventListener("click", function () {
+      navigator.clipboard && navigator.clipboard.writeText("pipx install yigraf");
+      var t = btn.textContent; btn.textContent = "Copied"; btn.style.color = "#8df6ff";
+      setTimeout(function () { btn.textContent = t; btn.style.color = ""; }, 1400);
+    });
+  })();
+</script>
