@@ -36,4 +36,4 @@ internal/
 # --- Claude Code per-machine hook wiring ---
 # `yigraf install-claude-hooks` writes the absolute interpreter path into .claude/settings.local.json
 # (per-machine), which .claude/.gitignore keeps out of git. The shareable SKILL.md + AGENTS.md block
-# (and a future shared .claude/settings.json) ARE committed. See docs/caveats.md M5.
+# (and a future shared .claude/settings.json) ARE committed.

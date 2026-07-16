@@ -79,8 +79,9 @@ decisions; after a task, `link` the symbols and `remember` the non-obvious choic
   retrieval degrades to the lexical seeder; never a hard dependency.
 - **Docs:** the public references are [`README.md`](README.md) (overview, install, how-it-works) and
   [`docs/language-support.md`](docs/language-support.md) (the tested capability matrix). The internal
-  design corpus (decision log, milestone notes, research) was removed from the repo; that history lives
-  in git, and the authoritative *current* state is the code, the tests, and this file.
+  design corpus (decision log, milestone notes, research) is not part of this repo or its history; the
+  code comments that still cite it (e.g. `DESIGN.md R1`, `m3-notes.md §3`) are kept only as provenance
+  shorthand. The authoritative *current* state is the code, the tests, and this file.
 - **Layout:** package under `src/yigraf/` (src-layout is deliberate — `yigraf init` creates a data dir
   named `yigraf/` at a repo root, and the two must not collide).
 - **Status:** **1.0 (local)** — the self-contained, no-network belief-revision engine is complete,
