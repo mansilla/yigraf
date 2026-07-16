@@ -29,6 +29,10 @@ scripts/eval/runs/
 # --- Internal drafts / blog notes (not for publication from this repo) ---
 internal/
 
+# --- yigraf's own workspace data (self-hosted): intents/memory/plans/config live on disk,
+# not in this repo's history. Anchored to root so it never matches the src/yigraf/ package. ---
+/yigraf/
+
 # --- Claude Code per-machine hook wiring ---
 # `yigraf install-claude-hooks` writes the absolute interpreter path into .claude/settings.local.json
 # (per-machine), which .claude/.gitignore keeps out of git. The shareable SKILL.md + AGENTS.md block
