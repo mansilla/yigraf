@@ -17,8 +17,8 @@
   <rect width="256" height="256" rx="56" fill="#000000"/>
   <!-- inverted Y (U+2144 "⅄"): stem up, fork pointing down — the "down" frame of the [Yigraf] spinner -->
   <g fill="none" stroke="url(#cy)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
-    <path d="M128 60 V118"/>
-    <path d="M128 118 L74 196"/>
-    <path d="M128 118 L182 196"/>
+    <path d="M128 44 V152"/>
+    <path d="M128 152 L82 208"/>
+    <path d="M128 152 L174 208"/>
   </g>
 </svg>
