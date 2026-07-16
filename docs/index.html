@@ -80,7 +80,6 @@
   .statusline .dim { color: var(--mute); }
   .statusline .ok { color: #49d0a0; }
 
-  .hero-mark { width: 92px; height: 92px; margin-bottom: 30px; }
 
   h1 {
     font-family: var(--sans);
@@ -178,7 +177,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .spin, .hero-mark { animation: none !important; }
+    .spin { animation: none !important; }
   }
 </style>
 
@@ -205,8 +204,6 @@
       <span class="ok">✓ no drift</span>
       <span class="dim">● fresh</span>
     </div>
-
-    <img class="hero-mark" src="logo-yigraf.png" alt="" aria-hidden="true">
 
     <h1>The memory your coding&nbsp;agent <span class="accent">doesn't have.</span></h1>
     <p class="lede">yigraf keeps one connected graph over your code, what it's <b>for</b>, what's <b>left</b>, and <b>why</b> it ended up this way — and hands your agent exactly the right slice, right when it acts. It stops starting over.</p>
