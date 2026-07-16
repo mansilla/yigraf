@@ -24,7 +24,8 @@ from yigraf.drift import compute_drift, is_surfaced
 from yigraf.extract import build_graph, symbol_content_hash
 from yigraf.graph import from_node_link, write_graph  # legacy graph.json union-merge driver only
 from yigraf.languages import available_extractors, extension_map
-from yigraf.hooks import (_write_agents_block, detect_hosts, install_antigravity,
+from yigraf.hooks import (AMBIENT_HOSTS, HOST_FIDELITY, SUPPORTED_HOSTS, TIER_AMBIENT, TIER_EVENT,
+                          _write_agents_block, detect_hosts, install_ambient_rule, install_antigravity,
                           install_claude_hooks, install_codex_hooks, install_post_commit_hook)
 from yigraf.scaffold import WORKSPACE_DIRNAME, init_workspace
 
@@ -1335,12 +1336,78 @@ def install_antigravity_cmd(
     _print_mcp_config(path)
 
 
+@app.command(name="install-kilo")
+def install_kilo_cmd(
+    path: Path = typer.Argument(Path("."), help="Repo root to wire up for Kilo Code."),
+) -> None:
+    """Wire yigraf for Kilo Code (Tier A — VS Code family, no edit hook): `.kilocode/rules/` + MCP.
+
+    Kilo exposes rules files + MCP but no edit-lifecycle hook, so push tops out at an always-on rule
+    telling the agent to pull `context`. Writes `.kilocode/rules/yigraf.md` + the AGENTS block and prints
+    the MCP-server config to add via Kilo's MCP settings.
+    """
+    _install_ambient_rule_cmd(path, "kilo")
+
+
+@app.command(name="install-cursor")
+def install_cursor_cmd(
+    path: Path = typer.Argument(Path("."), help="Repo root to wire up for Cursor."),
+) -> None:
+    """Wire yigraf for Cursor (Tier A — VS Code family, no edit hook): `.cursor/rules/*.mdc` + MCP.
+
+    Cursor exposes `.mdc` rules + MCP but no edit-lifecycle hook, so push tops out at an always-on rule
+    (frontmatter `alwaysApply: true`) telling the agent to pull `context`. Writes
+    `.cursor/rules/yigraf.mdc` + the AGENTS block and prints the MCP-server config to add via Cursor.
+    """
+    _install_ambient_rule_cmd(path, "cursor")
+
+
+@app.command(name="install-windsurf")
+def install_windsurf_cmd(
+    path: Path = typer.Argument(Path("."), help="Repo root to wire up for Windsurf."),
+) -> None:
+    """Wire yigraf for Windsurf (Tier A — VS Code family, no edit hook): `.windsurf/rules/` + MCP.
+
+    Windsurf exposes rules + MCP but no edit-lifecycle hook, so push tops out at an always-on rule
+    (frontmatter `trigger: always_on`) telling the agent to pull `context`. Writes
+    `.windsurf/rules/yigraf.md` + the AGENTS block and prints the MCP-server config to add via Windsurf.
+    """
+    _install_ambient_rule_cmd(path, "windsurf")
+
+
 def _print_mcp_config(repo: Path) -> None:
     """Print the ``mcpServers`` entry for ``yigraf mcp`` — the universal pull setup any MCP host accepts."""
     cfg = {"mcpServers": {"yigraf": {
         "command": sys.executable,
         "args": ["-m", "yigraf", "mcp", "--repo", str(Path(repo).resolve())]}}}
     typer.echo(json.dumps(cfg, indent=2))
+
+
+#: name → its push tier from the fidelity matrix, for labeling the install output/plan by tier.
+_HOST_TIER = {h.name: h.tier for h in HOST_FIDELITY}
+_TIER_LABEL = {TIER_EVENT: "E · event-scoped push (edit/session hooks)",
+               TIER_AMBIENT: "A · ambient-rule push (always-on rule + MCP, no edit hook)"}
+
+
+def _host_tier(host: str) -> str:
+    """The push tier ('E'/'A') a supported host lands in — from the single fidelity matrix."""
+    return _HOST_TIER.get(host, "P")
+
+
+def _install_ambient_rule_cmd(path: Path, host: str) -> None:
+    """Shared body of the standalone Tier-A installers (install-kilo/-cursor/-windsurf/-antigravity).
+
+    One shape: write the always-on rule + AGENTS block, then print the MCP-server config for the user to
+    add via the host's own MCP editor. Ambient rule = Tier A (mem:045): the agent must *pull* context, so
+    there is no edit-lifecycle push — that is the honest ceiling of a host with rules + MCP but no hook.
+    """
+    _require_workspace(path)
+    r = install_ambient_rule(path, host)
+    typer.echo(f"Wrote rule → {r.rule_path}")
+    typer.echo(f"Updated    → {r.agents_path}")
+    typer.echo(f"\nTier A (ambient-rule) — {host} has no edit-lifecycle hook, so the rule tells the agent")
+    typer.echo(f"to pull `context` before editing. Now add the yigraf MCP server via {host}'s MCP editor:")
+    _print_mcp_config(path)
 
 
 def _build_install_plan(path: Path, config: dict, host: str) -> dict:
@@ -1355,7 +1422,7 @@ def _build_install_plan(path: Path, config: dict, host: str) -> dict:
     detected = detect_hosts(path)
     if choice == "auto":
         push_targets = detected
-    elif choice in ("claude", "codex", "antigravity"):
+    elif choice in SUPPORTED_HOSTS:
         push_targets = [choice]
     else:  # "mcp" / unknown → generic MCP channel only
         push_targets = []
@@ -1420,9 +1487,9 @@ def _render_plan(plan: dict) -> None:
     for item in plan["generic_channel"]:
         typer.echo(f"  • {item}")
     if hosts["push_targets"]:
-        typer.echo("\nWill wire (native push hooks):")
+        typer.echo("\nWill wire (native push, by fidelity tier):")
         for h in hosts["push_targets"]:
-            typer.echo(f"  • {h}")
+            typer.echo(f"  • {h} — Tier {_TIER_LABEL.get(_host_tier(h), _host_tier(h))}")
 
     typer.echo("\nCore capabilities (included):")
     for item in plan["capabilities"]["core"]:
@@ -1444,7 +1511,8 @@ def _render_plan(plan: dict) -> None:
 def install_cmd(
     path: Path = typer.Argument(Path("."), help="Repo root to wire up."),
     host: str = typer.Option("auto", "--host",
-                             help="auto | claude | codex | antigravity | mcp (default: auto-detect)."),
+                             help="auto | claude | codex | antigravity | kilo | cursor | windsurf | mcp "
+                                  "(default: auto-detect)."),
     plan: bool = typer.Option(False, "--plan",
                               help="Inspect only: print the menu of what would be wired, apply nothing."),
     as_json: bool = typer.Option(False, "--json",
@@ -1456,9 +1524,10 @@ def install_cmd(
     The **generic** channel installs unconditionally, because it works regardless of agent host: the
     post-commit hook (re-materializes the gitignored view at each commit),
     the AGENTS.md instruction block (any agent reads it), and the MCP pull server (the universal
-    channel every MCP host speaks). Then ``auto`` detects Claude Code / Codex / Antigravity and layers
-    each host's native hooks over that; ``--host`` forces one. Semantic recall is on by default (the
-    fastembed backend is bundled in core); the heavier torch backend stays opt-in.
+    channel every MCP host speaks). Then ``auto`` detects each supported host and layers its native
+    push at the highest tier its seams allow — Tier E (edit/session hooks: Claude Code, Codex) or Tier A
+    (always-on rule + MCP: Antigravity, Kilo, Cursor, Windsurf); ``--host`` forces one. Semantic recall
+    is on by default (the fastembed backend is bundled in core); the heavier torch backend stays opt-in.
     """
     workspace = _require_workspace(path)
     config = load_config(workspace / "config.yaml")
@@ -1507,14 +1576,14 @@ def install_cmd(
     if choice == "auto":
         targets = detect_hosts(path)
         typer.echo("\nDetected host(s): " + (", ".join(targets) if targets
-                   else "none (Claude Code / Codex / Antigravity) — the generic MCP channel covers you"))
-    elif choice in ("claude", "codex", "antigravity"):
+                   else f"none ({', '.join(SUPPORTED_HOSTS)}) — the generic MCP channel covers you"))
+    elif choice in SUPPORTED_HOSTS:
         targets = [choice]
     else:  # "mcp" or any unrecognized host name → generic MCP channel above is all that's needed
         targets = []
 
     for h in targets:
-        typer.echo(f"\n== {h} ==")
+        typer.echo(f"\n== {h} (Tier {_host_tier(h)}) ==")
         if h == "claude":
             r = install_claude_hooks(path)
             typer.echo(f"  hooks → {r.settings_path}  ·  skill → {r.skill_path}  ·  AGENTS → {r.agents_path}")
@@ -1523,10 +1592,11 @@ def install_cmd(
             r = install_codex_hooks(path)
             typer.echo(f"  hooks → {r.hooks_path}  ·  AGENTS → {r.agents_path}")
             typer.echo("  (Codex loads project `.codex/` hooks only for a *trusted* project.)")
-        elif h == "antigravity":
-            r = install_antigravity(path)
+        elif h in AMBIENT_HOSTS:  # antigravity, kilo, cursor, windsurf — one ambient-rule shape
+            r = install_ambient_rule(path, h)
             typer.echo(f"  rule → {r.rule_path}  ·  AGENTS → {r.agents_path}")
-            typer.echo("  add the yigraf MCP server (config above) via Antigravity's MCP editor.")
+            typer.echo(f"  ambient rule only (no edit-lifecycle hook); add the yigraf MCP server "
+                       f"(config above) via {h}'s MCP editor.")
 
 
 # --- Claude Code hook entry points (invoked by the hooks above; read event JSON on stdin) ----------

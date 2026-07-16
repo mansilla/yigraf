@@ -363,14 +363,17 @@ def install_codex_hooks(root: Path) -> CodexHookResult:
 
 
 # --------------------------------------------------------------------------------------------------
-# Antigravity (M-multi): there is NO hook system in the IDE (verified — Google staff), so the only
-# push-like surface is an *always-on rule* the agent reads, pointing it at the yigraf MCP tools. We
-# write `.agents/rules/yigraf.md` (+ the AGENTS block) and hand back the MCP-config snippet for the
-# user to add via the in-app MCP editor — we don't auto-write the global `mcp_config.json` (its path
-# is version-specific: `~/.gemini/antigravity/` vs `~/.gemini/config/`).
+# Tier-A ambient-rule adapters (int:host-push-adapters): a host with no edit-lifecycle hook but with an
+# always-on rules mechanism + MCP lands at Tier A (mem:045). The push channel is an always-on rule the
+# agent reads every session pointing it at the yigraf MCP tools — one rule body, one install shape;
+# hosts differ ONLY in *where* the rule file lives and whether that host's rule format needs frontmatter
+# to mark the rule always-on (Cursor `.mdc`, Windsurf). Antigravity was the first such host (verified
+# hookless — Google staff); Kilo/Cursor/Windsurf are the VS Code family (rules + MCP, no agent-edit
+# hook). We never auto-write a host's *global* MCP config (paths are version-specific) — the caller
+# prints the snippet for the user to add via the host's own MCP editor.
 # --------------------------------------------------------------------------------------------------
 
-_ANTIGRAVITY_RULE = """\
+_AMBIENT_MCP_RULE = """\
 # yigraf (via MCP)
 
 This repo is indexed by **yigraf** — one graph over code, intent, plan, and the *why* (decisions,
@@ -390,46 +393,144 @@ it (or `supersede` it on purpose).
 """
 
 
+@dataclass(frozen=True)
+class AmbientRuleHost:
+    """A Tier-A host's install target: where its always-on rule file lives and any frontmatter its rule
+    format needs to be recognized as always-applied. ``frontmatter`` is prepended verbatim to the shared
+    rule body — empty for hosts that apply every file in the rules dir (Antigravity, Kilo)."""
+    name: str
+    rules_dir: tuple[str, ...]  # path parts under the repo root, e.g. (".cursor", "rules")
+    filename: str
+    frontmatter: str = ""
+
+
+#: Cursor `.mdc` and Windsurf rules gate application on frontmatter — without ``alwaysApply``/``always_on``
+#: the rule is only pulled on demand, defeating the "always-on" contract. Antigravity/Kilo apply every
+#: file in their rules dir, so no frontmatter is needed. (These keys are host-version-sensitive; see
+#: docs/hosts.md — the rule degrades to on-demand, never breaks, if a host renames them.)
+_TIER_A_HOSTS: dict[str, AmbientRuleHost] = {
+    "antigravity": AmbientRuleHost("antigravity", (".agents", "rules"), "yigraf.md"),
+    "kilo": AmbientRuleHost("kilo", (".kilocode", "rules"), "yigraf.md"),
+    "cursor": AmbientRuleHost(
+        "cursor", (".cursor", "rules"), "yigraf.mdc",
+        frontmatter="---\ndescription: yigraf — pull governing intent, plan, and prior decisions\nalwaysApply: true\n---\n\n"),
+    "windsurf": AmbientRuleHost(
+        "windsurf", (".windsurf", "rules"), "yigraf.md",
+        frontmatter="---\ntrigger: always_on\ndescription: yigraf — pull governing intent, plan, and prior decisions\n---\n\n"),
+}
+
+
 @dataclass
-class AntigravityResult:
+class AmbientRuleResult:
+    host: str
     rule_path: Path
     agents_path: Path
     mcp_command: str  # the command a host launches for the MCP server (for the printed config snippet)
 
 
-def install_antigravity(root: Path) -> AntigravityResult:
-    """Wire yigraf for the Antigravity IDE (which has no hooks): an always-on rule + the AGENTS block.
+def install_ambient_rule(root: Path, host: str) -> AmbientRuleResult:
+    """Wire a Tier-A host: write its always-on rule (pointing at the yigraf MCP tools) + the AGENTS block.
 
-    Writes ``.agents/rules/yigraf.md`` (model reads it every session) and refreshes the AGENTS.md
-    block — both committed/shareable. The MCP server is the data channel; the caller prints the
-    ``mcp_config.json`` snippet for the user to add via Antigravity's MCP editor (its global config
-    path is version-specific, so we don't auto-write it).
+    One shape for every ambient-rule host (Antigravity, Kilo, Cursor, Windsurf) — only the rule file's
+    location and any always-on frontmatter differ, both carried by ``_TIER_A_HOSTS[host]``. Both files
+    are committed/shareable. The MCP server is the data channel; the caller prints the ``mcpServers``
+    snippet for the user to add via the host's own MCP editor (global paths are version-specific, so we
+    don't auto-write them).
     """
+    spec = _TIER_A_HOSTS[host]
     root = Path(root).resolve()
-    rules_dir = root / ".agents" / "rules"
+    rules_dir = root.joinpath(*spec.rules_dir)
     rules_dir.mkdir(parents=True, exist_ok=True)
-    rule_path = rules_dir / "yigraf.md"
-    rule_path.write_text(_ANTIGRAVITY_RULE, encoding="utf-8")
+    rule_path = rules_dir / spec.filename
+    rule_path.write_text(spec.frontmatter + _AMBIENT_MCP_RULE, encoding="utf-8")
     agents_path = _write_agents_block(root / "AGENTS.md")
     mcp_command = f'"{sys.executable}" -m yigraf mcp --repo "{root}"'
-    return AntigravityResult(rule_path=rule_path, agents_path=agents_path, mcp_command=mcp_command)
+    return AmbientRuleResult(host=host, rule_path=rule_path, agents_path=agents_path,
+                             mcp_command=mcp_command)
+
+
+def install_antigravity(root: Path) -> AmbientRuleResult:
+    """Wire yigraf for the Antigravity IDE (Tier A — no hooks): an always-on rule + the AGENTS block.
+
+    A thin alias over :func:`install_ambient_rule` kept for the standalone ``install-antigravity``
+    command and back-compat (mem:020). Writes ``.agents/rules/yigraf.md`` + refreshes the AGENTS block.
+    """
+    return install_ambient_rule(root, "antigravity")
 
 
 # --------------------------------------------------------------------------------------------------
-# Host auto-detection (M-multi): which natively-supported host(s) are present, so `yigraf install`
-# can wire the right channel without asking — falling back to MCP for anything else.
+# The push-fidelity matrix (int:host-push-adapters, task #1) — the source of truth for what tier a host
+# lands in and why. Push fidelity is a gradient, not a has-hook boolean (mem:045): Tier E = event-scoped
+# (an edit/session lifecycle hook fires and yigraf injects the file's governing intent + drift), Tier A
+# = ambient-rule (always-on rule + MCP, no edit lifecycle — coarser: "call context", not "the file you
+# just touched drifted"), Tier P = pull-only (MCP alone). yigraf delivers the highest tier a host's OWN
+# native seams allow, via a thin adapter — never a forked agent or a maintained plugin runtime.
+# docs/hosts.md renders this table for humans; this structure is what the installer consults.
 # --------------------------------------------------------------------------------------------------
 
-#: A host name → the marker dirs that signal it (repo-local "configured here" OR home "installed here").
+TIER_EVENT = "E"    # event-scoped: edit/session lifecycle hook
+TIER_AMBIENT = "A"  # ambient-rule: always-on rules + MCP, no edit lifecycle
+TIER_PULL = "P"     # pull-only: MCP alone
+
+
+@dataclass(frozen=True)
+class HostFidelity:
+    """One row of the push-fidelity matrix. ``tier`` is what yigraf delivers today; ``ceiling`` is the
+    highest its native seams could reach WITHOUT a forked agent or a maintained editor-extension plugin
+    runtime. They differ only when a real, unwired seam exists. For the VS Code family they're equal at
+    A: the sole higher seam is an authored editor extension shelling to yigraf on save — a plugin runtime
+    the intent excludes (task #4) — so a save event is NOT a native host seam we count."""
+    name: str
+    seam: str                  # the native extension point yigraf rides
+    edit_lifecycle_hook: bool  # does the host fire an edit/save event yigraf can hook? (⇒ Tier E)
+    tier: str                  # current delivered tier
+    ceiling: str               # highest tier the host's native seams allow (no plugin runtime)
+    installer: str             # the CLI subcommand that wires it
+
+
+HOST_FIDELITY: tuple[HostFidelity, ...] = (
+    HostFidelity("claude", "PostToolUse + SessionStart hooks", True, TIER_EVENT, TIER_EVENT,
+                 "install-claude-hooks"),
+    HostFidelity("codex", ".codex/hooks.json (mirrors Claude Code's contract)", True, TIER_EVENT,
+                 TIER_EVENT, "install-codex-hooks"),
+    HostFidelity("antigravity", ".agents/rules/ (no hook system — verified)", False, TIER_AMBIENT,
+                 TIER_AMBIENT, "install-antigravity"),
+    HostFidelity("kilo", ".kilocode/rules/", False, TIER_AMBIENT, TIER_AMBIENT, "install-kilo"),
+    HostFidelity("cursor", ".cursor/rules/*.mdc", False, TIER_AMBIENT, TIER_AMBIENT, "install-cursor"),
+    HostFidelity("windsurf", ".windsurf/rules/", False, TIER_AMBIENT, TIER_AMBIENT, "install-windsurf"),
+)
+
+#: The Tier-E push-hook hosts, in install order (their installers wire lifecycle hooks, not a rule).
+EVENT_HOSTS: tuple[str, ...] = tuple(h.name for h in HOST_FIDELITY if h.tier == TIER_EVENT)
+#: The Tier-A ambient-rule hosts, in install order (wired via :func:`install_ambient_rule`).
+AMBIENT_HOSTS: tuple[str, ...] = tuple(h.name for h in HOST_FIDELITY if h.tier == TIER_AMBIENT)
+#: Every host `yigraf install --host X` can target natively (anything else → the universal MCP floor).
+SUPPORTED_HOSTS: tuple[str, ...] = tuple(h.name for h in HOST_FIDELITY)
+
+
+# --------------------------------------------------------------------------------------------------
+# Host auto-detection (M-multi, extended for the VS Code family): which natively-supported host(s) are
+# present, so `yigraf install` can wire the right channel without asking — falling back to MCP for
+# anything else. Preserves the mem:021 zero-config auto-detect + mem:016 MCP-universal floor.
+# --------------------------------------------------------------------------------------------------
+
+#: A host name → the repo-local marker dirs that signal "configured for this repo".
 _HOST_MARKERS = {
-    "claude": (".claude",),       # home: ~/.claude
-    "codex": (".codex",),         # home: ~/.codex
-    "antigravity": (".agents",),  # home: ~/.gemini, ~/.antigravity
+    "claude": (".claude",),
+    "codex": (".codex",),
+    "antigravity": (".agents",),
+    "kilo": (".kilocode",),
+    "cursor": (".cursor",),
+    "windsurf": (".windsurf",),
 }
+#: A host name → the home-dir marker dirs that signal "installed on this machine".
 _HOST_HOME_MARKERS = {
     "claude": (".claude",),
     "codex": (".codex",),
     "antigravity": (".gemini", ".antigravity"),
+    "kilo": (".kilocode",),
+    "cursor": (".cursor",),
+    "windsurf": (".codeium", ".windsurf"),  # Windsurf (Codeium) keeps global state under ~/.codeium
 }
 
 
@@ -438,12 +539,13 @@ def detect_hosts(root: Path, home: Path | None = None) -> list[str]:
 
     Repo markers mean "configured for this repo"; home markers mean "installed on this machine". Either
     counts. ``home`` is injectable for testing. Returns names in install order (claude, codex,
-    antigravity); empty ⇒ `yigraf install` falls back to the universal MCP server.
+    antigravity, then the VS Code family kilo, cursor, windsurf); empty ⇒ `yigraf install` falls back to
+    the universal MCP server.
     """
     root = Path(root)
     home = Path(home) if home is not None else Path.home()
     found = []
-    for host in ("claude", "codex", "antigravity"):
+    for host in SUPPORTED_HOSTS:
         repo_hit = any((root / m).exists() for m in _HOST_MARKERS[host])
         home_hit = any((home / m).exists() for m in _HOST_HOME_MARKERS[host])
         if repo_hit or home_hit:

@@ -10,7 +10,9 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from yigraf.cli import _edited_file, _post_tool_use, app
-from yigraf.hooks import _AGENTS_START, detect_hosts, install_antigravity, install_codex_hooks
+from yigraf.hooks import (AMBIENT_HOSTS, EVENT_HOSTS, HOST_FIDELITY, SUPPORTED_HOSTS, TIER_AMBIENT,
+                          _AGENTS_START, _TIER_A_HOSTS, detect_hosts, install_ambient_rule,
+                          install_antigravity, install_codex_hooks)
 
 runner = CliRunner()
 SYM = "sym:auth/session.py#refresh"
@@ -79,6 +81,65 @@ def test_install_antigravity_writes_rule_and_mcp_command(tmp_path: Path):
     assert "-m" in res.mcp_command and "yigraf" in res.mcp_command and "mcp" in res.mcp_command
 
 
+# ── Tier-A ambient-rule adapters (VS Code family: Kilo / Cursor / Windsurf) ────────────────────────
+
+def test_ambient_hosts_share_one_rule_body_differing_only_in_target(tmp_path: Path):
+    """Every Tier-A host writes the SAME rule body; only the file location + always-on frontmatter differ."""
+    runner.invoke(app, ["init", str(tmp_path)])
+    expected = {  # host → (rule path relative to root, must-contain frontmatter marker or "")
+        "antigravity": (Path(".agents") / "rules" / "yigraf.md", ""),
+        "kilo": (Path(".kilocode") / "rules" / "yigraf.md", ""),
+        "cursor": (Path(".cursor") / "rules" / "yigraf.mdc", "alwaysApply: true"),
+        "windsurf": (Path(".windsurf") / "rules" / "yigraf.md", "trigger: always_on"),
+    }
+    assert set(expected) == set(AMBIENT_HOSTS) == set(_TIER_A_HOSTS)  # no host missing coverage
+    for host, (relpath, marker) in expected.items():
+        res = install_ambient_rule(tmp_path, host)
+        assert res.host == host
+        assert res.rule_path == tmp_path / relpath
+        body = res.rule_path.read_text()
+        assert "yigraf (via MCP)" in body and "context" in body  # the shared body
+        if marker:
+            assert body.startswith("---") and marker in body.split("# yigraf", 1)[0]  # frontmatter only
+        else:
+            assert not body.startswith("---")  # no frontmatter — the dir applies every file
+        assert _AGENTS_START in res.agents_path.read_text()
+
+
+def test_install_host_cursor_wires_ambient_rule_not_hooks(tmp_path: Path):
+    runner.invoke(app, ["init", str(tmp_path)])
+    out = runner.invoke(app, ["install", str(tmp_path), "--host", "cursor"])
+    assert out.exit_code == 0 and "Tier A" in out.stdout
+    assert (tmp_path / ".cursor" / "rules" / "yigraf.mdc").exists()
+    assert not (tmp_path / ".codex").exists()  # Tier A ⇒ a rule, never an edit hook
+
+
+def test_standalone_install_kilo_and_windsurf_commands(tmp_path: Path):
+    runner.invoke(app, ["init", str(tmp_path)])
+    for cmd, rel in (("install-kilo", Path(".kilocode") / "rules" / "yigraf.md"),
+                     ("install-windsurf", Path(".windsurf") / "rules" / "yigraf.md")):
+        out = runner.invoke(app, [cmd, str(tmp_path)])
+        assert out.exit_code == 0 and "mcpServers" in out.stdout  # prints the MCP config to add
+        assert (tmp_path / rel).exists()
+
+
+# ── the push-fidelity matrix (task #1 — the source of truth) ───────────────────────────────────────
+
+def test_fidelity_matrix_is_internally_consistent():
+    tiers = "EAP"
+    names = [h.name for h in HOST_FIDELITY]
+    assert names == list(SUPPORTED_HOSTS) and len(set(names)) == len(names)  # unique, in order
+    for h in HOST_FIDELITY:
+        assert h.tier in tiers and h.ceiling in tiers
+        assert tiers.index(h.ceiling) <= tiers.index(h.tier)  # can't deliver above the ceiling
+        # A host has an edit-lifecycle hook IFF it's event-scoped; every Tier-A host has an adapter spec.
+        assert h.edit_lifecycle_hook == (h.tier == "E")
+        if h.tier == TIER_AMBIENT:
+            assert h.name in _TIER_A_HOSTS
+    assert set(AMBIENT_HOSTS) == set(_TIER_A_HOSTS)
+    assert set(EVENT_HOSTS) == {"claude", "codex"}
+
+
 # ── auto-host detection + `yigraf install` dispatch ───────────────────────────────────────────────
 
 def test_detect_hosts_by_repo_and_home_markers(tmp_path: Path):
@@ -90,6 +151,16 @@ def test_detect_hosts_by_repo_and_home_markers(tmp_path: Path):
     (home / ".gemini").mkdir(); assert detect_hosts(repo, home) == ["claude", "codex", "antigravity"]
 
 
+def test_detect_hosts_recognizes_vscode_family(tmp_path: Path):
+    repo, home = tmp_path / "repo", tmp_path / "home"
+    repo.mkdir(); home.mkdir()
+    (repo / ".cursor").mkdir()                                  # repo marker
+    (home / ".kilocode").mkdir()                                # home marker
+    (home / ".codeium").mkdir()                                 # Windsurf's home state dir
+    # Returned in the fixed install order (…, kilo, cursor, windsurf), regardless of discovery order.
+    assert detect_hosts(repo, home) == ["kilo", "cursor", "windsurf"]
+
+
 def test_install_host_codex_wires_codex(tmp_path: Path):
     runner.invoke(app, ["init", str(tmp_path)])
     out = runner.invoke(app, ["install", str(tmp_path), "--host", "codex"])
@@ -99,7 +170,7 @@ def test_install_host_codex_wires_codex(tmp_path: Path):
 
 def test_install_mcp_and_unknown_host_fall_back_to_mcp(tmp_path: Path):
     runner.invoke(app, ["init", str(tmp_path)])
-    for host in ("mcp", "cursor"):  # explicit mcp, and an unsupported host name
+    for host in ("mcp", "emacs"):  # explicit mcp, and an unsupported host name (no rules/hook seam)
         out = runner.invoke(app, ["install", str(tmp_path), "--host", host])
         assert out.exit_code == 0 and "mcpServers" in out.stdout and "yigraf" in out.stdout
     assert not (tmp_path / ".codex").exists()  # fallback wires nothing host-native

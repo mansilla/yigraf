@@ -78,7 +78,7 @@ pip install yigraf          # or: pipx install yigraf / uv tool install yigraf
 cd your-repo
 yigraf init                 # create the yigraf/ workspace
 yigraf build                # index the code into the graph
-yigraf install              # wire your agent host — auto-detects Claude Code / Codex / Antigravity, else MCP
+yigraf install              # wire your agent host — auto-detects Claude Code/Codex/Antigravity/Kilo/Cursor/Windsurf, else MCP
 ```
 
 Preview what `install` will wire, without applying anything (add `--json` for the machine-readable form
@@ -190,17 +190,22 @@ terminal then prints the one-line update command. No background job, no schedule
 ### Works with any host (two channels)
 
 yigraf reaches an agent through **pull** (the agent calls a tool) and/or **push** (yigraf injects at the
-moment of action). **MCP is the universal floor** — `yigraf mcp` exposes the graph as tools to any
-MCP host. **Push hooks are a thin complement where a host has them** (Claude Code, Codex). They're not
-exclusive: on Claude Code/Codex you can run both. The full per-host matrix and wiring is in
+moment of action). Push is a **fidelity gradient**, and yigraf delivers the highest tier a host's own
+seams allow: **Tier E** — event-scoped, injects the drift for the file you just touched (needs an
+edit/session hook: Claude Code, Codex); **Tier A** — an always-on rule telling the agent to pull `context`
+(needs a rules mechanism + MCP: Antigravity, Kilo, Cursor, Windsurf); **Tier P** — pull-only over MCP, the
+**universal floor** every host has. The full per-host matrix and wiring is in
 [`docs/hosts.md`](docs/hosts.md); MCP config per host is in [`docs/mcp.md`](docs/mcp.md).
 
-| Host | Pull (MCP) | Push (hooks) | Wire it |
-|------|:---------:|:------------:|---------|
-| Claude Code | ✓ | ✓ | `yigraf install-claude-hooks` |
-| Codex CLI | ✓ | ✓ | `yigraf install-codex-hooks` |
-| Antigravity IDE | ✓ | — | `yigraf install-antigravity` |
-| Cursor / Windsurf / other MCP | ✓ | — | point at `yigraf mcp` (`docs/mcp.md`) |
+| Host | Pull (MCP) | Push tier | Wire it |
+|------|:---------:|:---------:|---------|
+| Claude Code | ✓ | E | `yigraf install-claude-hooks` |
+| Codex CLI | ✓ | E | `yigraf install-codex-hooks` |
+| Antigravity IDE | ✓ | A | `yigraf install-antigravity` |
+| Kilo Code | ✓ | A | `yigraf install-kilo` |
+| Cursor | ✓ | A | `yigraf install-cursor` |
+| Windsurf | ✓ | A | `yigraf install-windsurf` |
+| any other MCP host | ✓ | P | point at `yigraf mcp` (`docs/mcp.md`) |
 
 ## Files yigraf creates
 
@@ -226,11 +231,13 @@ and volatile state stays gitignored and rebuilds from source. yigraf also writes
 Opt-in installers wire yigraf into your tooling (machine-specific wiring is gitignored; the shareable
 SKILL/AGENTS/rules are committed):
 
-- **`yigraf install`** — **auto-detects** your host (Claude Code / Codex / Antigravity) and wires each;
-  falls back to the universal MCP server for anything else. `--host <name>` targets one explicitly.
+- **`yigraf install`** — **auto-detects** your host(s) (Claude Code / Codex / Antigravity / Kilo / Cursor
+  / Windsurf) and wires each at its tier; falls back to the universal MCP server for anything else.
+  `--host <name>` targets one explicitly.
 - **`yigraf install-claude-hooks`** — `.claude/settings.local.json` (machine-local hooks) + `SKILL.md`.
 - **`yigraf install-codex-hooks`** — `.codex/hooks.json` (SessionStart + best-effort PostToolUse).
-- **`yigraf install-antigravity`** — `.agents/rules/yigraf.md` + prints the MCP-server config to add.
+- **`yigraf install-antigravity` / `-kilo` / `-cursor` / `-windsurf`** — a Tier-A always-on rule
+  (`.agents`/`.kilocode`/`.cursor`/`.windsurf` rules dir) + prints the MCP-server config to add.
 - **`yigraf install-hooks`** — a git **post-commit** hook that keeps `graph.json` synced to `HEAD`.
 
 For any other MCP host, run `yigraf mcp` as the configured server (see [`docs/mcp.md`](docs/mcp.md)).
