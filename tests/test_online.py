@@ -3,8 +3,8 @@
 Proven entirely offline against :class:`~yigraf.onlinelog.SqliteAssertionStore`, the stdlib reference
 adapter (mem:059: the only local↔online difference is a thin substrate adapter; the fold, the
 contradiction-detector, and the query layer are shared, so the sqlite store proves the whole engine
-with no network). The production :class:`~yigraf.onlinelog.PostgresAssertionStore` implements the same
-contract and is exercised only against a live server.
+with no network). A hosted deployment's production adapter for the same port lives with the deployment,
+not in this engine (yigraf-server's Postgres adapter), and is exercised there against a live server.
 
 - **#7** append-only monotonic-seq project-scoped log + LISTEN/NOTIFY + SYNCHRONOUS structural/causal
   ingest that never runs the semantic (contradiction) check.

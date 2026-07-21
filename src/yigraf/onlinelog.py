@@ -10,8 +10,9 @@ lease over the derived projection. So this module is small on purpose.
 **Written against a PORT, not a driver — so it is provable offline (R5, "fast, no network").** The
 DB operations live behind :class:`AssertionStore`; the reference adapter is :class:`SqliteAssertionStore`
 (stdlib, durable, ordered, replayable — a genuine single-host online substrate, exactly as
-:class:`~yigraf.log.InMemoryLog` is the reference for the spine), and :class:`PostgresAssertionStore`
-is the production shim behind the ``[postgres]`` extra (psycopg, lazily imported). :class:`OnlineLog`
+:class:`~yigraf.log.InMemoryLog` is the reference for the spine). A hosted deployment supplies its own
+production adapter for the same port — the closed-source yigraf-server does, over Postgres — but that
+substrate lives with the deployment, NOT in this MIT engine. :class:`OnlineLog`
 folds through the SAME :func:`yigraf.log.causal_order` contract as :class:`~yigraf.filelog.FileLog`, so
 the online graph is byte-identical to the local one for identical content — the task-#6 "rebuilds
 identically" proof carried to the online transport (``tests/test_online.py``).
@@ -218,8 +219,9 @@ class ViewRow:
 @runtime_checkable
 class AssertionStore(Protocol):
     """The substrate port: the boring transactional/pub-sub store mem:058 says does coordination
-    correctly. :class:`SqliteAssertionStore` is the offline reference; :class:`PostgresAssertionStore`
-    is the production shim. All ordering is project-scoped."""
+    correctly. :class:`SqliteAssertionStore` is the offline reference adapter; a hosted deployment
+    supplies its own production adapter for this port (yigraf-server does, over Postgres). All ordering
+    is project-scoped."""
 
     def append_lock(self, project: str) -> ContextManager:
         """Serialize the head-read + insert critical section per project, so concurrent appends chain
@@ -487,129 +489,3 @@ class SqliteAssertionStore:
 
     def close(self) -> None:
         self._conn.close()
-
-
-# --------------------------------------------------------------------------------------------------
-# PostgresAssertionStore — the production shim ([postgres] extra; psycopg lazily imported)
-# --------------------------------------------------------------------------------------------------
-
-_PG_SCHEMA = """
-CREATE TABLE IF NOT EXISTS events (
-  seq        BIGSERIAL PRIMARY KEY,
-  project    TEXT NOT NULL,
-  event_key  TEXT NOT NULL,
-  id         TEXT NOT NULL,
-  kind       TEXT NOT NULL,
-  body       JSONB NOT NULL,
-  parents    JSONB NOT NULL,
-  provenance JSONB NOT NULL,
-  scope      JSONB NOT NULL,
-  prev_hash  TEXT NOT NULL,
-  entry_hash TEXT NOT NULL,
-  UNIQUE (project, event_key)
-);
-CREATE INDEX IF NOT EXISTS events_project_seq ON events (project, seq);
-CREATE TABLE IF NOT EXISTS views (
-  project   TEXT PRIMARY KEY,
-  node_link JSONB NOT NULL,
-  head_seq  BIGINT NOT NULL,
-  head_hash TEXT NOT NULL
-);
-"""
-
-
-class PostgresAssertionStore:  # pragma: no cover - requires a live Postgres; contract proven via sqlite
-    """The production :class:`AssertionStore`: a real Postgres append-only table (``BIGSERIAL`` monotonic
-    seq, ``JSONB`` bodies) with native ``LISTEN``/``NOTIFY``. It implements exactly the same contract the
-    SQLite reference adapter is tested against (mem:059), so the shared :class:`OnlineLog` needs no
-    changes. psycopg is imported lazily so it stays an optional ``[postgres]`` extra (never a hard
-    dependency, mirroring ``fastembed``/``embeddings-torch``). Per-project serialization is a
-    transaction-scoped advisory lock over the log tail (mem:058's endorsed coordination, not the
-    retired whole-graph lease). Untested in the offline suite by construction — it needs a live server."""
-
-    def __init__(self, dsn: str) -> None:
-        try:
-            import psycopg
-        except ModuleNotFoundError as exc:
-            raise ModuleNotFoundError(
-                "PostgresAssertionStore needs the [postgres] extra: `uv pip install 'yigraf[postgres]'`"
-            ) from exc
-        self._psycopg = psycopg
-        self._dsn = dsn
-        self._conn = psycopg.connect(dsn, autocommit=True)
-        with self._conn.cursor() as cur:
-            cur.execute(_PG_SCHEMA)
-
-    @contextlib.contextmanager
-    def append_lock(self, project: str):
-        with self._conn.transaction(), self._conn.cursor() as cur:
-            cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (project,))
-            yield
-
-    def head(self, project: str) -> StoredEvent | None:
-        with self._conn.cursor() as cur:
-            cur.execute("SELECT seq, id, kind, body, parents, provenance, scope, prev_hash, "
-                        "entry_hash, event_key FROM events WHERE project=%s ORDER BY seq DESC LIMIT 1",
-                        (project,))
-            row = cur.fetchone()
-        return self._to_event(row) if row else None
-
-    def known_ids(self, project: str) -> set[str]:
-        with self._conn.cursor() as cur:
-            cur.execute("SELECT DISTINCT id FROM events WHERE project=%s", (project,))
-            return {r[0] for r in cur.fetchall()}
-
-    def find_event(self, project: str, ekey: str) -> StoredEvent | None:
-        with self._conn.cursor() as cur:
-            cur.execute("SELECT seq, id, kind, body, parents, provenance, scope, prev_hash, "
-                        "entry_hash, event_key FROM events WHERE project=%s AND event_key=%s",
-                        (project, ekey))
-            row = cur.fetchone()
-        return self._to_event(row) if row else None
-
-    def insert_event(self, project: str, event: StoredEvent) -> int:
-        Json = self._psycopg.types.json.Json
-        with self._conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO events (project, event_key, id, kind, body, parents, provenance, scope, "
-                "prev_hash, entry_hash) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING seq",
-                (project, event.event_key, event.id, event.kind, Json(event.body),
-                 Json(list(event.parents)), Json(event.provenance), Json(list(event.scope)),
-                 event.prev_hash, event.entry_hash))
-            return int(cur.fetchone()[0])
-
-    def iter_events(self, project: str) -> list[StoredEvent]:
-        with self._conn.cursor() as cur:
-            cur.execute("SELECT seq, id, kind, body, parents, provenance, scope, prev_hash, "
-                        "entry_hash, event_key FROM events WHERE project=%s ORDER BY seq", (project,))
-            return [self._to_event(r) for r in cur.fetchall()]
-
-    def notify(self, channel: str, payload: str) -> None:
-        with self._conn.cursor() as cur:
-            cur.execute("SELECT pg_notify(%s, %s)", (channel, payload))
-
-    def subscribe(self, channel: str, handler: Callable[[str], None]) -> None:
-        # A real deployment runs this on a dedicated LISTEN connection in a background thread; left to
-        # the service shell (the engine's contract is proven synchronously against the sqlite adapter).
-        raise NotImplementedError("drive LISTEN on a dedicated connection in the service process")
-
-    def write_view(self, project: str, view: ViewRow) -> None:
-        Json = self._psycopg.types.json.Json
-        with self._conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO views (project, node_link, head_seq, head_hash) VALUES (%s,%s,%s,%s) "
-                "ON CONFLICT (project) DO UPDATE SET node_link=EXCLUDED.node_link, "
-                "head_seq=EXCLUDED.head_seq, head_hash=EXCLUDED.head_hash",
-                (project, Json(view.node_link), view.head_seq, view.head_hash))
-
-    def read_view(self, project: str) -> ViewRow | None:
-        with self._conn.cursor() as cur:
-            cur.execute("SELECT node_link, head_seq, head_hash FROM views WHERE project=%s", (project,))
-            row = cur.fetchone()
-        return ViewRow(row[0], row[1], row[2]) if row else None
-
-    @staticmethod
-    def _to_event(row) -> StoredEvent:
-        return StoredEvent(seq=row[0], id=row[1], kind=row[2], body=row[3], parents=tuple(row[4]),
-                           provenance=row[5], scope=tuple(row[6]), prev_hash=row[7], entry_hash=row[8],
-                           event_key=row[9])

@@ -1,6 +1,6 @@
 [project]
 name = "yigraf"
-version = "1.0.0"
+version = "2.0.0"
 description = "A harness primitive for AI coding agents: one connected graph over code, intent, plan, and memory — legible (token-cheap retrieval) and enforceable (intent↔code drift checks)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -67,14 +67,11 @@ dependencies = [
 embeddings-torch = [
     "sentence-transformers>=2.2",
 ]
-# The production Postgres substrate for yigraf online v1 (int:yigraf-online-v1, plan tasks #7–#9). Not
-# a hard dependency (mirrors the embeddings extras): the online engine is written against the
-# AssertionStore port and fully proven offline against the stdlib SqliteAssertionStore reference
-# adapter, so psycopg is needed ONLY to point a hosted deployment at a real Postgres. Absent it, the
-# local git-file/SQLite path (int:yigraf-local-v1) is unaffected — the import is lazy.
-postgres = [
-    "psycopg[binary]>=3.1",
-]
+# NOTE: there is no `postgres` extra. The engine is written against the AssertionStore PORT and ships
+# only the stdlib SqliteAssertionStore reference adapter. A hosted deployment supplies its own concrete
+# adapter for the port and pulls its own driver — the closed-source yigraf-server does, over Postgres
+# (yigraf_server.store + psycopg). Keeping the substrate out of this MIT package is deliberate: the
+# public engine has no server-only dependencies, and storage is the deployment's concern.
 
 [project.urls]
 Homepage = "https://github.com/mansilla/yigraf"
