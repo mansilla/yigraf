@@ -95,14 +95,15 @@ _CALLEE = frozenset({"structure/function", "structure/method", "structure/class"
 _TASK = frozenset({"plan/task"})
 _MEMORY = frozenset({"memory"})
 _INTENT = frozenset({"intent"})
+_GOAL = frozenset({"intent", "plan"})                    # a decision serves an intent OR a plan goal
 _REVISABLE = frozenset({"memory", "intent"})             # supersedes is same-family belief revision
 
 #: The typed edge grammar. Structure endpoints are grounded in yigraf's own built graph (the observed
 #: ``calls``/``contains``/``imports``/``inherits`` endpoint kinds); cross-family endpoints mirror what
 #: :mod:`yigraf.artifacts` / :mod:`yigraf.memory` / :mod:`yigraf.filelog` actually emit.
 SIGNATURES: dict[str, Signature] = {
-    # structure (tree-sitter extraction)
-    "contains": Signature(_STRUCT, _STRUCT),        # nesting: file→module→sym→sym
+    # structure (tree-sitter extraction) — and a plan nests its tasks (artifacts.py)
+    "contains": Signature(frozenset({"structure", "plan"}), frozenset({"structure", "plan/task"})),
     "calls": Signature(_CALLER, _CALLEE),           # a callee may be a class (constructor call)
     "imports": Signature(_FILE, _FILE),
     "inherits": Signature(_CLASSLIKE, _CLASSLIKE),
@@ -111,7 +112,7 @@ SIGNATURES: dict[str, Signature] = {
     "tracks": Signature(_TASK, _INTENT),
     "requires": Signature(_TASK, _TASK),
     # memory → {intent, structure, memory}
-    "serves": Signature(_MEMORY, _INTENT),
+    "serves": Signature(_MEMORY, _GOAL),            # an intent or a plan (the goal a decision works toward)
     "concerns": Signature(_MEMORY, _STRUCT),
     "grounded_by": Signature(_MEMORY, _STRUCT),
     "equivalent_to": Signature(_MEMORY, _MEMORY),
@@ -142,6 +143,38 @@ def well_typed(relation: str, source_attrs: dict, target_attrs: dict) -> bool:
     if sig is None:
         return True
     return bool(node_types(source_attrs) & sig.sources) and bool(node_types(target_attrs) & sig.targets)
+
+
+#: The type an id *prefix* implies, so a write boundary can check an edge from locators alone — before
+#: the node is resolved (or even exists — a forward-reference target). ``sym:`` gives only ``structure``
+#: (the kind isn't known until extraction); the family-carrying prefixes give family + ``family/kind``.
+_ID_PREFIX_TYPES: dict[str, frozenset[str]] = {
+    "sym": frozenset({"structure"}),
+    "file": frozenset({"structure", "structure/file"}),
+    "module": frozenset({"structure", "structure/module"}),
+    "int": frozenset({"intent", "intent/intent"}),
+    "task": frozenset({"plan", "plan/task"}),
+    "plan": frozenset({"plan", "plan/plan"}),
+    "mem": frozenset({"memory"}),
+}
+
+
+def id_types(node_id: str) -> frozenset[str]:
+    """The type tags an id's prefix implies (``{}`` for an unknown/opaque prefix like ``commit:`` or a
+    URL — which is never a valid graph-edge endpoint, so an edge to one is correctly ill-typed)."""
+    return _ID_PREFIX_TYPES.get(node_id.split(":", 1)[0], frozenset())
+
+
+def well_typed_ids(relation: str, source_id: str, target_id: str) -> bool:
+    """:func:`well_typed` from locators alone — the write-boundary check (``link``/``remember`` know the
+    ids they are about to write, not resolved attrs). Sound for every *authored* relation because their
+    signatures are family- or ``plan/task``-level, which a prefix pins down; a structure-kind signature
+    (``calls`` wanting ``structure/function``) is never authored, only extracted, so it never lands here.
+    An ungoverned relation passes (fail-open), matching :func:`well_typed`."""
+    sig = SIGNATURES.get(relation)
+    if sig is None:
+        return True
+    return bool(id_types(source_id) & sig.sources) and bool(id_types(target_id) & sig.targets)
 
 
 # --------------------------------------------------------------------------------------------------

@@ -17,7 +17,7 @@ from typing import NoReturn
 import typer
 
 from yigraf import (__version__, artifacts, counters, embeddings, graphdb, memory,
-                    retrieval, status, update)
+                    relations, retrieval, status, update)
 from yigraf.astnorm import ANCHOR_ALGO, FILE_ANCHOR_ALGO, file_content_hash, parse_file_target
 from yigraf.config import load_config
 from yigraf.drift import compute_drift, is_surfaced
@@ -307,6 +307,7 @@ def intent(
 
     if not statement:
         _guidance(f"No intent int:{slug.casefold()} yet, so --statement is required to create it.")
+    dest.parent.mkdir(parents=True, exist_ok=True)  # a bare workspace (subdir unscaffolded) passes _require_workspace
     dest.write_text(
         artifacts.render_intent(slug, statement, scenario or [], design, type=type,
                                 status=status or "proposed"),
@@ -348,6 +349,7 @@ def supersede_intent(
     if new_dest.exists():
         _guidance(f"Intent {new_id} already exists ({new_dest}). Pick a different new slug.")
 
+    new_dest.parent.mkdir(parents=True, exist_ok=True)  # a bare workspace (subdir unscaffolded) passes _require_workspace
     new_dest.write_text(
         artifacts.render_intent(new_slug, statement, scenario or [], design, type=type,
                                 status="active", supersedes=[old_id]),
@@ -376,6 +378,7 @@ def plan(
     dest = workspace / "plans" / "active" / f"{slug}.md"
     if dest.exists():
         _guidance(f"Plan plan:{slug.casefold()} already exists ({dest}). Edit it directly, or pick a new slug.")
+    dest.parent.mkdir(parents=True, exist_ok=True)  # a bare workspace (subdir unscaffolded) passes _require_workspace
     dest.write_text(artifacts.render_plan(slug, title, task or []), encoding="utf-8")
     _rebuild(repo)
     typer.echo(f"Created plan plan:{slug.casefold()} with {len(task or [])} task(s) ({dest})")
@@ -541,6 +544,16 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
                   f"valid-when = surfaces only while the premise holds; invalidated-when = withdrawn "
                   f"once it holds (e.g. --rejected-invalidated-when file:infra/redis.tf).")
 
+    # serves works toward a GOAL — an intent or plan node (relations grammar). Unlike --concerns, which
+    # _resolve_concerns prefix-checks, --serves was only existence-warned, so a wrong-typed target
+    # (--serves sym:foo, a memory id, …) would silently land an ill-typed edge. A wrong *form* is a hard
+    # guide (exit 0, design law #1), distinct from the soft dangling-warning for a not-yet-created goal.
+    mistyped = [t for t in serves if not relations.well_typed_ids("serves", "mem:_", t)]
+    if mistyped:
+        _guidance(f"--serves points at the goal a decision works toward — an intent (int:<slug>) or a "
+                  f"plan (plan:<slug>), not {', '.join(mistyped)}. To pin a decision to the code it "
+                  f"governs use --concerns sym:<path>#<name>.")
+
     config = load_config(workspace / "config.yaml")
     graph, _ = build_graph(repo, config)  # built once, reused for concern/serves resolution + dedup
     concerns, warnings = _resolve_concerns(repo, config, graph, concern_syms)
@@ -573,6 +586,7 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
         maturity=memory.landing_maturity(provenance),  # proposed for mined/review, else working (task #1)
         source_file=f"memory/{dest.name}",
     )
+    dest.parent.mkdir(parents=True, exist_ok=True)  # a bare workspace (memory/ unscaffolded) passes _require_workspace
     dest.write_text(memory.render_memory(node), encoding="utf-8")
     _rebuild(repo)
     for w in warnings:  # soft-warn AFTER capture — the edge is written; these guide, never block (D#3)
@@ -1158,6 +1172,26 @@ def mcp_cmd(
     raise typer.Exit(code=mcp_server.run(repo))
 
 
+def _blast_reconcile_lines(graph, drifted_loci: set[str], exclude: set[str]) -> list[str]:
+    """Governed nodes (intent/plan/memory) that TRANSITIVELY depend on a drifted symbol — the typed
+    reverse-reachability ripple (:func:`relations.blast_radius`) beyond the edges drift already anchors,
+    minus any node a direct drift line already named (no double signal). One sorted line per node; empty
+    ⇒ the caller prints nothing (silence is a feature, CLAUDE.md #4). This is the read-only consumer of
+    the composition algebra: ``implements ∘ calls ⇒ depends_on`` lets a change ripple to a task that only
+    *transitively* touches the drifted code — which the direct implements/concerns anchors never name."""
+    best: dict[str, relations.Reach] = {}
+    for locus in drifted_loci:
+        for r in relations.blast_radius(graph, locus):
+            if r.target in exclude:
+                continue
+            prior = best.get(r.target)
+            if prior is None or (r.depth, r.relation, r.path) < (prior.depth, prior.relation, prior.path):
+                best[r.target] = r
+    return [f"  ⚠ {tid} transitively depends on {r.path[-1]} "
+            f"(via {r.relation}, {r.confidence.lower()}) — re-verify it still holds"
+            for tid, r in sorted(best.items())]
+
+
 @app.command()
 def drift(
     path: Path = typer.Argument(Path("."), help="Repo root (default: current dir)."),
@@ -1181,6 +1215,20 @@ def drift(
             typer.echo(f"soft drift: {item.task_id} → {item.locator} ({item.detail})")
         else:
             typer.echo(f"hard drift: {item.task_id} → {item.locator} ({item.detail})")
+
+    # Beyond the directly-anchored drift: which governed nodes TRANSITIVELY depend on a drifted symbol
+    # (a task implementing code that *calls* it, a memory concerning its container)? Typed reverse
+    # reachability. Additive + gated — nothing prints without a corpus of cross-family edges to ripple.
+    ripple = _blast_reconcile_lines(
+        graph,
+        {i.locator for i in items if i.kind in ("soft", "hard")},
+        exclude={i.task_id for i in items},
+    )
+    if ripple:
+        typer.echo("")
+        typer.echo("transitively affected (verify these too):")
+        for line in ripple:
+            typer.echo(line)
 
     if any(item.kind in ("soft", "hard") for item in items):
         raise typer.Exit(code=1)
