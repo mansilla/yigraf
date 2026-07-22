@@ -19,6 +19,7 @@ from typing import Any
 import networkx as nx
 import yaml
 
+from yigraf import relations
 from yigraf.astnorm import ANCHOR_ALGO, FILE_ANCHOR_ALGO, file_content_hash, parse_file_target
 
 INTENT_FAMILY = "intent"
@@ -245,6 +246,12 @@ def add_edge_to_plan(path: Path, task_id: str, relation: str, target: str,
     carrying its stamped ``anchor`` + ``anchor_algo`` (astnorm for a symbol, file-sha256 for a file —
     friend-review #12). Re-linking the same target re-stamps its anchor.
     """
+    # The edge grammar is enforced at this write boundary (relations.well_typed_ids): a mistyped plan
+    # edge (e.g. implements→int:, tracks→sym:) is an internal routing bug, so it raises here — never
+    # reaching disk — rather than landing an ill-typed edge the read-time audit would later flag.
+    if not relations.well_typed_ids(relation, task_id, target):
+        raise ValueError(f"ill-typed plan edge: {task_id} —{relation}→ {target} "
+                         f"violates the edge grammar (relations.SIGNATURES[{relation!r}])")
     path = Path(path)
     meta, body = _split_frontmatter(path.read_text(encoding="utf-8"))
     edges = meta.setdefault("edges", {}) or {}
