@@ -145,25 +145,36 @@ shipped), so its drift is *withheld* from the surfaced signal — you won't be n
 work. yigraf still computes it internally, so a *satisfied intent* whose only implementing link drifted
 is still flagged as unverified.
 
-### Blast radius — what *transitively* depends on the drift
+### Blast radius — what else the drift reaches
 
-The three kinds above are all **directly anchored**: something pointed at that exact symbol. But a
-change ripples further than its own anchors. Under a `transitively affected (verify these too)`
-heading, `yigraf drift` also names the governed nodes that reach a drifted symbol only *indirectly* —
-a task whose implementing code merely **calls** it, a memory that concerns its **container**:
+The three kinds above are all reported because **that edge's own anchor** stopped matching. But a
+change reaches further than the edges that happen to have drifted. Under an `also affected (verify
+these too)` heading, `yigraf drift` walks *backwards* from each drifted symbol and names the governed
+nodes it can reach — a task whose implementing code merely **calls** it, a memory that concerns its
+**container**:
 
 ```
 soft drift: task:auth/1 → sym:src/auth/session.py#refresh (body changed since anchored)
 
-transitively affected (verify these too):
-  ⚠ task:api/3 transitively depends on sym:src/auth/session.py#refresh (via depends_on, inferred) — re-verify it still holds
+also affected (verify these too):
+  ⚠ mem:0a1 —concerns→ sym:src/auth/session.py#refresh (extracted, direct) — re-verify it still holds
+  ⚠ task:api/3 —depends_on→ sym:src/auth/session.py#refresh (inferred, 2 hops) — re-verify it still holds
 ```
 
-That comes from yigraf's typed edge grammar: relations **compose**, so `implements ∘ calls` entails
-`depends_on` — a dependency nobody ever wrote down but that the graph derives. Each line says how
-confident the derivation is: **extracted** means someone asserted that edge; **inferred** means yigraf
-composed it across hops. A derived edge is never stored — it's recomputed at read time, because
-persisting an entailment would make it look like a claim someone made.
+Read each line as *node —relation→ what it reaches*, then how that relation was established:
+
+- **`extracted, direct`** — a real one-hop edge someone asserted, onto the very symbol that drifted.
+  It isn't in the list above it because *its* anchor still matches (or it's anchored under a different
+  algorithm, or it's a forward reference to something not built yet). Nothing is double-reported: a
+  node already named by a drift line is excluded here.
+- **`inferred, N hops`** — nobody wrote this down; yigraf **composed** it. `implements ∘ calls` entails
+  `depends_on`, so a task reaches code it never linked directly. Derived edges cap at `inferred` and
+  are never stored — recomputing them at read time is what keeps an entailment from looking like a
+  claim someone made.
+
+So the heading says "also," not "transitively" — the section mixes both, and each line tells you which
+it is. Only *soft* drift ripples: hard drift means the symbol is gone from the graph entirely, so
+there are no incoming edges left to walk back through and the direct line is the whole signal.
 
 Like the rest of yigraf this is silent when it has nothing to say: a repo with few cross-family edges
 has nothing to ripple, and the heading never appears.
