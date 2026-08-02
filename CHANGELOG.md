@@ -50,11 +50,15 @@ remains **2.0** — see the 1.0 **Roadmap** below; nothing here moves toward it.
   deployment's concern. The single-sourced contract still holds because the port
   stays here, and adapters are checked against it.
 
-  This is the one behavior change that can break an existing install:
-  `pip install yigraf[postgres]` resolves under 1.0.0 and does not under 1.1.0.
-  It is versioned as a minor rather than a major because the adapter was
-  scaffolding for the unreleased 2.0 hosted line — never wired into any local
-  command, and reachable only by a deployment that would now supply its own.
+  This is the one behavior change that can break an existing install, and it
+  breaks *quietly*: `pip install yigraf[postgres]` still succeeds under 1.1.0 —
+  pip and uv treat an unknown extra as a warning, not an error — but it now
+  installs no driver, so the failure surfaces later as an ImportError rather
+  than at install time. If you were pulling psycopg that way, depend on it
+  directly. It is versioned as a minor rather than a major because the adapter
+  was scaffolding for the unreleased 2.0 hosted line — never wired into any
+  local command, and reachable only by a deployment that would now supply its
+  own.
 
 ## [1.0.0] — 2026-07-16
 
