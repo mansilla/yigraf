@@ -110,5 +110,5 @@ Details and the full per-host matrix: **[docs/hosts.md](docs/hosts.md)**.
 
 ## Status
 
-**yigraf 1.0 is local** — everything runs self-contained inside a single repo/folder, no network, no
+**yigraf 1.x is local** — everything runs self-contained inside a single repo/folder, no network, no
 account. Multi-user, hosted, real-time collaboration is the **2.0** roadmap. MIT licensed.

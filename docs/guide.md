@@ -31,7 +31,7 @@ gracefully without it.
 git clone https://github.com/mansilla/yigraf.git
 cd yigraf && uv sync
 uv run yigraf --help
-uv run pytest          # 546 tests, offline
+uv run pytest          # the full suite, offline (no network, no model download)
 ```
 
 ### Wire it into your host
@@ -144,6 +144,29 @@ verify is the failure mode yigraf is built to prevent.
 shipped), so its drift is *withheld* from the surfaced signal — you won't be nagged to relink shipped
 work. yigraf still computes it internally, so a *satisfied intent* whose only implementing link drifted
 is still flagged as unverified.
+
+### Blast radius — what *transitively* depends on the drift
+
+The three kinds above are all **directly anchored**: something pointed at that exact symbol. But a
+change ripples further than its own anchors. Under a `transitively affected (verify these too)`
+heading, `yigraf drift` also names the governed nodes that reach a drifted symbol only *indirectly* —
+a task whose implementing code merely **calls** it, a memory that concerns its **container**:
+
+```
+soft drift: task:auth/1 → sym:src/auth/session.py#refresh (body changed since anchored)
+
+transitively affected (verify these too):
+  ⚠ task:api/3 transitively depends on sym:src/auth/session.py#refresh (via depends_on, inferred) — re-verify it still holds
+```
+
+That comes from yigraf's typed edge grammar: relations **compose**, so `implements ∘ calls` entails
+`depends_on` — a dependency nobody ever wrote down but that the graph derives. Each line says how
+confident the derivation is: **extracted** means someone asserted that edge; **inferred** means yigraf
+composed it across hops. A derived edge is never stored — it's recomputed at read time, because
+persisting an entailment would make it look like a claim someone made.
+
+Like the rest of yigraf this is silent when it has nothing to say: a repo with few cross-family edges
+has nothing to ripple, and the heading never appears.
 
 ---
 

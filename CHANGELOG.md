@@ -4,6 +4,58 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.1.0] — unreleased
+
+Still the **local** engine (`int:yigraf-local-v1`). The hosted, multi-user line
+remains **2.0** — see the 1.0 **Roadmap** below; nothing here moves toward it.
+
+### Added — the typed edge algebra (`relations.py`)
+- yigraf's arrows always carried an *implicit* signature (`implements` goes
+  task→sym, `serves` goes memory→intent, `calls` goes function→function), but
+  nothing named the type. That grammar is now explicit, and it buys two things a
+  hand-rolled traversal can't:
+  - **Composition** — a partial `compose(r1, r2)` says which relation you get by
+    following one edge then another. `implements ∘ calls ⇒ depends_on` means the
+    graph *entails* facts nobody wrote down, and a path that stops composing is
+    pruned rather than walked.
+  - **A confidence semiring** over `EXTRACTED > INFERRED > AMBIGUOUS` — weakest
+    link along a path, best across alternative paths. A derived multi-hop edge is
+    capped at `INFERRED`, so a query can always tell "someone linked this" from
+    "the graph inferred this."
+  Everything in the module is read-time and pure: a derived relation is never
+  persisted, because persisting it would make an entailment look like a claim.
+- **`yigraf drift` now reports blast radius.** Past the directly-anchored drift,
+  it names the governed nodes that only *transitively* depend on a drifted symbol
+  — a task whose implementing code merely *calls* it, a memory concerning its
+  container — under a new `transitively affected (verify these too)` heading.
+  Additive and gated: with no cross-family edges to ripple, it prints nothing
+  (silence is a feature).
+- **The edge grammar is enforced at the write boundary.** An ill-typed plan edge
+  now raises before it reaches disk instead of landing and being flagged later by
+  the read-time audit; `remember --serves` rejects a wrong-typed target (a
+  `sym:`, a memory id) with guidance and exit 0, where it previously only
+  warned about a non-existent one.
+
+### Fixed
+- `intent`, `supersede`, `plan`, and `remember` no longer fail on a workspace
+  whose subdirectory hasn't been scaffolded yet — the destination directory is
+  created on write.
+
+### Removed
+- **`PostgresAssertionStore` and the `[postgres]` extra.** The MIT engine now
+  ships only the `AssertionStore` *port* plus the stdlib `SqliteAssertionStore`
+  reference adapter; a hosted deployment supplies its own concrete adapter and
+  pulls its own driver. Keeping the substrate out of the public package is
+  deliberate — the engine has no server-only dependencies, and storage is the
+  deployment's concern. The single-sourced contract still holds because the port
+  stays here, and adapters are checked against it.
+
+  This is the one behavior change that can break an existing install:
+  `pip install yigraf[postgres]` resolves under 1.0.0 and does not under 1.1.0.
+  It is versioned as a minor rather than a major because the adapter was
+  scaffolding for the unreleased 2.0 hosted line — never wired into any local
+  command, and reachable only by a deployment that would now supply its own.
+
 ## [1.0.0] — 2026-07-16
 
 First stable release.
@@ -105,7 +157,10 @@ Three orthogonal axes on a memory node, all overlaid at read time (never stored)
 ### Packaging
 - Requires **Python 3.11+**. 16 tree-sitter grammars bundled (Python, Go, JS/TS,
   Rust, Java, C/C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Bash, SQL).
-- Optional extras: `[embeddings]` (local semantic recall), `[mcp]` (MCP server).
+- Semantic recall (fastembed/ONNX) and the MCP server are **core** dependencies —
+  full power out of the box, no extra to install. Optional extras: `[embeddings-torch]`
+  (the opt-in torch backend for semantic recall) and `[postgres]` (the hosted-line
+  Postgres adapter; removed in 1.1.0).
 - MIT licensed. Published to PyPI as `yigraf`.
 
 ### Roadmap — not in 1.0

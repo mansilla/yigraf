@@ -75,8 +75,11 @@ changing code, run `uv run yigraf context "<topic>"` to surface the governing in
 decisions; after a task, `link` the symbols and `remember` the non-obvious choices.
 
 - **Run / test:** `uv sync`, then `uv run pytest` (fast, no network). `uv run yigraf --help`.
-- **Optional semantic recall:** `uv pip install -e '.[embeddings]'` (local `bge-small`). Absent ⇒
-  retrieval degrades to the lexical seeder; never a hard dependency.
+- **Semantic recall is core, not an extra:** fastembed (ONNX `bge-small`) is a hard dependency and on
+  by default; the suite disables it for determinism (`conftest.py`) and the `embeddings` marker is
+  deselected. Retrieval must still work identically without it — the lexical seeder is the fallback,
+  never a hard dependency. The only extra is `.[embeddings-torch]` (the opt-in torch backend, for
+  Apple-Silicon MPS throughput); select it via `embeddings.backend` in `yigraf/config.yaml`.
 - **Docs:** the public references are [`README.md`](README.md) (overview, install, how-it-works) and
   [`docs/language-support.md`](docs/language-support.md) (the tested capability matrix). The internal
   design corpus (decision log, milestone notes, research) is not part of this repo or its history; the
@@ -84,10 +87,11 @@ decisions; after a task, `link` the symbols and `remember` the non-obvious choic
   shorthand. The authoritative *current* state is the code, the tests, and this file.
 - **Layout:** package under `src/yigraf/` (src-layout is deliberate — `yigraf init` creates a data dir
   named `yigraf/` at a repo root, and the two must not collide).
-- **Status:** **1.0 (local)** — the self-contained, no-network belief-revision engine is complete,
+- **Status:** **1.x (local)** — the self-contained, no-network belief-revision engine is complete,
   self-hosted, and released (26 design intents `satisfied`). Counters are local + recomputable.
   The shared/committed counter model and hosted multi-user operation are **2.0 (online)** work
-  (`int:yigraf-online-v1`, proposed).
+  (`int:yigraf-online-v1`, proposed) — so **2.0 is reserved for the hosted line**: never spend that
+  number on a local-engine change, even a breaking one (see CHANGELOG 1.1.0).
 
 ## Conventions
 
