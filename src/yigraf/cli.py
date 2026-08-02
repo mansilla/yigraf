@@ -189,7 +189,7 @@ def _rebuild(root: Path) -> None:
 def _ranked_with_telemetry(root: Path, graph, config: dict | None = None) -> None:
     """Overlay the machine-local usage/last_seen/upholds sidecar for ranking + the maturity verdict (R1).
 
-    Read-path only: ``graph.json`` stays recomputable — telemetry is never written back into it. After
+    Read-path only: the materialized view stays recomputable — telemetry is never written back. After
     the overlay we resolve the read-time ``settled`` verdict from the accumulated ``upholds`` (mem:033);
     without ``config`` we still overlay telemetry but skip the verdict (callers that only need ranking).
     """
@@ -201,7 +201,7 @@ def _ranked_with_telemetry(root: Path, graph, config: dict | None = None) -> Non
 def _record_injection(root: Path, graph, result) -> None:
     """Record a surfacing in the gitignored telemetry sidecar (R1): a soft recency/popularity nudge.
 
-    Machine-local and best-effort — it never touches the committed ``graph.json``, so a query/hook
+    Machine-local and best-effort — it never touches the materialized view, so a query/hook
     never dirties git. A failed write must never break a query or a hook.
     """
     try:
@@ -1008,7 +1008,7 @@ def context(
     result = retrieval.context(graph, query, config, family=family, budget_tokens=budget,
                                semantic_match=semantic, root=repo, grounding=grounding,
                                show_scores=scores)
-    _record_injection(repo, graph, result)  # a surfacing is a soft usage signal (sidecar, not graph.json)
+    _record_injection(repo, graph, result)  # a surfacing is a soft usage signal (sidecar, not the view)
     typer.echo(result.text, nl=False)
     typer.echo(f"[~{result.token_estimate} tokens · {result.nodes_rendered}/{result.nodes_total} nodes shown]")
 

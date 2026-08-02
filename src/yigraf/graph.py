@@ -1,13 +1,18 @@
 """The yigraf graph: a directed NetworkX graph serialized as node-link JSON.
 
-Per ``docs/DESIGN.md`` R1, ``graph.json`` is committed but holds only *recomputable, HEAD-stable*
-state (nodes, edges, and edge-derived counters). Volatile telemetry (``usage`` / ``last_seen`` /
-``upholds``) lives in the gitignored ``.local/`` sidecar, and git-derived ``survival`` is a read-time
-overlay — neither is serialized here. Both are stamped onto the *in-memory* graph on read paths (for
-ranking + the maturity verdict/GC) but stripped at serialization, because a committed value that moves
-every commit (``survival`` = commits since a memory landed) churned ``graph.json`` on every commit for
-no default benefit (mem:034 #10; the floor defaults off). Serialization is deterministic (sorted keys)
-so an unchanged graph re-serializes byte-for-byte — which M1's "re-run is byte-identical" done-test needs.
+Per R1 the projection holds only *recomputable, HEAD-stable* state (nodes, edges, and edge-derived
+counters). This module is the shape, not the storage: the same node-link form is what
+:mod:`yigraf.graphdb` persists into the gitignored SQLite view (``.local/graph.db``) — the committed
+``graph.json`` it replaced is retired (mem:059).
+
+Volatile telemetry (``usage`` / ``last_seen`` / ``upholds``) lives in the gitignored ``.local/``
+sidecar, and git-derived ``survival`` is a read-time overlay — neither is serialized here. Both are
+stamped onto the *in-memory* graph on read paths (for ranking + the maturity verdict/GC) but stripped
+at serialization, because a stored value that moves every commit (``survival`` = commits since a
+memory landed) churned the projection for no default benefit (mem:034 #10; the floor defaults off).
+Serialization is deterministic (sorted keys) so an unchanged graph re-serializes byte-for-byte — which
+M1's "re-run is byte-identical" done-test needs, and which is what lets ``status`` decide freshness by
+comparing the stored view against a fresh rebuild.
 """
 from __future__ import annotations
 
@@ -23,10 +28,10 @@ SCHEMA_VERSION = 0
 #: (networkx >=3.4 otherwise warns that the implicit default key is changing to "edges").
 _EDGES_KEY = "links"
 
-#: Node attrs that are read-time overlays, never persisted (R1): the committed projection must be
+#: Node attrs that are read-time overlays, never persisted (R1): the stored projection must be
 #: recomputable AND HEAD-stable. ``survival`` is git-derived (commits since a memory landed → moves
 #: every commit, the mem:034 #10 churn); ``usage``/``last_seen``/``upholds`` are the machine-local
-#: sidecar overlay. All are re-derived on read paths, so dropping them from graph.json loses nothing.
+#: sidecar overlay. All are re-derived on read paths, so dropping them from the view loses nothing.
 _VOLATILE_NODE_ATTRS = ("survival", "usage", "last_seen", "upholds")
 
 
@@ -40,8 +45,8 @@ def empty_graph() -> nx.DiGraph:
 def to_node_link(g: nx.DiGraph) -> dict:
     """Serialize ``g`` to a node-link dict with nodes and edges in a stable, sorted order.
 
-    ``node_link_data`` emits nodes/edges in graph *insertion* order, which would make ``graph.json``
-    depend on traversal order. Sorting nodes by ``id`` and edges by ``(source, target, relation)``
+    ``node_link_data`` emits nodes/edges in graph *insertion* order, which would make the serialized
+    form depend on traversal order. Sorting nodes by ``id`` and edges by ``(source, target, relation)``
     makes a no-change rebuild byte-identical (M1 done-test, docs/m1-notes.md §6); ``json.dumps`` then
     sorts the keys *within* each object.
     """

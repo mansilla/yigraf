@@ -3,8 +3,8 @@
 Surfaced as an ``⬆ <version>`` marker on the statusline so the human notices an available update on a
 refresh they already pay for — it is *not* the agent's concern, so it rides the human ambient surface,
 never a hook injection (design law #4: don't spend the agent's attention budget). The result is cached
-in the gitignored ``.local/`` sidecar (R1 / mem:006 — volatile, machine-local, never the committed
-``graph.json``) and refreshed at most once a day. The network fetch is time-boxed and fail-open, so an
+in the gitignored ``.local/`` sidecar (R1 / mem:006 — volatile, machine-local, never committed state)
+and refreshed at most once a day. The network fetch is time-boxed and fail-open, so an
 offline machine or a slow PyPI never blocks or breaks the statusline; ``checked_at`` is stamped even on
 a failed fetch so we don't re-hit the network on every refresh while offline.
 """

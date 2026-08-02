@@ -1,4 +1,4 @@
-"""Counters, maturity, and GC — v0 keeps ``graph.json`` **fully recomputable** (DESIGN R1/R2/R3).
+"""Counters, maturity, and GC — the graph projection stays **fully recomputable** (DESIGN R1/R2/R3).
 
 The relevance/GC engine without any *accumulated, committed* state:
 
@@ -8,18 +8,21 @@ The relevance/GC engine without any *accumulated, committed* state:
   every clone/CI run. No per-session ``survival`` counter is stored or merged.
 - **telemetry** (``usage``/``last_seen``) is a **gitignored sidecar** (R1) — ``yigraf/.local/
   telemetry.json``, machine-local and best-effort, a soft recency/popularity nudge in ranking only.
-  It is *never* written to the committed ``graph.json``, so a query never dirties git.
+  It is *never* written to the materialized view, so a query never dirties git.
 - **GC** (R3) **archives, never deletes, and never gates on ``usage``**: superseded churn
   (``superseded_in>0 ∧ refs_in=0``) is moved to an ``archive/`` folder; a still-referenced
   predecessor is left in place.
 
-Because ``graph.json`` holds only recomputable state, branches reconcile by *rebuilding*; the
-``merge_node_link`` union driver just avoids spurious line-level conflicts in the meantime.
+Because the projection holds only recomputable state, branches reconcile by *rebuilding*. Since
+mem:059 there is nothing to merge at all: the view is the gitignored SQLite ``.local/graph.db``
+(:mod:`yigraf.graphdb`), never committed, so the committed ``graph.json`` and its whole-graph merge
+lock are retired. ``merge_node_link`` below survives only for a pre-v1 workspace mid-merge, reached
+through the hidden ``graph-merge`` command.
 
-> The *shared, committed, merge-reconciled* counter model (accumulated ``survival``/``usage`` in
-> ``graph.json`` with a counter-reconciling merge driver) is **v1 / Enterprise** future work — it
-> belongs to the cloud service where teams share artifacts and specs through an API
-> (``docs/DESIGN.md`` "Counter models", ``docs/graph-design.md`` §3). v0 is deliberately local.
+> The *shared, committed, merge-reconciled* counter model (accumulated ``survival``/``usage`` in a
+> committed projection with a counter-reconciling merge driver) is **2.0 (online)** work
+> (``int:yigraf-online-v1``) — it belongs to the hosted service where teams share artifacts and specs
+> through an API. The local engine is deliberately local: counters are recomputable, never shared.
 """
 from __future__ import annotations
 
@@ -139,12 +142,12 @@ def apply_maturity(graph: nx.DiGraph, root: Path, config: dict, cache=None) -> N
     Promotion is no longer git-derived (mem:033 — commit-age treats un-touched code as validated, the
     "silence is not evidence" fallacy). ``settled`` is a **read-time verdict** from survived
     review-encounters in the telemetry sidecar (:func:`apply_maturity_verdict`), so *promotion* never
-    touches the committed ``graph.json``. This build pass stamps two recomputable attrs on the
+    touches the persisted view. This build pass stamps two recomputable attrs on the
     *in-memory* graph: ``survival`` (git — an optional durability floor + the proposed-TTL clock) and
     the **landed tier** — ``proposed`` for a mined/review candidate, ``working`` otherwise — derived
     from the committed ``provenance`` (:func:`yigraf.memory.landing_maturity`, task #1). ``survival`` is
     HEAD-relative (it moves every commit), so it is a read-time overlay only: serialization strips it
-    (:data:`yigraf.graph._VOLATILE_NODE_ATTRS`) so it never churns the committed graph (mem:034 #10).
+    (:data:`yigraf.graph._VOLATILE_NODE_ATTRS`) so it never churns the stored graph (mem:034 #10).
     The landed tier is HEAD-stable and stays.
 
     Survival is derived in a flat number of git calls — batched across all memory paths and, given a
@@ -190,8 +193,8 @@ def load_telemetry(root: Path) -> dict[str, dict]:
 def apply_telemetry(graph: nx.DiGraph, telemetry: dict[str, dict]) -> None:
     """Stamp sidecar ``usage``/``last_seen`` onto the in-memory graph for ranking (read paths only).
 
-    Never called on the ``build`` write path, so the telemetry never reaches the committed
-    ``graph.json`` — it's a query-time overlay that keeps ``graph.json`` recomputable.
+    Never called on the ``build`` write path, so the telemetry never reaches the materialized view —
+    it's a query-time overlay that keeps the projection recomputable.
     """
     for node_id, entry in telemetry.items():
         if node_id not in graph:
@@ -235,7 +238,7 @@ def record_uphold(root: Path, graph: nx.DiGraph, node_ids: list[str], weight: fl
     An uphold is a POSITIVE maturity event — a review/edit of a locus that produced no violation or
     supersede. ``reaffirm`` books a strong uphold (an explicit re-verification); the edit hook books a
     weak one (silent survival — the code was touched and the governing decision did not drift). It's a
-    machine-local sidecar accumulator, never committed (graph.json stays recomputable), and best-effort.
+    machine-local sidecar accumulator, never committed (the projection stays recomputable), and best-effort.
     Scoped to memory nodes. Returns the ids actually credited.
     """
     if weight <= 0:
@@ -347,15 +350,18 @@ def classify_gc(graph: nx.DiGraph, config: dict | None = None) -> dict[str, str]
 
 
 # --------------------------------------------------------------------------------------------------
-# Union-merge driver — graph.json is recomputable, so this just avoids spurious conflicts
+# LEGACY union-merge driver — for a pre-v1 workspace that still has a committed ``graph.json``.
+# mem:059 retired that projection (it is now the gitignored SQLite view), so nothing current commits a
+# graph and no merge driver is registered; this is reachable only via the hidden ``graph-merge``
+# command, so a repo mid-merge on an old checkout doesn't break. Do not build on it.
 # --------------------------------------------------------------------------------------------------
 
 
 def merge_node_link(ours: dict, theirs: dict, edges_key: str = "links") -> dict:
-    """Union-merge two ``graph.json`` node-link dicts (no counter reconciliation — that's v1).
+    """Union-merge two legacy ``graph.json`` node-link dicts (no counter reconciliation — that's 2.0).
 
-    ``graph.json`` holds only recomputable state in v0, so the post-merge build re-projects it
-    exactly; this driver exists only so a concurrent two-branch edit doesn't throw a line-level JSON
+    A committed ``graph.json`` held only recomputable state, so the post-merge build re-projected it
+    exactly; this driver existed only so a concurrent two-branch edit didn't throw a line-level JSON
     conflict in the meantime. Nodes/edges are unioned; ``ours`` wins a content tie (the build heals it).
     """
     nodes = {n["id"]: n for n in theirs.get("nodes", [])}

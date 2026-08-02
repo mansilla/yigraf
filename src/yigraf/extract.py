@@ -5,7 +5,7 @@ This module is the **orchestration layer**. Per-language knowledge lives in :mod
 Here we walk the repo, run the right extractor per file through a per-file SHA cache
 (:mod:`yigraf.cache`), let each language resolve its own import edges, and project the authored
 intent / plan / memory artifacts on top. Extraction is deterministic, so a no-change rebuild
-reproduces a byte-identical ``graph.json`` (the M1 done-test) — for Python the framework reproduces
+reproduces a byte-identical projection (the M1 done-test) — for Python the framework reproduces
 the original output exactly.
 
 Scope is gated by the workspace ``languages`` config (``docs/m1-notes.md`` §2). v0 ships Python and

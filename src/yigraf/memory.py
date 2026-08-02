@@ -304,7 +304,7 @@ def render_memory(memory: Memory) -> str:
         ],
         "supersedes": list(memory.supersedes),
     }
-    if memory.evidence:  # written only when present, like pending_supersedes (keeps graph.json terse)
+    if memory.evidence:  # written only when present, like pending_supersedes (keeps the artifact terse)
         meta["evidence"] = [
             {"ref": e.ref, "anchor": e.anchor, "anchor_algo": e.anchor_algo} for e in memory.evidence
         ]
@@ -467,8 +467,8 @@ def project_into(graph: nx.DiGraph, root: Path) -> None:
             provenance=dict(memory.provenance),  # the landing tier is recomputed from this (R1)
             source_file=memory.source_file or f"memory/{memory.seq:03d}-{memory.slug}.md",
         )
-        # Applicability premises (task 3) — set only when the rejection is conditioned, so graph.json
-        # stays terse and retrieval reads them with a ``[]`` default. Node attrs (not edges): they are
+        # Applicability premises (task 3) — set only when the rejection is conditioned, so the
+        # projection stays terse and retrieval reads them with a ``[]`` default. Node attrs (not edges): they are
         # read-time liveness checks (:func:`yigraf.retrieval.premise_holds`), not drift-bearing anchors.
         if memory.rejected_valid_when:
             graph.nodes[memory.id]["rejected_valid_when"] = list(memory.rejected_valid_when)
@@ -577,7 +577,7 @@ def recompute_counters(graph: nx.DiGraph) -> None:
     relevance prior can down-weight a superseded decision in O(1) without a traversal. A node with
     ``superseded_in > 0`` is stale: it sinks in ranking but stays available as a rejected alternative.
     Only memory nodes carry ``supersedes`` edges, so we stamp only them — non-memory nodes keep the
-    implicit ``0`` (retrieval reads the counter with a default), keeping ``graph.json`` uncluttered.
+    implicit ``0`` (retrieval reads the counter with a default), keeping the projection uncluttered.
 
     A ``pending`` supersedes edge (of a human-attested node, int:memory-attestation) does NOT count:
     the target stays authoritative (not demoted) until a human resolves the conflict.
