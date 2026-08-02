@@ -4,9 +4,11 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.1.1] — 2026-08-01
 
-Follow-ups to the 1.1.0 typed edge algebra, from a review of that release.
+Follow-ups to the 1.1.0 typed edge algebra from a review of that release, plus a
+documentation pass. No new capability — every change here makes yigraf match what
+it already claimed.
 
 ### Changed
 - **`serves` now rejects a task target.** Its signature was the bare `plan`
@@ -38,6 +40,28 @@ Follow-ups to the 1.1.0 typed edge algebra, from a review of that release.
   sound because bottleneck confidence is non-increasing while depth is
   non-decreasing, and its failure mode is silent — a wrong prune drops a
   blast-radius hit rather than raising.
+
+### Documentation
+- **Code comments no longer describe `graph.json` as the live committed
+  projection.** mem:059 retired it for the gitignored SQLite materialized view,
+  but the comments never followed. `counters.py` was the worst: its module
+  docstring opened on *"v0 keeps `graph.json` fully recomputable"*, explained
+  that branches reconcile through a union-merge driver no longer registered, and
+  pointed the shared-counter model at *"v1 / Enterprise"* work that is now 2.0
+  (`int:yigraf-online-v1`). `graph.py` asserted outright that `graph.json` is
+  committed. Corrected across `counters.py`, `graph.py`, `cli.py`, `memory.py`,
+  `extract.py`, `update.py`, and `status.py`. Anything describing the retirement
+  *accurately* was left alone — `graphdb.py`, the ignore entry for a stale pre-1.0
+  file, and the hidden `graph-merge` command; `merge_node_link` keeps its wording
+  but is now labelled LEGACY, since that command is its only caller.
+- **The guide documents the drift blast radius**, which shipped in 1.1.0
+  undocumented: how to read `node —relation→ target (confidence, hops)`, why an
+  `extracted, direct` hit appears there rather than in the drift lines above it,
+  and that only soft drift ripples.
+- The 1.0.0 entry below listed two extras, `[embeddings]` and `[mcp]`, **neither
+  of which has ever existed** — both are core dependencies. Corrected in place.
+- `docs/guide.md` no longer hardcodes a test count, and the landing page reads
+  `v1.x` rather than a pinned version, so neither can drift again.
 
 ## [1.1.0] — 2026-08-01
 
@@ -214,5 +238,6 @@ Three orthogonal axes on a memory node, all overlaid at read time (never stored)
   resolution UI (consuming the derived `accepted`/`dominant` fields), and a native
   TaskList host-adapter (blocked until a host exposes a writable task API).
 
+[1.1.1]: https://github.com/mansilla/yigraf/releases/tag/v1.1.1
 [1.1.0]: https://github.com/mansilla/yigraf/releases/tag/v1.1.0
 [1.0.0]: https://github.com/mansilla/yigraf/releases/tag/v1.0.0
