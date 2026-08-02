@@ -4,6 +4,41 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+Follow-ups to the 1.1.0 typed edge algebra, from a review of that release.
+
+### Changed
+- **`serves` now rejects a task target.** Its signature was the bare `plan`
+  *family*, which also admits `plan/task` — so `remember --serves task:x/1`
+  landed silently while the command's own guidance said only `int:<slug>` or
+  `plan:<slug>` were valid. The signature is now `plan/plan`, matching what the
+  guidance always claimed. A task is a unit of work, not a goal; pin a decision
+  to a task's code with `--concerns`.
+- **The `yigraf drift` blast-radius section reads `also affected (verify these
+  too)`**, not `transitively affected`. The section was never all-transitive: a
+  depth-1 hit is a *direct* edge onto the drifted locus that `compute_drift`
+  didn't report (it reports an edge only when that edge's own anchor stopped
+  matching). Each line now states its composed relation as an arrow plus a hop
+  count — `mem:abc —concerns→ sym:a.py#f (extracted, direct)` versus
+  `task:m/1 —depends_on→ sym:a.py#f (inferred, 2 hops)` — so an agent can tell
+  an asserted anchor from a derived entailment without decoding the heading.
+
+### Fixed
+- Removed a dead `contextlib` import left in `onlinelog.py` when
+  `PostgresAssertionStore` moved out, and corrected two docstrings that still
+  described it as shipping here.
+- `relations.Reach` documented `path[0]` as reaching `target`, which is false for
+  a reverse walk — there `target` *is* `path[0]`. The docstring now states both
+  directions.
+
+### Added
+- `reach()`'s dominance pruning is now pinned against a brute-force oracle over
+  both walk directions, including dense cycle-rich graphs. The prune is only
+  sound because bottleneck confidence is non-increasing while depth is
+  non-decreasing, and its failure mode is silent — a wrong prune drops a
+  blast-radius hit rather than raising.
+
 ## [1.1.0] — 2026-08-01
 
 Still the **local** engine (`int:yigraf-local-v1`). The hosted, multi-user line

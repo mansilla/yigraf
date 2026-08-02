@@ -1173,12 +1173,26 @@ def mcp_cmd(
 
 
 def _blast_reconcile_lines(graph, drifted_loci: set[str], exclude: set[str]) -> list[str]:
-    """Governed nodes (intent/plan/memory) that TRANSITIVELY depend on a drifted symbol — the typed
-    reverse-reachability ripple (:func:`relations.blast_radius`) beyond the edges drift already anchors,
-    minus any node a direct drift line already named (no double signal). One sorted line per node; empty
-    ⇒ the caller prints nothing (silence is a feature, CLAUDE.md #4). This is the read-only consumer of
-    the composition algebra: ``implements ∘ calls ⇒ depends_on`` lets a change ripple to a task that only
-    *transitively* touches the drifted code — which the direct implements/concerns anchors never name."""
+    """Governed nodes (intent/plan/memory) affected by a drifted symbol — the typed reverse-reachability
+    ripple (:func:`relations.blast_radius`) beyond the edges the drift lines already name, minus any node
+    a direct drift line already named (no double signal). One sorted line per node; empty ⇒ the caller
+    prints nothing (silence is a feature, CLAUDE.md #4). This is the read-only consumer of the composition
+    algebra: ``implements ∘ calls ⇒ depends_on`` lets a change ripple to a task that only *transitively*
+    touches the drifted code — which the direct implements/concerns anchors never name.
+
+    The ripple is NOT all-transitive: a depth-1 hit is a *direct* edge onto the drifted locus that
+    :func:`compute_drift` did not report — it reports an edge only when that edge's OWN anchor stopped
+    matching, so a node correctly anchored to the same symbol (or anchored under a different algo, or
+    holding a dangling forward-reference) surfaces first here. ``exclude`` already drops anything a
+    drift line named, for both drift-bearing relations (``DriftItem.task_id`` is the edge SOURCE — a
+    task for ``implements``, a memory for ``concerns``), so this never double-signals. Each line states
+    the composed relation as an arrow plus its hop count, so the agent can tell an asserted one-hop
+    anchor from a derived multi-hop entailment without having to decode the heading.
+
+    Only *soft* drift can ripple: hard drift means the symbol is gone from the graph, so
+    :func:`relations.reach` returns nothing for it (no node ⇒ no incoming edges to walk back through).
+    The direct hard-drift line is the whole signal there, by construction.
+    """
     best: dict[str, relations.Reach] = {}
     for locus in drifted_loci:
         for r in relations.blast_radius(graph, locus):
@@ -1187,8 +1201,9 @@ def _blast_reconcile_lines(graph, drifted_loci: set[str], exclude: set[str]) -> 
             prior = best.get(r.target)
             if prior is None or (r.depth, r.relation, r.path) < (prior.depth, prior.relation, prior.path):
                 best[r.target] = r
-    return [f"  ⚠ {tid} transitively depends on {r.path[-1]} "
-            f"(via {r.relation}, {r.confidence.lower()}) — re-verify it still holds"
+    return [f"  ⚠ {tid} —{r.relation}→ {r.path[-1]} "
+            f"({r.confidence.lower()}, {'direct' if r.depth == 1 else f'{r.depth} hops'})"
+            f" — re-verify it still holds"
             for tid, r in sorted(best.items())]
 
 
@@ -1216,9 +1231,10 @@ def drift(
         else:
             typer.echo(f"hard drift: {item.task_id} → {item.locator} ({item.detail})")
 
-    # Beyond the directly-anchored drift: which governed nodes TRANSITIVELY depend on a drifted symbol
-    # (a task implementing code that *calls* it, a memory concerning its container)? Typed reverse
-    # reachability. Additive + gated — nothing prints without a corpus of cross-family edges to ripple.
+    # Beyond the edges the lines above named: which governed nodes are reachable back from a drifted
+    # symbol (a task implementing code that *calls* it, a memory concerning its container)? Typed
+    # reverse reachability — each line carries its own hop count, so the heading stays honest about
+    # mixing direct and derived hits. Additive + gated: nothing prints without cross-family edges.
     ripple = _blast_reconcile_lines(
         graph,
         {i.locator for i in items if i.kind in ("soft", "hard")},
@@ -1226,7 +1242,7 @@ def drift(
     )
     if ripple:
         typer.echo("")
-        typer.echo("transitively affected (verify these too):")
+        typer.echo("also affected (verify these too):")
         for line in ripple:
             typer.echo(line)
 

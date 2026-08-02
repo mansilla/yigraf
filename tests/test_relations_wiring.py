@@ -38,6 +38,29 @@ def test_well_typed_ids_rejects_mistyped_locators():
     assert not relations.well_typed_ids("serves", "mem:1", "commit:abc")       # opaque prefix ⇒ ill-typed
 
 
+def test_serves_rejects_a_task_target_matching_its_guidance():
+    """``serves`` names a GOAL — an intent or a whole plan, never a single task. The ``_GOAL`` set is
+    ``plan/plan`` rather than the bare ``plan`` family precisely so this holds: the family tag also
+    admits ``plan/task``, which would let ``--serves task:x/1`` land silently while the CLI guidance
+    says only ``int:``/``plan:`` are valid. Guidance and enforcement must describe the same set."""
+    assert not relations.well_typed_ids("serves", "mem:1", "task:auth/1")
+    assert relations.well_typed_ids("serves", "mem:1", "plan:auth")
+    # ...and the same holds on resolved attrs, which is what the read-time audit walks.
+    plan_attrs = {"family": "plan", "kind": "plan"}
+    task_attrs = {"family": "plan", "kind": "task"}
+    assert relations.well_typed("serves", {"family": "memory"}, plan_attrs)
+    assert not relations.well_typed("serves", {"family": "memory"}, task_attrs)
+
+
+def test_remember_rejects_a_serves_task_target(tmp_path: Path):
+    """End-to-end counterpart: the CLI guides on ``--serves task:…`` instead of writing the edge."""
+    assert runner.invoke(app, ["init", str(tmp_path)]).exit_code == 0
+    result = runner.invoke(app, ["remember", "d", "--serves", "task:auth/1", "--repo", str(tmp_path)])
+    assert result.exit_code == 0
+    assert "--serves points at the goal" in result.output
+    assert "Captured" not in result.output
+
+
 def test_add_edge_to_plan_raises_on_a_mistyped_edge(tmp_path: Path):
     """The artifacts write boundary refuses an ill-typed plan edge before it reaches disk (the guard
     fires ahead of the file read, so a bogus path never matters)."""
@@ -85,6 +108,23 @@ def test_blast_reconcile_names_a_transitive_dependent():
     lines = _blast_reconcile_lines(_chain_graph(), {"sym:a.py#g"}, exclude=set())
     assert len(lines) == 1
     assert "task:m/1" in lines[0] and "sym:a.py#g" in lines[0] and "depends_on" in lines[0]
+
+
+def test_blast_reconcile_distinguishes_a_direct_anchor_from_a_derived_entailment():
+    """The ripple mixes depth-1 direct edges with multi-hop entailments, so each line must say which it
+    is: an agent budgets attention differently for "someone linked this" than for "yigraf inferred it".
+    A direct hit keeps its asserted ``extracted`` confidence; a composed one is capped at ``inferred``."""
+    g = _chain_graph()
+    g.add_node("mem:1", family="memory", kind="decision")
+    g.add_edge("mem:1", "sym:a.py#g", relation="concerns", confidence=EXTRACTED)
+    lines = _blast_reconcile_lines(g, {"sym:a.py#g"}, exclude=set())
+
+    direct = next(ln for ln in lines if "mem:1" in ln)
+    assert "—concerns→ sym:a.py#g" in direct and "(extracted, direct)" in direct
+
+    derived = next(ln for ln in lines if "task:m/1" in ln)
+    assert "—depends_on→ sym:a.py#g" in derived and "(inferred, 2 hops)" in derived
+    assert "transitively" not in direct  # a one-hop anchor is not a transitive dependency
 
 
 def test_blast_reconcile_excludes_directly_named_nodes():

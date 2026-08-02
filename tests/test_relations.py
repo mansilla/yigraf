@@ -2,6 +2,7 @@
 composition, and typed reachability. Graphs are hand-built (per tests/test_invariants.py) so each case
 is cheap and states the property directly."""
 import itertools
+import random
 
 import networkx as nx
 
@@ -238,3 +239,77 @@ def test_mistyped_edges_reports_violations():
 
 def test_reach_on_absent_start_is_empty():
     assert R.reach(_graph(), "sym:nonexistent") == []
+
+
+# =================================================================================================
+# Exactness — reach()'s dominance pruning must not drop a result a full search would find
+# =================================================================================================
+
+
+def _brute_reach(g: nx.DiGraph, start: str, reverse: bool, max_depth: int) -> dict:
+    """Oracle for :func:`R.reach`: enumerate EVERY simple path up to ``max_depth``, keep the ones whose
+    every walk-order prefix is well-typed and composes (reach prunes incrementally, so a path is only
+    reachable if each prefix survives), and take the semiring-best per ``(target, relation)``."""
+    out: dict[tuple[str, str], R.Reach] = {}
+    others = [n for n in g if n != start]
+    for length in range(1, max_depth + 1):
+        for combo in itertools.permutations(others, length):
+            path = (start,) + combo if not reverse else combo + (start,)
+            rels, confs = [], []
+            for a, b in zip(path, path[1:]):
+                if not g.has_edge(a, b):
+                    break
+                attrs = g.edges[a, b]
+                rel = attrs.get("relation")
+                if rel is None or not R.well_typed(rel, g.nodes[a], g.nodes[b]):
+                    break
+                rels.append(rel)
+                confs.append(attrs.get("confidence", EXTRACTED))
+            else:
+                # Every prefix, taken in WALK order, must compose — reverse walks grow right-to-left.
+                if any(R.compose_chain(rels[-k:] if reverse else rels[:k]) is None
+                       for k in range(1, len(rels) + 1)):
+                    continue
+                target = path[0] if reverse else path[-1]
+                cand = R.Reach(target, R.compose_chain(rels), R.combine_path(confs), len(path) - 1, path)
+                key = (target, cand.relation)
+                if key not in out or R._prefers(cand, out[key]):
+                    out[key] = cand
+    return out
+
+
+def _random_graph(rng, families, relations_pool, size, density):
+    g = nx.DiGraph()
+    for i in range(size):
+        family, kind = rng.choice(families)
+        g.add_node(f"n{i}", family=family, **({"kind": kind} if kind else {}))
+    for a, b in itertools.permutations(range(size), 2):
+        if rng.random() < density:
+            g.add_edge(f"n{a}", f"n{b}", relation=rng.choice(relations_pool),
+                       confidence=rng.choice(_LEVELS))
+    return g
+
+
+def test_reach_matches_an_exhaustive_search():
+    """``reach`` prunes a state already seen at >= confidence AND <= depth, which is only sound because
+    bottleneck confidence is non-increasing along a path while depth is non-decreasing. That argument is
+    easy to get wrong (and a wrong prune silently DROPS a blast-radius hit rather than erroring), so it is
+    pinned against a brute-force oracle over both walk directions — including dense, cycle-rich graphs
+    restricted to composing relations, where long alternative paths make the dominance test do real work.
+    """
+    families = [("structure", "function"), ("structure", "file"), ("structure", "class"),
+                ("plan", "task"), ("plan", "plan"), ("memory", None), ("intent", None)]
+    cases = [(random.Random(7), list(R.SIGNATURES), 0.35, 4),
+             (random.Random(99), ["calls", "contains", "implements", "concerns"], 0.7, 5)]
+
+    for rng, pool, density, depth in cases:
+        for _ in range(60):
+            g = _random_graph(rng, families, pool, rng.randint(4, 6), density)
+            for reverse in (False, True):
+                start = f"n{rng.randrange(g.number_of_nodes())}"
+                got = {(r.target, r.relation): r for r in R.reach(g, start, reverse=reverse,
+                                                                  max_depth=depth)}
+                expected = _brute_reach(g, start, reverse, depth)
+                assert set(got) == set(expected), f"reach dropped/invented reaches from {start}"
+                for key, exp in expected.items():
+                    assert (got[key].confidence, got[key].depth) == (exp.confidence, exp.depth)

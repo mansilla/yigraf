@@ -41,7 +41,6 @@ a new authority axis.
 """
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import hmac
 import json
@@ -390,8 +389,9 @@ class SqliteAssertionStore:
     """The reference :class:`AssertionStore` — a stdlib SQLite append-only log + an in-process pub/sub.
     Durable, ordered (``AUTOINCREMENT`` ⇒ monotonic seq), and replayable, so it is a genuine single-host
     online substrate; the fast test suite proves the whole online engine against it with no network.
-    Per-project serialization is a :class:`threading.Lock` (in-process, sufficient for one host); the
-    Postgres shim swaps it for an advisory lock. ``:memory:`` is fine for tests; a path is persistent."""
+    Per-project serialization is a :class:`threading.Lock` (in-process, sufficient for one host); a
+    multi-host deployment's adapter swaps it for a substrate-level lock (yigraf-server uses a Postgres
+    transaction-scoped advisory lock). ``:memory:`` is fine for tests; a path is persistent."""
 
     def __init__(self, path: str | Path = ":memory:") -> None:
         # check_same_thread=False + our own lock: a single connection shared across the (single-host)

@@ -95,7 +95,11 @@ _CALLEE = frozenset({"structure/function", "structure/method", "structure/class"
 _TASK = frozenset({"plan/task"})
 _MEMORY = frozenset({"memory"})
 _INTENT = frozenset({"intent"})
-_GOAL = frozenset({"intent", "plan"})                    # a decision serves an intent OR a plan goal
+#: A decision serves a GOAL — an intent, or a plan as a whole. Deliberately ``plan/plan`` and not the
+#: bare ``plan`` family: the family tag also admits ``plan/task``, which would let ``--serves task:x/1``
+#: land silently while :func:`~yigraf.cli._capture_memory`'s guidance says only ``int:``/``plan:`` are
+#: valid. A task is a unit of work, not a goal — pin a decision to a task's code with ``concerns``.
+_GOAL = frozenset({"intent", "plan/plan"})
 _REVISABLE = frozenset({"memory", "intent"})             # supersedes is same-family belief revision
 
 #: The typed edge grammar. Structure endpoints are grounded in yigraf's own built graph (the observed
@@ -232,8 +236,14 @@ _IMPACT_FAMILIES = frozenset({"plan", "memory", "intent"})
 
 @dataclass(frozen=True)
 class Reach:
-    """One derived reachability fact: ``path[0]`` reaches ``target`` via the composed ``relation`` at
-    ``confidence``. ``path`` is always in forward (source→target) order, whichever way it was walked."""
+    """One derived reachability fact, always read in FORWARD (source→target) order regardless of walk
+    direction: ``path[0]`` —``relation``→ ``path[-1]`` holds at ``confidence`` over ``depth`` hops.
+
+    ``target`` is the node the walk *arrived at*, so which end of ``path`` it is depends on direction:
+    forward, ``target == path[-1]`` (the far end, and ``path[0] == start``); reverse, ``target ==
+    path[0]`` (the far end is ``path[-1] == start``). A consumer wanting "the other end" should read
+    ``path[-1]``/``path[0]`` explicitly rather than assume ``target`` sits at either.
+    """
 
     target: str
     relation: str
