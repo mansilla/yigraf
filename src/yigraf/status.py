@@ -76,7 +76,8 @@ class StatusSummary:
     tasks_open: int
     decisions: int  # active (non-superseded) memory nodes
     drifting: int  # soft + hard drift items (the re-verify count); renames auto-re-anchor, so excluded
-    freshness: str  # "fresh" | "stale" | "absent" — committed graph.json vs the rebuilt graph
+    freshness: str  # "fresh" | "stale" | "absent" — the gitignored SQLite view vs the rebuilt graph
+    # (graph.json + its whole-graph merge lock are retired, mem:059; see _freshness below)
     semantic: bool  # a non-empty embedding index is present (reflects the last build, not a live model load)
     embedded: int  # nodes in that index
     head: str | None  # short HEAD sha, informational
