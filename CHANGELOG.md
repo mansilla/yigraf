@@ -4,7 +4,7 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
-## [1.1.0] — unreleased
+## [1.1.0] — 2026-08-01
 
 Still the **local** engine (`int:yigraf-local-v1`). The hosted, multi-user line
 remains **2.0** — see the 1.0 **Roadmap** below; nothing here moves toward it.
@@ -175,4 +175,5 @@ Three orthogonal axes on a memory node, all overlaid at read time (never stored)
   resolution UI (consuming the derived `accepted`/`dominant` fields), and a native
   TaskList host-adapter (blocked until a host exposes a writable task API).
 
+[1.1.0]: https://github.com/mansilla/yigraf/releases/tag/v1.1.0
 [1.0.0]: https://github.com/mansilla/yigraf/releases/tag/v1.0.0
