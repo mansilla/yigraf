@@ -8,6 +8,13 @@ the same *source-claim* node attrs. The fold additionally carries **derived beli
 old path, which never had them. Provenance rides the envelope as a list (mem:063) where project_into
 stored a dict, so its *content* is compared modulo container. Run against the self-hosted repo — the
 richest real corpus we have — so the proof is over yigraf's own intents, plans, and memories.
+
+**Verdict projections are the same kind of addition** (task:team-reconciliation/1). A resolution is an
+edge between two OTHER beliefs, so the fold emits it *out of a memory node* while the verdict itself
+lives in a ``resolution`` family ``project_into`` has no vocabulary for — and since ``reconcile`` stopped
+writing ``equivalent_to`` frontmatter (mem:66429d96), the old path cannot see it at all. So those edges
+are carved out of the diff and asserted for internal consistency instead: every family edge the fold
+adds must be backed by an authored verdict claiming exactly that pair and relation.
 """
 from pathlib import Path
 
@@ -89,10 +96,44 @@ def test_fold_reproduces_family_node_ids():
     assert _family_nodes(got) == _family_nodes(ref)
 
 
+def _verdict_projections(graph):
+    """The ``(source, relation, target)`` triples this repo's authored verdicts claim to project.
+
+    Claimed, not necessarily present: :func:`yigraf.fold._apply_projection` refuses to overwrite a
+    differing relation on an ordered pair, so a shadowed verdict is recorded on its own node instead of
+    winning the edge. The carve-out below is therefore a subset check, never an equality.
+    """
+    from yigraf.resolution import PROJECTED_RELATION
+    return {(d["left"], PROJECTED_RELATION[d["kind"]], d["right"])
+            for _, d in graph.nodes(data=True)
+            if d.get("family") == "resolution" and d.get("left") and d.get("right")}
+
+
+def _triples(edges):
+    return {(u, rel, v) for u, v, rel, *_rest in edges}
+
+
 def test_fold_reproduces_family_edges():
+    """Every family edge the fold adds over project_into is an authored verdict's projection."""
     base, ref = _projection_reference(REPO, default_config())
     got = fold(FileLog(REPO), base=base.copy())
-    assert _family_edges(got) == _family_edges(ref)
+    extra = _family_edges(got) - _family_edges(ref)
+    assert _triples(extra) <= _verdict_projections(got), \
+        "the fold emitted a family edge project_into did not, and no authored verdict projects it"
+    assert _family_edges(got) - extra == _family_edges(ref)
+
+
+def test_a_verdicts_projected_edge_is_the_folds_own_addition():
+    """Keeps the carve-out above from going vacuous — on an empty ``extra`` it would pass trivially.
+
+    A verdict lands an edge between two beliefs that ``project_into`` cannot produce at all, which is
+    precisely why the resolution family exists (a principal who owns neither belief can still close the
+    conflict, mem:66429d96)."""
+    base, ref = _projection_reference(REPO, default_config())
+    got = fold(FileLog(REPO), base=base.copy())
+    landed = _triples(_family_edges(got)) & _verdict_projections(got)
+    assert landed, "the self-hosted repo has authored no verdicts — this proof needs at least one"
+    assert not (landed & _triples(_family_edges(ref))), "project_into cannot see a projected verdict"
 
 
 def test_fold_has_no_unresolved_family_edges_the_old_path_resolved():

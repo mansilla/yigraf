@@ -5,21 +5,23 @@ M0 ships ``init`` only. Later milestones add the verbs the design names — ``in
 """
 from __future__ import annotations
 
+import datetime as _dt
 import difflib
 import json
 import os
 import re
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import NoReturn
 
 import typer
 
 from yigraf import (__version__, artifacts, counters, embeddings, graphdb, memory,
-                    obligations, relations, retrieval, status, update)
+                    obligations, relations, resolution, retrieval, status, update)
 from yigraf.astnorm import ANCHOR_ALGO, FILE_ANCHOR_ALGO, file_content_hash, parse_file_target
-from yigraf.config import load_config
+from yigraf.config import TOKEN_ENV, load_config
 from yigraf.drift import compute_drift, is_surfaced
 from yigraf.extract import build_graph, symbol_content_hash
 from yigraf.graph import from_node_link, write_graph  # legacy graph.json union-merge driver only
@@ -175,15 +177,17 @@ def _require_workspace(root: Path) -> Path:
     return workspace
 
 
-def _rebuild(root: Path) -> None:
+def _rebuild(root: Path):
     """Re-project the graph so the materialized view reflects a just-written artifact, and refresh the index.
 
     ``refresh_index`` re-embeds only memory/intent nodes whose text changed (a no-op — no model load —
     when nothing did), so a captured decision/intent becomes semantically searchable immediately.
+    Returns the rebuilt graph, so a caller that needs to read what just landed doesn't build it twice.
     """
     config = load_config(root / WORKSPACE_DIRNAME / "config.yaml")
     graph, _ = graphdb.rebuild(root, config)  # build + re-materialize the gitignored view
     embeddings.refresh_index(root, graph, config)
+    return graph
 
 
 def _ranked_with_telemetry(root: Path, graph, config: dict | None = None) -> None:
@@ -790,10 +794,76 @@ def attest(
     _guidance(f"attest takes a memory id (mem:NNN) or an intent (int:<slug>), got: {target}")
 
 
+def _known_belief(repo: Path, belief_id: str) -> bool:
+    """Whether ``belief_id`` names a belief this workspace can see — authored here, or arrived over the
+    sync log and folded into the built graph. The second case is exactly the one a resolution exists to
+    serve, so validation must not be limited to what has a local markdown file."""
+    if memory.find_memory(repo, belief_id) is not None:
+        return True
+    graph, _ = build_graph(repo, load_config(_require_workspace(repo) / "config.yaml"))
+    return belief_id in graph
+
+
+def _author_resolution(repo: Path, kind: str, left: str, right: str, why: str, origin: str | None) -> None:
+    """Write a resolution artifact — the verdict path for a pair this workspace does not own.
+
+    Content-addressed by ``(kind, left, right)``, so re-running is idempotent and two principals who
+    reach the same verdict collapse to one node (:func:`yigraf.resolution.resolution_id`).
+    """
+    existing = resolution.find_resolution(repo, kind, left, right)
+    if existing is not None:
+        _guidance(f"{left} and {right} already have a {kind} verdict ({existing.id}) — nothing to do.")
+    provenance = {"source": "cli"}
+    if origin:
+        provenance["origin"] = origin
+    res = resolution.Resolution(
+        id=resolution.resolution_id(kind, left, right),
+        kind=kind, left=left, right=right, why=why, provenance=provenance)
+    dest = resolution.resolution_path(repo, res)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(resolution.render_resolution(res), encoding="utf-8")
+    _rebuild(repo)
+
+
+@app.command()
+def dispute(
+    left: str = typer.Argument(..., help="A belief id (mem:NNN / int:<slug>) — one side of the disagreement."),
+    right: str = typer.Argument(..., help="The belief it contradicts."),
+    why: str = typer.Option("", "--why", help="What the disagreement is, for whoever resolves it."),
+    origin: str = typer.Option(None, "--origin", help="Free-text provenance detail for the audit trail."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Nominate two beliefs as contradictory — the durable "open a PR" step for a knowledge-conflict.
+
+    The coherence sweep (:mod:`yigraf.contradiction`) is *derived* and fails open to silence when there
+    is no embedding index, which is right for one developer and wrong for a team: the same merged log
+    would otherwise yield a different open-conflict set on every client. A nomination is an assertion,
+    so it rides the log and everyone sees it — index or not, and including the stance-opposed pairs
+    that read as too dissimilar for the cosine gate to ever catch.
+
+    It blocks nothing. Both beliefs stay live and fully weighted; the pair is simply now a named,
+    actor-stamped open question. Close it with ``reconcile`` (both true) or ``supersede`` (a
+    mind-change) — never by deleting the nomination.
+    """
+    _require_workspace(repo)
+    if left == right:
+        _guidance("A belief can't dispute itself — pass the two distinct beliefs of the pair.")
+    for belief_id in (left, right):
+        if not (belief_id.startswith("mem:") or belief_id.startswith("int:")):
+            _guidance(f"dispute takes two belief ids (mem:NNN or int:<slug>); got: {belief_id}")
+        if not _known_belief(repo, belief_id):
+            _guidance(f'No belief with id {belief_id}. Find it with `yigraf context "<topic>"`.')
+    _author_resolution(repo, "dispute", left, right, why, origin)
+    typer.echo(f"Disputed {left} ↔ {right} — an open conflict, now on the log for the team. "
+               f"Resolve with `yigraf reconcile` (both true) or `yigraf supersede` (a mind-change).")
+
+
 @app.command()
 def reconcile(
     left: str = typer.Argument(..., help="A memory id (mem:NNN) — the pair's first belief."),
     right: str = typer.Argument(..., help="A memory id (mem:NNN) — the belief it is compatible with."),
+    why: str = typer.Option("", "--why", help="Why they are compatible (recorded when the verdict is a resolution artifact)."),
+    origin: str = typer.Option(None, "--origin", help="Free-text provenance detail for the audit trail."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
     """Reconcile a co-anchored conflict: record that two live beliefs are *compatible*, not opposed.
@@ -805,22 +875,35 @@ def reconcile(
     mind-change, ``supersede`` instead. This appends an ``equivalent_to`` edge (a *later append*, never
     an edit of either belief) that :mod:`yigraf.contradiction` reads to drop the pair from the sweep.
     Both beliefs stay live and fully weighted; only the redundant conflict-finding goes away.
+
+    The verdict is always its own append — a resolution artifact (:mod:`yigraf.resolution`) — never an
+    edit of either belief, for two reasons that turn out to be the same reason.
+
+    *Ownership.* The resolving principal frequently owns neither belief (both arrived over the sync
+    log, so there is no local artifact to edit at all). A conflict only its authors may close would
+    deadlock the moment one of them leaves the team.
+
+    *Content-addressing.* ``equivalent_to`` frontmatter used to be written onto ``left``'s artifact when
+    it happened to be local. That silently broke the ``memid-v1`` invariant: the id hashes what a memory
+    says and links to, but :func:`yigraf.memory.memory_id` does not cover ``equivalent_to``, so the edit
+    changed the assertion's *body* while leaving its *id* fixed. Two different bodies then shared one id,
+    and ``yigraf sync`` — which identifies an assertion by id — could never see that the belief had
+    changed, so the reconciliation stayed silently local forever. An append has no such problem: it is a
+    new node with its own id. Existing ``equivalent_to`` frontmatter is still *read* for compatibility.
     """
     _require_workspace(repo)
+    if left == right:
+        _guidance("A memory can't be reconciled with itself — pass the two distinct beliefs of the pair.")
     for mem_id in (left, right):
         if not mem_id.startswith("mem:"):
             _guidance(f"reconcile takes two memory ids (mem:NNN mem:NNN); got: {mem_id}")
-        if memory.find_memory(repo, mem_id) is None:
+        if not _known_belief(repo, mem_id):
             _guidance(f'No memory node with id {mem_id}. Find it with `yigraf context "<topic>"`.')
-    if left == right:
-        _guidance("A memory can't be reconciled with itself — pass the two distinct beliefs of the pair.")
-    path = memory.find_memory(repo, left)
-    node = memory.read_memory(path)
-    if right in node.equivalent_to:
-        _guidance(f"{left} is already reconciled with {right} — nothing to do.")
-    node.equivalent_to = sorted(dict.fromkeys(node.equivalent_to + [right]))
-    path.write_text(memory.render_memory(node), encoding="utf-8")
-    _rebuild(repo)
+
+    # Duplicate detection lives in _author_resolution (by content-addressed verdict id). Legacy
+    # ``equivalent_to`` frontmatter deliberately does NOT block: promoting one to a real append is how
+    # a pre-sync workspace makes its old, purely-local reconciliations visible to the team.
+    _author_resolution(repo, "reconcile", left, right, why, origin)
     typer.echo(f"Reconciled {left} ↔ {right} (equivalent_to) — the co-anchored pair is marked "
                f"compatible, so the coherence sweep no longer surfaces it. Both stay live.")
 
@@ -1248,6 +1331,167 @@ def drift(
 
     if any(item.kind in ("soft", "hard") for item in items):
         raise typer.Exit(code=1)
+
+
+def _for_the_wire(assertion, repo: Path, session: str):
+    """Complete an assertion's provenance envelope for the online ingest gate.
+
+    The two substrates want different things and both are right. The git-file substrate records only
+    what an *authored artifact* honestly knows (``source``, and an ``origin`` if given) — a committed
+    markdown file cannot know the sha of the commit that will contain it. The online log demands full
+    attribution (``REQUIRED_PROVENANCE_FIELDS``) because it is a shared, signed audit trail. The gap is
+    real, so it is closed here, at the transport boundary, rather than by weakening either side.
+
+    Nothing is invented: ``session`` identifies this sync run, ``commit_sha`` is the HEAD the push went
+    out from, ``ts`` is the push time, and ``model`` is whatever the artifact recorded — falling back to
+    an explicit ``unattributed`` rather than a plausible-looking guess. ``actor`` is deliberately absent:
+    the server stamps it from the authenticated principal and a client claim would be meaningless.
+    Provenance is not part of the content-addressed id (mem:063), so completing it here cannot change
+    which node the assertion folds into.
+    """
+    from dataclasses import replace
+
+    record = dict(assertion.provenance[0]) if assertion.provenance else {}
+    head = counters._head_sha(repo)
+    record.setdefault("source", "cli")
+    record.setdefault("session", session)
+    record.setdefault("model", record.get("source") or "unattributed")
+    record.setdefault("commit_sha", head or "uncommitted")
+    record.setdefault("ts", _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"))
+    return replace(assertion, provenance=[record])
+
+
+def _online_settings(repo: Path, config: dict) -> tuple[str, str, Path]:
+    """``(project, remote, replica_path)`` for a workspace configured for the shared log, or guidance.
+
+    The token is read from the environment, never the config: ``config.yaml`` is committed.
+    """
+    online = config.get("online") or {}
+    project, remote = online.get("project"), online.get("remote")
+    if not project or not remote:
+        absent = [f"online.{k}" for k, v in (("project", project), ("remote", remote)) if not v]
+        missing = " and ".join(absent) + (" are" if len(absent) > 1 else " is")
+        _guidance(
+            f"This workspace isn't connected to a shared log — {missing} unset in "
+            f"yigraf/config.yaml. Set both (project: <name>, remote: https://…), export "
+            f"{TOKEN_ENV}=<token>, then re-run `yigraf sync`. Until then yigraf works fully offline.")
+    replica = Path(repo) / "yigraf" / (online.get("replica") or "cache/replica.db")
+    return project, remote, replica
+
+
+@app.command()
+def sync(
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Report what would move without writing anything."),
+) -> None:
+    """Reconcile this workspace with the shared log: pull the team's assertions, push yours.
+
+    git-shaped, and conflict-free by construction. **Pull** fetches the delta since the replica's
+    cursor and cryptographically re-derives the Merkle links over it before folding anything in, so a
+    server that dropped, reordered, or forged an event is caught client-side. **Push** sends every
+    assertion you authored that the log has not seen, in causal order so parents land first.
+
+    A push is never rejected for disagreeing. Assertions are content-addressed and the fold re-derives
+    belief from the whole set, so merging two logs is a commutative set-union — there is no
+    last-writer-wins and nothing is overwritten. Two people asserting the *same* claim collapse to one
+    node; two people asserting *opposed* claims both land, and the pair surfaces afterwards as a
+    knowledge-conflict for a principal (`yigraf status`, then `reconcile` / `supersede` / `dispute`).
+    The only writes the server refuses are structurally malformed ones, and it says how to fix them.
+
+    Reads never touch the network: the replica is local, so `context`/`status`/hooks stay fast and work
+    offline. Only assertions cross the wire — your source never does.
+    """
+    _require_workspace(repo)
+    config = load_config(_require_workspace(repo) / "config.yaml")
+    project, remote_url, replica_path = _online_settings(repo, config)
+    token = os.environ.get(TOKEN_ENV)
+    if not token:
+        _guidance(f"No {TOKEN_ENV} in the environment — `yigraf sync` needs a bearer token for "
+                  f"{remote_url}. Export {TOKEN_ENV}=<token> and re-run.")
+
+    from yigraf.filelog import FileLog
+    from yigraf.onlinelog import IngestRejected, SqliteAssertionStore
+    from yigraf.sync import HttpRemote, SyncError, push_assertion
+    from yigraf.sync import sync as sync_replica
+
+    replica_path.parent.mkdir(parents=True, exist_ok=True)
+    store = SqliteAssertionStore(replica_path)
+    remote = HttpRemote(remote_url, token)
+
+    try:
+        local = list(FileLog(repo).iter_assertions_in_causal_order())
+        if dry_run:
+            head = remote.head(project)
+            cursor_seq, _ = store.get_cursor(project)
+            known = store.known_ids(project)
+            outgoing = [a for a in local if a.id not in known]
+            typer.echo(f"{project} @ {remote_url}: remote head seq {head.seq}, local cursor {cursor_seq} "
+                       f"⇒ {max(0, head.seq - cursor_seq)} to pull, {len(outgoing)} to push. "
+                       f"Nothing written (--dry-run).")
+            return
+
+        result = sync_replica(store, remote, project)
+
+        # Push after pulling, git-style: everything the log hasn't seen, in causal order so parents
+        # land first. Identity is the assertion ``id`` (content-addressed, excludes provenance —
+        # mem:063), NOT the event key, because the server stamps ``actor`` and re-signs on ingest.
+        known = store.known_ids(project)
+        outgoing = [a for a in local if a.id not in known]
+        session = f"sync-{uuid.uuid4().hex[:12]}"
+        pushed = 0
+        for assertion in outgoing:
+            try:
+                push_assertion(store, remote, project, _for_the_wire(assertion, repo, session))
+                pushed += 1
+            except IngestRejected as exc:  # design law #1: a rejected write teaches the fix
+                typer.echo(f"⚠ {assertion.id} rejected by the server: {exc}")
+        if pushed:  # write-through leaves the cursor behind its own append; a second pull advances it
+            result = sync_replica(store, remote, project)
+        # Read the log's order out before the store closes — it is what says whose turn a conflict is.
+        events, local_ids = store.iter_events(project), {a.id for a in local}
+    except SyncError as exc:
+        # A broken chain is a genuine stop, not a recoverable condition: the replica is NOT advanced,
+        # so re-running after the server is fixed resumes cleanly from the last verified cursor.
+        typer.echo(f"Sync aborted — the pulled delta failed chain verification: {exc}\n"
+                   f"The replica was left untouched. This means the remote's log is inconsistent with "
+                   f"what this client last verified; nothing local is lost.")
+        raise typer.Exit(code=1) from exc
+    finally:
+        store.close()
+
+    graph = _rebuild(repo)
+    typer.echo(f"Synced {project}: pulled {result.pulled}, pushed {pushed} — head seq {result.head.seq} "
+               f"({result.head.head_hash[:12]}).")
+    typer.echo("Their assertions now anchor to your code: run `yigraf drift` to see what your edits "
+               "have moved under, and `yigraf status` for open conflicts.")
+    notice = _responsibility_notice(repo, config, graph, events, local_ids)
+    if notice:
+        typer.echo(notice)
+
+
+def _responsibility_notice(repo: Path, config: dict, graph, events, local_ids: set[str]) -> str:
+    """Whose turn the open conflicts are, at the moment they arrive (task #6, int:team-reconciliation).
+
+    This is the one place the answer is *timely*. A conflict is created by the second belief landing, and
+    a pull is when that lands on your machine — so telling the later writer here is telling them at the
+    moment they can act, rather than whenever they next happen to run ``yigraf status``. It costs nothing
+    extra: ``detect_conflicts`` runs on the graph the rebuild above just produced, and the log's order is
+    already in the replica we just reconciled.
+
+    Fail-open to silence. The sync itself has already succeeded and been reported by the time this runs;
+    a surfacing that raised would turn a completed sync into a failure, which is the wrong trade for a
+    notice. Nothing here is load-bearing — ``yigraf status`` still holds the same findings.
+    """
+    try:
+        from yigraf.contradiction import detect_conflicts
+        from yigraf.responsibility import assign, landings, own_actor, render_notice
+
+        conflicts = detect_conflicts(graph, repo, config)
+        if not conflicts:
+            return ""
+        return render_notice(assign(conflicts, landings(events), own_actor(events, local_ids)))
+    except Exception:  # noqa: BLE001 - a notice must never retract a sync that already succeeded
+        return ""
 
 
 @app.command()

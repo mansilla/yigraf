@@ -30,6 +30,7 @@ import json
 import subprocess
 import time
 from pathlib import Path
+from typing import Any, Iterable
 
 import networkx as nx
 
@@ -136,8 +137,68 @@ def _survival_for(root: Path, repo_relpaths: list[str], cache) -> dict[str, int]
     return survival
 
 
+def _log_survival(events: Iterable[Any]) -> dict[str, int]:
+    """Survival on the SHARED LOG's clock: later assertions the log accrued from a *different*
+    authoring session (task #7 of plan:team-reconciliation).
+
+    The git clock cannot measure a belief that arrived over the wire. Only assertions cross the wire
+    (int:team-reconciliation), so a teammate's memory has no file in *my* history — it scores ``0``
+    forever, however long it has stood in theirs. The shared log is the history it actually lives in,
+    and its monotonic ``seq`` is the one clock every client holds identically — strictly *better*
+    aligned with R2's "identical on every clone" than a git count, which varies with branch and HEAD.
+
+    **Why a different session, not simply later events.** A workspace that adopts the shared log pushes
+    its whole backlog in one sync run, so raw ``head - seq`` would hand the first of 70 backfilled
+    memories a survival of 69 the instant it landed — and ``proposed_ttl`` would then archive mined
+    candidates that arrived seconds ago. One push is one authoring act, not history, so siblings of the
+    same ``provenance.session`` do not age each other. An event with no session ages everything (each
+    gets its own sentinel), which is the conservative direction: it never *inflates* a sibling's count.
+
+    Keyed on each assertion's FIRST landing — a later independent re-assertion of the same content
+    (mem:060) unions provenance onto a belief that has already been standing, and must not reset its age.
+    """
+    ordered = sorted(events, key=lambda e: e.seq)
+    out: dict[str, int] = {}
+    per_session: dict[str, int] = {}
+    total_after = 0
+    for index in range(len(ordered) - 1, -1, -1):  # backwards, so the LAST write per id is its first landing
+        event = ordered[index]
+        session = (event.provenance or {}).get("session") or f"\x00{index}"
+        out[event.id] = total_after - per_session.get(session, 0)
+        per_session[session] = per_session.get(session, 0) + 1
+        total_after += 1
+    return out
+
+
+def log_survival(root: Path, config: dict) -> dict[str, int]:
+    """:func:`_log_survival` over this workspace's synced replica (``{}`` offline, or on any failure).
+
+    Fail-open exactly like :func:`yigraf.extract._fold_replica`: an unconfigured, absent, or corrupt
+    replica leaves every belief on the git clock, so a workspace that has never synced is unaffected —
+    and costs nothing, since the ``online.project`` check short-circuits before any I/O.
+    """
+    online = (config or {}).get("online") or {}
+    project = online.get("project")
+    if not project:
+        return {}
+    replica = Path(root) / "yigraf" / (online.get("replica") or "cache/replica.db")
+    if not replica.exists():
+        return {}
+    try:
+        from yigraf.onlinelog import SqliteAssertionStore
+
+        store = SqliteAssertionStore(replica)
+        try:
+            return _log_survival(store.iter_events(project))
+        finally:
+            store.close()
+    except Exception:  # noqa: BLE001 - a broken replica must degrade to the git clock, never break the build
+        return {}
+
+
 def apply_maturity(graph: nx.DiGraph, root: Path, config: dict, cache=None) -> None:
-    """Stamp git-derived ``survival`` + the provenance-derived *landed* tier on every memory node.
+    """Stamp ``survival`` (git and/or the shared log) + the provenance-derived *landed* tier on every
+    memory node.
 
     Promotion is no longer git-derived (mem:033 — commit-age treats un-touched code as validated, the
     "silence is not evidence" fallacy). ``settled`` is a **read-time verdict** from survived
@@ -153,6 +214,18 @@ def apply_maturity(graph: nx.DiGraph, root: Path, config: dict, cache=None) -> N
     Survival is derived in a flat number of git calls — batched across all memory paths and, given a
     ``cache`` (the build path), memoized by ``HEAD`` so an edit-triggered rebuild that hasn't committed
     re-uses the prior survival instead of re-walking history (caveats.md M9 / DESIGN R2).
+
+    **The strongest evidence either history offers** (task #7). Survival asks one question — how much
+    history has this belief outlived un-superseded — and there are two places to look: this clone's git
+    log, and the shared assertion log (:func:`log_survival`). Each is silent about what the other saw,
+    so each can only *under*-count: git scores a teammate's belief ``0`` because it has no file here,
+    and the log scores a long-committed local belief ``0`` because it only just arrived on the wire.
+    Two conservative lower bounds on the same quantity ⇒ take the larger. That is not a tiebreak between
+    competing claims (mem:95444dc rules those out); it is one belief measured twice.
+
+    Concretely: a teammate's belief stops reading as permanently immature, and adopting a shared log
+    never resets the durability a decision already earned in git. An offline workspace is untouched —
+    ``log_survival`` returns ``{}`` before any I/O.
     """
     paths = sorted({
         f"yigraf/{attrs['source_file']}"
@@ -160,11 +233,13 @@ def apply_maturity(graph: nx.DiGraph, root: Path, config: dict, cache=None) -> N
         if attrs.get("family") == MEMORY_FAMILY and attrs.get("source_file")
     })
     survival = _survival_for(root, paths, cache)
-    for _, attrs in graph.nodes(data=True):
+    shared = log_survival(root, config)
+    for node_id, attrs in graph.nodes(data=True):
         if attrs.get("family") != MEMORY_FAMILY:
             continue
         source = attrs.get("source_file")
-        attrs["survival"] = survival.get(f"yigraf/{source}", 0) if source else 0
+        git_clock = survival.get(f"yigraf/{source}", 0) if source else 0
+        attrs["survival"] = max(git_clock, shared.get(node_id, 0))
         # The landed base (promotion above it is the read-time verdict; build stays recomputable).
         attrs["maturity"] = landing_maturity(attrs.get("provenance"))
 
@@ -332,8 +407,9 @@ def classify_gc(graph: nx.DiGraph, config: dict | None = None) -> dict[str, str]
       graduated to ``working`` and is skipped), so callers must overlay telemetry + run
       :func:`apply_maturity_verdict` first. It expires speculation by silence — which is safe *only*
       because the proposed tier is quarantine (near-zero weight, mem:050); it NEVER touches a genuine
-      ``working``/``settled`` decision (silence is not evidence there — mem:033). Git-survival is the
-      staleness clock (recomputable), so a no-git repo never expires a candidate (survival stays 0).
+      ``working``/``settled`` decision (silence is not evidence there — mem:033). Survival is the
+      staleness clock (recomputable, and for a synced belief the shared log's — :func:`apply_maturity`),
+      so a repo with neither git nor a replica never expires a candidate (survival stays 0).
     """
     ttl = int((config or {}).get("proposed_ttl", 30))
     actions: dict[str, str] = {}

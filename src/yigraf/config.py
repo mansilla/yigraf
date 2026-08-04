@@ -96,7 +96,20 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "obligation_notice": True,
         "obligation_notice_max": 5,
     },
+    # Online (int:yigraf-online-v1) — the shared log this workspace participates in. `project` is the
+    # key the hosted log is scoped by; `replica` is the local SQLite mirror `yigraf sync` maintains,
+    # relative to the workspace dir. With either unset, or the replica absent, the build is purely
+    # local — the offline default, and what every workspace does until it opts in.
+    "online": {
+        "project": None,
+        "remote": None,
+        "replica": "cache/replica.db",
+    },
 }
+
+#: Environment variable holding the bearer token for the hosted log. Deliberately NOT a config key —
+#: config.yaml is committed, and a token in git is a leaked token.
+TOKEN_ENV = "YIGRAF_TOKEN"
 
 # Commented YAML written by ``yigraf init``. A test asserts this parses to DEFAULT_CONFIG, so the
 # friendly file and the in-code defaults can never silently drift apart.
@@ -205,6 +218,20 @@ status:
   # repeated while it stays open — and it never blocks the agent's workflow.
   obligation_notice: true       # false ⇒ the statusline counts stay the only human surface
   obligation_notice_max: 5      # max obligations listed per notice (overflow is stated, not hidden)
+
+# --- Online (int:yigraf-online-v1) — the shared log this workspace participates in ---
+# Set `project` to the key the hosted log is scoped by, and the build folds the synced replica on top
+# of your authored artifacts: a teammate's intent starts drifting against YOUR local code, and their
+# beliefs enter `context`/`status` exactly like your own. Leave `project` empty (or let the replica be
+# absent) and the build is purely local — the offline default. Structure is never synced; only
+# assertions cross the wire, so reasoning stays on your machine.
+# `yigraf sync` pulls the delta, verifies it chains, then pushes anything you authored that the log
+# hasn't seen. The bearer token comes from the YIGRAF_TOKEN env var, never from this file — config.yaml
+# is committed, and a token in git is a leaked token.
+online:
+  project:                      # e.g. yigraf-server — empty means offline
+  remote:                       # e.g. https://yigraf.online — empty means offline
+  replica: cache/replica.db     # local SQLite mirror, relative to the yigraf/ workspace dir
 """
 
 

@@ -148,14 +148,18 @@ to re-anchor — or reopen the task if the change actually regressed it. Never f
 automatically. You won't see these at the edit hook (a closed task must not nag mid-edit); they surface
 in `yigraf context`, at SessionStart, and to your principal at the turn boundary.
 
-**Conflict** — two live decisions anchored to the same code saying nearly the same thing, never
-reconciled. Read both, then:
+**Conflict** — two live beliefs saying nearly the same thing about the same code, never reconciled.
+Either the cosine sweep found them, or a principal *nominated* them with `dispute`. Read both, then:
 - they're compatible / one refines the other → `yigraf reconcile mem:<a> mem:<b>`
 - one genuinely wins → `yigraf supersede mem:<loser> "<the surviving claim>" --why "…"`
+- you can see they conflict but the call isn't yours → `yigraf dispute mem:<a> mem:<b> --why "…"`.
+  This *nominates* the pair: it blocks nothing, both stay live, but the open question is now durable
+  and actor-stamped so it rides the log to everyone — unlike a swept finding, which is index-derived
+  and invisible to anyone without an index. Use it instead of silently moving on.
 - **pending** conflict (an agent supersede of a human-attested decision is held, never applied) → you
   cannot clear this one. It needs `yigraf attest` from a human. Surface it and move on.
 - same provenance tier with no preferred side → that is not a bug. Two equal-authority beliefs stay an
-  open question for the principal rather than being tie-broken. Ask.
+  open question for the principal rather than being tie-broken. Ask, or `dispute` it.
 
 (`yigraf drift` exits non-zero on drift — that's the commit/CI gate, not something you poll.)
 

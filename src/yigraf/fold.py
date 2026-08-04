@@ -45,8 +45,10 @@ from typing import Any
 
 import networkx as nx
 
+from typing import Iterable
+
 from yigraf.graph import empty_graph
-from yigraf.log import Assertion, Log
+from yigraf.log import Assertion, Log, causal_order
 
 #: Node attributes that are DERIVED BELIEF — the fold's own output, recomputed from the whole assertion
 #: set on every fold — as opposed to the SOURCE CLAIM a writer asserts (task #5). Keeping these out of
@@ -72,6 +74,21 @@ def fold(log: Log, base: nx.DiGraph | None = None) -> nx.DiGraph:
     return graph
 
 
+def fold_assertions(assertions: Iterable[Assertion], base: nx.DiGraph | None = None) -> list[Assertion]:
+    """Fold an assertion sequence onto ``base``, returning what was folded (in causal order).
+
+    The seam for a caller folding a *second* substrate onto a graph the first already populated — the
+    replica-over-FileLog case in :func:`yigraf.extract.build_graph`. Identical to :func:`fold` except it
+    takes assertions rather than a :class:`~yigraf.log.Log`, and hands back the linearized sequence so
+    the caller can count or report on it without iterating the substrate twice.
+    """
+    graph = base if base is not None else empty_graph()
+    ordered = causal_order(list(assertions))
+    for assertion in ordered:
+        _apply(graph, assertion)
+    return ordered
+
+
 def _apply(graph: nx.DiGraph, assertion: Assertion) -> None:
     """Fold one assertion into ``graph``: upsert its node, then project its edges + supersede discipline.
 
@@ -94,6 +111,37 @@ def _apply(graph: nx.DiGraph, assertion: Assertion) -> None:
     )
     for edge in body.get("edges", []):
         _apply_edge(graph, assertion.id, edge)
+    for edge in body.get("projections", []):
+        _apply_projection(graph, assertion.id, edge)
+
+
+def _apply_projection(graph: nx.DiGraph, assertion_id: str, edge: dict[str, Any]) -> None:
+    """Project an edge between two nodes that are *both* other assertions (mem:062).
+
+    A resolution's verdict is an edge between the two beliefs it judges, neither of which the resolving
+    principal need own — that is the whole point of the family (:mod:`yigraf.resolution`). Every other
+    assertion only ever emits edges *from itself*, so this is the one place a body may name its own
+    source. Causal parents make the operands present (a resolution is authored-after both), so this
+    normally resolves; a partial replica that is missing one is fail-open (R5) — the spec is stashed on
+    the resolution node under a key :func:`~yigraf.filelog.denormalize_danglings` leaves alone, so a
+    later fold with the full log recovers it and nothing downstream sees a half-applied verdict.
+    """
+    source = edge.get("source")
+    if source not in graph:
+        graph.nodes[assertion_id].setdefault("dangling_projections", []).append(edge)
+        return
+    # A DiGraph holds ONE edge per ordered pair, so two verdicts on the same pair (a dispute and a
+    # later reconcile) would silently clobber each other — and which survived would be decided by the
+    # causal-order id tiebreak, i.e. arbitrarily. Refuse to overwrite a different relation: the first
+    # edge stands and the shadowed spec is kept on this verdict's own node. Nothing is lost, because
+    # the resolution NODES are the durable record of who judged what — :mod:`yigraf.contradiction`
+    # reads verdicts from them, never from this edge, exactly so a shadowed projection cannot change
+    # which conflicts are open.
+    existing = graph.edges[source, edge["target"]] if graph.has_edge(source, edge["target"]) else None
+    if existing is not None and existing.get("relation") != edge["relation"]:
+        graph.nodes[assertion_id].setdefault("shadowed_projections", []).append(edge)
+        return
+    _apply_edge(graph, source, edge)
 
 
 def _apply_edge(graph: nx.DiGraph, source: str, edge: dict[str, Any]) -> None:

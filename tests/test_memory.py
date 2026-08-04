@@ -507,15 +507,24 @@ def test_agent_supersede_of_agent_node_applies_normally(tmp_path: Path):
 
 
 def test_reconcile_wires_an_equivalent_to_edge(tmp_path: Path):
-    """reconcile appends `equivalent_to` to the first belief's file (round-trips) and projects it as an
-    `equivalent_to` edge — the source-of-truth writer for the reconciliation relation the coherence
-    sweep (yigraf.contradiction._reconciled) reads. Both beliefs stay live (no supersede, no demotion)."""
+    """reconcile records the verdict as its own append (a resolution artifact) and projects it as an
+    `equivalent_to` edge — the relation the coherence sweep (yigraf.contradiction._reconciled) reads.
+    Both beliefs stay live (no supersede, no demotion).
+
+    Deliberately NOT written as `equivalent_to` frontmatter on the first belief any more: memid-v1 does
+    not cover that field, so the edit changed an assertion's body while leaving its id fixed — which
+    made the reconciliation invisible to `yigraf sync` and broke content-addressing. See the reconcile
+    docstring in cli.py."""
+    from yigraf import resolution
+
     root = _repo(tmp_path)
     m1 = _remember(root, "first belief about refresh", concerns=[SYM])
     m2 = _remember(root, "a compatible restatement about refresh", concerns=[SYM])
     _run(["reconcile", m1, m2, "--repo", str(root)])
 
-    assert memory.read_memory(memory.find_memory(root, m1)).equivalent_to == [m2]  # round-trips
+    verdicts = resolution.iter_resolutions(root)
+    assert [(v.kind, v.left, v.right) for v in verdicts] == [("reconcile", m1, m2)]
+    assert memory.read_memory(memory.find_memory(root, m1)).equivalent_to == []  # belief untouched
     g = _graph(root)
     assert g.edges[m1, m2]["relation"] == "equivalent_to"  # projected
     assert not g.nodes[m1].get("superseded_in") and not g.nodes[m2].get("superseded_in")  # both live

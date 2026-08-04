@@ -222,6 +222,94 @@ def test_structure_cache_round_trips_maturity(tmp_path: Path):
 
 
 # --------------------------------------------------------------------------------------------------
+# The shared log's clock — survival for a belief that arrived over the wire (team-reconciliation #7)
+# --------------------------------------------------------------------------------------------------
+
+
+def _event(seq: int, node_id: str, session: str):
+    """The two fields the log clock reads off a :class:`~yigraf.onlinelog.StoredEvent`."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(seq=seq, id=node_id, provenance={"session": session, "actor": "a@b.c"})
+
+
+def test_log_survival_ages_a_belief_by_later_appends():
+    """The log is the history a synced belief lives in; its ``seq`` order is that belief's clock."""
+    events = [_event(1, "mem:a", "s1"), _event(2, "mem:b", "s2"), _event(3, "mem:c", "s3")]
+    assert counters._log_survival(events) == {"mem:a": 2, "mem:b": 1, "mem:c": 0}
+
+
+def test_a_backfill_push_does_not_age_its_own_siblings():
+    """One push is one authoring act, not history (task #7).
+
+    Adopting the shared log sends the whole backlog in a single sync run. Counting raw ``head - seq``
+    would hand the first of them an instant survival of N-1 — and ``proposed_ttl`` would then archive
+    mined candidates that landed seconds ago. Siblings of one session do not age each other; a genuinely
+    later push does."""
+    backfill = [_event(i, f"mem:{i}", "sync-backfill") for i in range(1, 4)]
+    assert counters._log_survival(backfill) == {"mem:1": 0, "mem:2": 0, "mem:3": 0}
+    later = counters._log_survival(backfill + [_event(4, "mem:4", "sync-later")])
+    assert later["mem:1"] == 1 and later["mem:4"] == 0
+
+
+def test_a_sessionless_event_never_masks_another():
+    """Absent ``session`` falls back to a per-event sentinel, so unattributed events still age each
+    other — the conservative direction (it can only under-count, never inflate)."""
+    from types import SimpleNamespace
+
+    events = [SimpleNamespace(seq=i, id=f"mem:{i}", provenance={}) for i in (1, 2, 3)]
+    assert counters._log_survival(events) == {"mem:1": 2, "mem:2": 1, "mem:3": 0}
+
+
+def test_a_re_assertion_does_not_reset_a_standing_belief():
+    """mem:060: an independent rediscovery unions provenance onto a belief that has been standing —
+    the FIRST landing is when the claim entered the shared history, so that is what the clock counts."""
+    events = [_event(1, "mem:a", "s1"), _event(2, "mem:x", "s2"), _event(3, "mem:a", "s3")]
+    assert counters._log_survival(events)["mem:a"] == 2
+
+
+def test_log_survival_is_silent_for_an_offline_workspace(tmp_path: Path):
+    """No ``online.project`` ⇒ no I/O at all, so an offline workspace keeps the git clock exactly."""
+    assert counters.log_survival(tmp_path, {}) == {}
+    assert counters.log_survival(tmp_path, {"online": {"project": "p"}}) == {}  # replica absent
+
+
+def test_a_corrupt_replica_degrades_to_the_git_clock(tmp_path: Path):
+    """Fail-open (design law #5): a broken replica must never break the build."""
+    replica = tmp_path / "yigraf" / "cache" / "replica.db"
+    replica.parent.mkdir(parents=True)
+    replica.write_bytes(b"not a sqlite database")
+    assert counters.log_survival(tmp_path, {"online": {"project": "p"}}) == {}
+
+
+def test_survival_takes_the_stronger_of_the_two_clocks(monkeypatch):
+    """Each clock is blind to what the other saw, so each can only under-count: git scores a teammate's
+    belief 0 (no file here), the log scores a long-committed local belief 0 (it only just arrived on the
+    wire). Two lower bounds on one quantity ⇒ take the larger, so a synced belief stops reading as
+    permanently immature AND adopting a shared log never resets durability already earned in git."""
+    monkeypatch.setattr(counters, "_survival_map", lambda root, paths: {p: 4 for p in paths})
+    monkeypatch.setattr(counters, "log_survival",
+                        lambda root, config: {"mem:001": 11, "mem:003": 0})
+    g = _mem_graph(source_file="memory/001-x.md")
+    g.add_node("mem:002", family="memory", kind="decision", source_file="memory/002-y.md")
+    g.add_node("mem:003", family="memory", kind="decision", source_file="memory/003-z.md")
+    counters.apply_maturity(g, Path("."), {"maturity_k": 3})
+    assert g.nodes["mem:001"]["survival"] == 11  # the log has seen more of it
+    assert g.nodes["mem:002"]["survival"] == 4  # never pushed ⇒ the git clock, exactly as before
+    assert g.nodes["mem:003"]["survival"] == 4  # freshly pushed, but git's durability is not undone
+
+
+def test_a_teammates_belief_is_no_longer_permanently_immature(monkeypatch):
+    """The bug task #7 names: with no local artifact there is no path to score, so git returns 0 forever
+    however long the belief has stood in the log."""
+    monkeypatch.setattr(counters, "_survival_map", lambda root, paths: {})
+    monkeypatch.setattr(counters, "log_survival", lambda root, config: {"mem:001": 7})
+    g = _mem_graph(source_file="memory/001-theirs.md")
+    counters.apply_maturity(g, Path("."), {"maturity_k": 3})
+    assert g.nodes["mem:001"]["survival"] == 7
+
+
+# --------------------------------------------------------------------------------------------------
 # Relevance terms — recency + maturity lift the prior
 # --------------------------------------------------------------------------------------------------
 

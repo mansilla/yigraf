@@ -123,6 +123,92 @@ def test_overflow_is_stated_rather_than_silently_truncated():
     assert notice.count("task:p/") == 3
 
 
+# --- Conflict verbs: the notice must name the verb that actually closes THAT conflict --------------
+
+
+def _conflict_notice(graph=None, **kw) -> str:
+    from yigraf.contradiction import Conflict
+    base = dict(anchor="sym:a.py#f", left="mem:aaa", right="mem:bbb", cosine=0.91)
+    return obligations._conflict(Conflict(**{**base, **kw}), graph).render()
+
+
+def _graph_with(**provenance_by_id):
+    """A minimal graph whose nodes carry folded provenance (mem:063)."""
+    import networkx as nx
+    g = nx.DiGraph()
+    for node_id, prov in provenance_by_id.items():
+        g.add_node(node_id.replace("_", ":"), family="memory", provenance=prov)
+    return g
+
+
+def test_a_pending_conflict_routes_to_attest_because_the_agent_cannot_clear_it():
+    line = _conflict_notice(pending=True)
+    # mem:048: an agent supersede of a human-attested node is held pending. Offering `reconcile` here
+    # would be telling the agent to do the one thing it structurally cannot.
+    assert "yigraf attest" in line and "only a principal" in line
+    assert "yigraf reconcile" not in line
+
+
+def test_a_swept_conflict_also_offers_dispute_to_make_it_durable():
+    line = _conflict_notice()
+    # The cosine sweep is index-derived and fails open to silence, so an un-nominated pair is visible
+    # only to whoever holds an index — `dispute` is what makes it visible to everyone.
+    assert "yigraf reconcile" in line and "yigraf supersede" in line
+    assert "yigraf dispute" in line and "cos 0.91" in line
+
+
+def test_a_nominated_conflict_asserts_neither_a_cosine_nor_an_anchor_it_lacks():
+    line = _conflict_notice(anchor="", cosine=0.0, nominated=True)
+    assert "nominated as contradictory by a principal" in line
+    assert "cos" not in line  # a nomination is a judgment, not a measurement
+    assert "(no shared anchor)" in line  # never render a bare, empty `← `
+    assert "yigraf dispute" not in line  # already nominated
+
+
+def test_the_preferred_side_is_named_when_provenance_has_one():
+    assert "yigraf supersede mem:bbb" in _conflict_notice(dominant="mem:aaa")
+    assert "yigraf supersede <loser>" in _conflict_notice(dominant=None)  # same tier ⇒ never tie-broken
+
+
+# --- Online: a belief that arrived over the shared log changes the right next step ----------------
+
+
+def test_a_locally_authored_belief_carries_no_attribution():
+    # `remember` writes [{"source": "cli"}] with no actor — the discriminator for "came over the wire".
+    graph = _graph_with(mem_aaa=[{"source": "cli"}], mem_bbb=[{"source": "cli"}])
+    line = _conflict_notice(graph)
+    assert "(by " not in line
+    assert "yigraf supersede" in line  # your own beliefs — supersede is a fine default
+
+
+def test_a_conflict_with_a_teammates_belief_routes_to_dispute_not_supersede():
+    graph = _graph_with(mem_aaa=[{"source": "cli"}],
+                        mem_bbb=[{"actor": "alice", "source": "agent"}])
+    line = _conflict_notice(graph)
+    assert "(by alice)" in line  # attributed, per int:obligation-notice's online scenario
+    assert "yigraf dispute" in line
+    assert "Don't supersede someone else's belief without asking." in line
+
+
+def test_drift_on_a_teammates_decision_does_not_tell_you_to_reaffirm_it():
+    from yigraf.drift import DriftItem
+    graph = _graph_with(mem_ccc=[{"actor": "bob", "source": "agent"}])
+    item = DriftItem("soft", "mem:ccc", "sym:a.py#f", detail="body changed", relation="concerns")
+    line = obligations._drift(item, graph).render()
+    # You cannot honestly re-verify reasoning you never held; reaffirming it would be a rubber-stamp.
+    assert "(by bob)" in line and "yigraf reaffirm" not in line
+    assert "ask before you clear it" in line
+
+
+def test_attribution_is_not_part_of_the_key_so_a_second_asserter_does_not_re_announce():
+    from yigraf.contradiction import Conflict
+    c = Conflict(anchor="sym:a.py#f", left="mem:aaa", right="mem:bbb", cosine=0.91)
+    solo = _graph_with(mem_aaa=[{"source": "cli"}], mem_bbb=[{"source": "cli"}])
+    joined = _graph_with(mem_aaa=[{"source": "cli"}],
+                         mem_bbb=[{"source": "cli"}, {"actor": "alice", "source": "agent"}])
+    assert obligations._conflict(c, solo).key == obligations._conflict(c, joined).key
+
+
 def test_a_resolved_obligation_that_recurs_announces_again(tmp_path: Path, stale_repo: Path):
     _stop(stale_repo)
     latch = json.loads(obligations.latch_path(stale_repo).read_text())

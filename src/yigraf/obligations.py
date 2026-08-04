@@ -20,6 +20,16 @@ agent's own doors — ``context``, ``SessionStart``, ``PostToolUse`` — are unt
 recomputed on demand exactly like :mod:`yigraf.drift` and :mod:`yigraf.contradiction`, whose findings it
 re-shapes without recomputing anything. The only state is the announce latch — volatile, machine-local,
 gitignored ``.local/`` (mem:ea8dbd6a), never the graph.
+
+**Online needs no separate path.** ``yigraf sync`` pulls the team's assertions into the local replica
+and :func:`yigraf.extract._fold_replica` folds them onto the same base, so a teammate's arriving belief
+is already in the graph this module reads — mem:059's "the only local↔online difference is a thin
+substrate adapter" holding literally. What online *does* change is the right next step, so the
+provenance actor (mem:063) rides the notice: superseding a belief that arrived over the log is
+presumptuous, and reaffirming reasoning you never held is impossible, so a foreign operand routes to
+``dispute`` (nominate, override nobody) instead. The network is never touched from here — a
+"behind the remote log" probe costs a round-trip and belongs in ``yigraf sync``, not on every turn
+boundary (mem:ea12f415).
 """
 from __future__ import annotations
 
@@ -66,6 +76,29 @@ class Obligation:
                 f"           → {self.verb}")
 
 
+def _actors(graph: nx.DiGraph, node_id: str) -> list[str]:
+    """The distinct actors that asserted ``node_id``, read from the folded provenance (mem:063).
+
+    Empty for a locally-authored belief — a ``remember`` writes ``[{"source": "cli"}]`` with no actor,
+    while :data:`~yigraf.onlinelog.REQUIRED_PROVENANCE_FIELDS` makes ``actor`` mandatory on anything
+    that crossed the wire. So a non-empty result *is* the "this arrived over the shared log" signal,
+    with no extra bookkeeping and no second source of truth.
+    """
+    attrs = graph.nodes.get(node_id) or {}
+    out: list[str] = []
+    for record in attrs.get("provenance") or []:
+        actor = record.get("actor") if isinstance(record, dict) else None
+        if actor and actor not in out:
+            out.append(actor)
+    return out
+
+
+def _by(graph: nx.DiGraph, node_id: str) -> str:
+    """`` (by alice)`` when ``node_id`` came from someone else's assertion, else ``""``."""
+    actors = _actors(graph, node_id)
+    return f" (by {', '.join(actors)})" if actors else ""
+
+
 def _stale(item) -> Obligation:
     """A done task whose implementing symbol drifted (int:drift-as-stale).
 
@@ -84,45 +117,86 @@ def _stale(item) -> Obligation:
     )
 
 
-def _conflict(c) -> Obligation:
-    """Two live, co-anchored, unreconciled beliefs (mem:062).
+def _conflict(c, graph: nx.DiGraph | None = None) -> Obligation:
+    """Two live, unreconciled beliefs — nominated by a principal, or found by the cosine sweep (mem:062).
 
     The resolving verb is chosen by what the finding already knows, never by guessing the semantics:
-    a *pending* supersede needs a human endorsement (``attest``, mem:048 — an agent cannot clear it,
-    which is exactly why this is a notice and not a gate); a same-tier pair (no ``dominant``) is
-    deliberately left as an open question for the principal (mem:95444dc — no scalar tiebreak, no
-    last-writer-wins), so both verbs are offered; a dominated pair names the preferred side.
+
+    - a **pending** supersede needs a human endorsement (``attest``, mem:048). The agent cannot clear
+      it, which is precisely why this channel is a notice and not a gate.
+    - a **nominated** pair (a ``disputes`` verdict, :mod:`yigraf.resolution`) is already a named open
+      question, so it only offers the two closing verdicts. It carries no cosine — a nomination is a
+      judgment, not a measurement — and may share no anchor at all, so neither is asserted here.
+    - a **swept** pair additionally offers ``dispute``: the sweep is index-derived and fails open to
+      silence, so without nominating it the pair is visible only to whoever happens to hold an index.
+    - a **same-tier** pair (no ``dominant``) is deliberately left open for the principal rather than
+      tie-broken (mem:95444dc — no scalar tiebreak, no last-writer-wins).
     """
+    close = f"yigraf reconcile {c.left} {c.right}"
+    foreign = _actors(graph, c.left) or _actors(graph, c.right) if graph is not None else []
     if c.pending:
         detail = "a supersede between them is held pending a human decision"
         verb = f"yigraf attest {c.left}  (or {c.right}) — only a principal clears a pending supersede"
-    elif c.dominant:
-        other = c.right if c.dominant == c.left else c.left
-        detail = f"co-anchored and unreconciled (cos {c.cosine:.2f}); provenance prefers {c.dominant}"
-        verb = f"yigraf reconcile {c.left} {c.right}   — or: yigraf supersede {other} \"<the surviving claim>\""
     else:
-        detail = f"co-anchored and unreconciled (cos {c.cosine:.2f}); same provenance tier — your call"
-        verb = f"yigraf reconcile {c.left} {c.right}   — or: yigraf supersede <loser> \"<the surviving claim>\""
+        if c.dominant:
+            other = c.right if c.dominant == c.left else c.left
+            side = f"provenance prefers {c.dominant}"
+            loser = other
+        else:
+            side = "same provenance tier — your call"
+            loser = "<loser>"
+        if getattr(c, "nominated", False):
+            detail = f"nominated as contradictory by a principal; {side}"
+            verb = f"{close}   — or: yigraf supersede {loser} \"<the surviving claim>\""
+        elif foreign:
+            # One side arrived over the shared log. Superseding someone else's belief unilaterally is
+            # the wrong default — `dispute` nominates the pair without overriding anyone, which is
+            # exactly the "both land, a principal decides" shape int:concurrent-write-model asks for.
+            detail = f"co-anchored and unreconciled (cos {c.cosine:.2f}); {side}"
+            verb = (f"yigraf dispute {c.left} {c.right} --why \"…\"   — or, if it's clearly compatible: "
+                    f"{close}. Don't supersede someone else's belief without asking.")
+        else:
+            detail = f"co-anchored and unreconciled (cos {c.cosine:.2f}); {side}"
+            verb = (f"{close}   — or: yigraf supersede {loser} \"<the surviving claim>\""
+                    f"   — or: yigraf dispute {c.left} {c.right} to make it durable")
+    if graph is not None:
+        subject = f"{c.left}{_by(graph, c.left)} ⟂ {c.right}{_by(graph, c.right)}"
+    else:
+        subject = f"{c.left} ⟂ {c.right}"
+    # The anchor is part of the key but may be empty on a nomination (a nominated pair need share no
+    # `concerns` target); left+right already make the key unique, so an empty anchor is harmless.
+    # Attribution is deliberately NOT in the key: the same conflict gaining a second asserter is the
+    # same open question, and must not re-announce.
     return Obligation(kind="conflict", key=f"conflict::{c.anchor}::{c.left}::{c.right}",
-                      subject=f"{c.left} ⟂ {c.right}", locator=c.anchor, detail=detail, verb=verb)
+                      subject=subject,
+                      locator=c.anchor or "(no shared anchor)", detail=detail, verb=verb)
 
 
-def _drift(item) -> Obligation:
+def _drift(item, graph: nx.DiGraph | None = None) -> Obligation:
     """Surfaced re-verify drift on a live link — the signal already in the agent's channel.
 
     Carried here too because the principal's view should be complete: the agent is shown this at the
     edit hook, but only for the locus it happened to touch, and only if it was still in-session.
+
+    Attribution matters most here: a teammate's decision drifting because *you* edited the code it
+    governs is not yours to reaffirm or retract — you can't re-verify reasoning you never held. So a
+    foreign source routes to asking rather than to ``reaffirm``.
     """
-    verbs = {
-        "implements": f"re-verify, then: yigraf link {item.task_id} {item.locator}",
-        "concerns": f"yigraf reaffirm {item.task_id}   — or supersede it if your mind changed",
-        "grounded_by": f"yigraf reaffirm {item.task_id} --grounding empirical   — or downgrade to inferred",
-    }
+    foreign = _by(graph, item.task_id) if graph is not None else ""
+    if foreign:
+        verb = (f"their belief, your edit — ask before you clear it, or nominate it: "
+                f"yigraf dispute {item.task_id} <yours> --why \"…\"")
+    else:
+        verb = {
+            "implements": f"re-verify, then: yigraf link {item.task_id} {item.locator}",
+            "concerns": f"yigraf reaffirm {item.task_id}   — or supersede it if your mind changed",
+            "grounded_by": f"yigraf reaffirm {item.task_id} --grounding empirical   — or downgrade to inferred",
+        }.get(item.relation, f"yigraf reaffirm {item.task_id}")
     return Obligation(
         kind="drift", key=f"drift::{item.relation}::{item.task_id}::{item.locator}",
-        subject=item.task_id, locator=item.locator,
+        subject=f"{item.task_id}{foreign}", locator=item.locator,
         detail=(item.detail or "anchor no longer matches") + f" ({item.relation})",
-        verb=verbs.get(item.relation, f"yigraf reaffirm {item.task_id}"),
+        verb=verb,
     )
 
 
@@ -136,8 +210,8 @@ def obligations(graph: nx.DiGraph, root: Path, config: dict, index=None) -> list
     the sweep fails open to *silence*, so a repo with no embeddings simply reports no conflicts.
     """
     found: list[Obligation] = [_stale(it) for it in stale_completions(graph)]
-    found += [_conflict(c) for c in detect_conflicts(graph, root, config, index=index)]
-    found += [_drift(it) for it in compute_drift(graph)
+    found += [_conflict(c, graph) for c in detect_conflicts(graph, root, config, index=index)]
+    found += [_drift(it, graph) for it in compute_drift(graph)
               if it.kind in ("soft", "hard") and is_surfaced(graph, it)]
     order = {k: i for i, k in enumerate(KIND_ORDER)}
     found.sort(key=lambda o: (order.get(o.kind, len(order)), o.key))
