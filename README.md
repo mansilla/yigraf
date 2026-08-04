@@ -100,8 +100,33 @@ best fidelity your host allows.
 
 Details and the full per-host matrix: **[docs/hosts.md](docs/hosts.md)**.
 
+## The graph algebra
+
+yigraf's edges aren't labels on a filing cabinet — they're **typed arrows with an algebra**, and that
+algebra is what lets the graph answer things nobody wrote down:
+
+- **Edges are typed.** `implements`, `serves`, `concerns`, `calls`, `supersedes` each only connect
+  certain families, so a malformed claim can't enter the graph.
+- **They compose — partially.** A task that `implements` a function that `calls` another is understood
+  to depend on the second. Composition is deliberately *not* associative: the paths that shouldn't
+  chain, don't.
+- **Confidence is a semiring, not a percentage.** Trust lives on a three-element lattice and combines
+  by bottleneck: a derived edge is never stronger than the weakest link behind it. That's why
+  everything yigraf infers arrives tagged `inferred` and asks to be confirmed instead of posing as
+  fact.
+- **Merging converges.** Folding two versions of the graph is a theorem, not a hope — which is what
+  makes the graph safe to rebuild and safe to share.
+
+The full development — the type discipline, the semiring, the algebraic path problem as a query
+engine, and why the typed λ-calculus lends its *types* here but not its *reductions* — is written up
+in **[Typed arrows for AI agent
+memory](https://ricstalt.medium.com/typed-arrows-for-ai-agent-memory-e0b22915d75b)**.
+
 ## Learn more
 
+- **[Typed arrows for AI agent
+  memory](https://ricstalt.medium.com/typed-arrows-for-ai-agent-memory-e0b22915d75b)** — the algebra
+  yigraf stands on, with the proofs.
 - **[Guide](docs/guide.md)** — install in depth, the full workflow, and how drift, conflicts, and
   memory maturity actually work.
 - **[Hosts](docs/hosts.md)** · **[MCP setup](docs/mcp.md)** · **[Statusline](docs/statusline.md)** —
