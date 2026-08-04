@@ -8,8 +8,7 @@ description: Use when implementing or changing code in this repo to keep intent,
 This repo is indexed by **yigraf**: one graph over code structure, intents (specs), plans, and the
 **memory** of why the code is the way it is — with enforceable links (`implements`, `concerns`)
 whose drift is surfaced when code and the thing that governs it diverge. A few rituals keep it
-useful — the hooks are a safety net, not a substitute. Forget the exact verbs/flags? `yigraf cheatsheet`
-(or `--json`) prints the whole surface — paste-able into a subagent's prompt.
+useful — the hooks are a safety net, not a substitute.
 
 ## 0. Orient before you touch code (always)
 Run `yigraf context "<what you're about to work on>"`. **This is the one command you need to read the
@@ -28,14 +27,9 @@ content. Linking once per completed task (not per edit) is enough.
 When you make a non-obvious choice — picked an approach over a named alternative, set a constraint,
 worked around something — persist the reasoning that `/clear` would otherwise lose. One line of why
 plus the rejected option is enough; capture at the *conclusion*, not mid-thinking.
-- `yigraf remember "<the decision, one line>" --type decision --why "<reasoning>" --serves int:<slug> --concerns sym:<path>#<name> [--rejected "<the alternative + why not>"] [--grounding empirical]`
-- `--grounding` records *how sure* you are: `inferred` (default — a reasoned assertion, surfaces as a
-  re-verify cue), `docs` (distilled from written rationale), `empirical` (confirmed by a live spike/test/prod
-  signal). Upgrade later when evidence lands: `yigraf reaffirm mem:<id> --grounding empirical`.
-- A correction or rule → `yigraf note-constraint "<rule>" --concerns sym:<path>#<name> [--rejected "<ruled-out alternative>"]`
-  (flagged as a candidate to promote into an enforced check).
-- `--serves`/`--concerns` may name a node that doesn't exist *yet* — a forward-reference is accepted with a
-  soft warning and a dangling edge (it resolves/anchors once the code or intent lands); it never blocks.
+- `yigraf remember "<the decision, one line>" --type decision --why "<reasoning>" --serves int:<slug> --concerns sym:<path>#<name> [--rejected "<the alternative + why not>"]`
+- A correction or rule → `yigraf note-constraint "<rule>" --concerns sym:<path>#<name>` (flagged as a
+  candidate to promote into an enforced check).
 - Changed your mind? Never edit a decision in place — `yigraf supersede mem:<id> "<new decision>" --why "<what changed>"`. The old one stays as a rejected alternative.
 - Decision still holds after you edited the code it governs? `yigraf reaffirm mem:<id>` — re-stamps the anchor and clears the drift (the honest counterpart to `supersede`: don't re-`remember`, that duplicates).
 - Governing an infra/glue file with **no code symbol** (Dockerfile, buildspec, `*.sh`, `*.json`)? Anchor to the file: `--concerns file:<path>` (whole file), or `--concerns file:<path>:L10-L40` for a line range — region-scoped, so an unrelated edit elsewhere in the file doesn't drift it. `sym:` is for code; `file:` is for everything else. (A whole-file `file:` anchor on *indexed code* is refused — use a symbol or a line range there.)
@@ -49,21 +43,38 @@ sees the decision and its rationale without reading the history.
 - `yigraf plan <slug> -t "<title>" --task "<description>"` then `yigraf link task:<plan>/1 int:<slug>`
   to track the intent.
 
-## 4. Drift means re-verify
-You don't poll for drift, and you never *sweep* it — `yigraf context` and the edit hook surface it for
-you: soft drift (a linked symbol's body changed) or hard drift (it's gone), for both `implements`
-(task→code) and `concerns` (decision→code) links. A pure rename auto-re-anchors. When drift surfaces,
-re-verify the code still satisfies the spec/decision *while you have it open*, then re-anchor: `yigraf
-link task:<id> sym:…` for a task's `implements`, `yigraf reaffirm mem:<id>` for a decision's `concerns`
-that still holds (or `supersede` it if your mind changed). After an edit-heavy session that drifted many
-decisions on one locus, `yigraf reaffirm <sym|file>` reaffirms **every** memory concerning that locus in
-one call — scoped to a locus you actually re-verified. There is no blanket "clear all drift", and
-clearing drift you didn't re-read (a per-iteration cleanup pass) is the rubber-stamping that would make
-drift meaningless — only reaffirm what you verified this turn. A **done** task's `implements` drift is
-never surfaced at all (a shipped task's stale link is provenance, not a re-verify prompt — `int:drift-
-done-suppression`), so what you see is open-task and decision drift, the drift that actually wants
-action. (`yigraf drift` exits non-zero on *surfaced* drift — that's the commit/CI gate, not something
-you poll.)
+## 4. The three re-verify signals: drift, stale, conflict
+You never poll for these — `yigraf context` and the hooks surface them. Each has **one** resolving verb;
+using the wrong one either rubber-stamps a belief you didn't check or destroys a reasoning trail.
+
+**Drift** — a live link's anchor no longer matches: soft (the symbol's body changed) or hard (it's
+gone), on `implements` (task→code), `concerns` (decision→code), or `grounded_by` (decision→evidence).
+A pure rename auto-re-anchors and never surfaces. Re-verify the code still satisfies the thing, then:
+- a task's `implements` → `yigraf link task:<id> sym:…` (re-anchors)
+- a decision's `concerns` that still holds → `yigraf reaffirm mem:<id>` (never re-`remember` — that
+  duplicates; never `supersede` unless your mind actually changed)
+- `grounded_by` → `yigraf reaffirm mem:<id> --grounding empirical` if you re-observed the evidence,
+  otherwise downgrade the claim to `inferred` — an `empirical` tier whose evidence moved is unearned
+- an edit-heavy session that drifted many decisions on one locus → `yigraf reaffirm <sym|file>`
+  reaffirms every memory concerning that locus at once. Scoped to a locus you *actually re-verified* —
+  there is deliberately no blanket "clear all drift", because that is rubber-stamping.
+
+**Stale completion** — a task marked **done** whose implementing symbol drifted. The completion isn't
+false, it's *unverified*: the evidence for "done" moved. Re-verify, then `yigraf link task:<id> sym:…`
+to re-anchor — or reopen the task if the change actually regressed it. Never flip it to `todo`
+automatically. You won't see these at the edit hook (a closed task must not nag mid-edit); they surface
+in `yigraf context`, at SessionStart, and to your principal at the turn boundary.
+
+**Conflict** — two live decisions anchored to the same code saying nearly the same thing, never
+reconciled. Read both, then:
+- they're compatible / one refines the other → `yigraf reconcile mem:<a> mem:<b>`
+- one genuinely wins → `yigraf supersede mem:<loser> "<the surviving claim>" --why "…"`
+- **pending** conflict (an agent supersede of a human-attested decision is held, never applied) → you
+  cannot clear this one. It needs `yigraf attest` from a human. Surface it and move on.
+- same provenance tier with no preferred side → that is not a bug. Two equal-authority beliefs stay an
+  open question for the principal rather than being tie-broken. Ask.
+
+(`yigraf drift` exits non-zero on drift — that's the commit/CI gate, not something you poll.)
 
 ## 5. Evolve an intent (retire or reverse a spec)
 Specs change too — but **never hand-edit a superseded intent into place**; use one of two supported paths:
@@ -74,42 +85,3 @@ Specs change too — but **never hand-edit a superseded intent into place**; use
   writes a real `int→int` **supersedes** edge — so `context` can traverse from the replacement back to
   what it replaced (a bare `superseded_by:` line would be invisible to the graph). The `--why` is
   captured as a memory serving the new intent — the perishable reason the reversal happened.
-
-## 6. Ask the principal only on a real preference-fork
-Most forks you resolve by competence — **decide, then `remember` it** (agent-attested); the principal
-can endorse it later. Ask a question ONLY on a genuine *preference-fork*: two technically-sound branches
-that diverge on something **the principal owns** (a product/policy/priority call you can't settle from
-the code). Then:
-- Ask **one** question through your host's normal question UI (not a yigraf primitive — yigraf never
-  interrupts the user; mem:046).
-- Persist the answer as a **human-attested intent** so it's asked once *ever*: `yigraf intent <slug>
-  -s "<the principal's answer as a SHALL>"` then `yigraf attest int:<slug>`. A later agent (post-`/clear`)
-  sees the human-attested spec and doesn't re-ask.
-- `yigraf attest mem:<id>` records the principal endorsing a decision (a sticky trust floor). Attesting a
-  memory that pending-supersedes a human-attested node **applies** the held change (resolves the conflict
-  a "⚠ Conflict (pending)" line surfaced). Only mark human when the human *actually* chose — the trust
-  floor rests on that honesty (you are the scribe, the principal is the source).
-- Default when unsure: **do not ask** — decide, `remember`, and let the human `attest` if they care.
-
-## 7. Compound findings & history into *proposed* candidates
-`remember`/`note-constraint` are for *your own* concluded beliefs (they land `working`, full weight).
-`yigraf propose` is for a **candidate** you distilled but haven't yet proven in action — a review
-finding, or durable reasoning mined from history. A proposed node lands in **quarantine**: near-zero
-retrieval weight (it never pollutes a topic query or outranks confirmed knowledge), but — anchored via
-`--concerns` — it **re-surfaces at the edit hook** the next time that locus is touched. A real encounter
-there (the code edited, the finding not contradicted) **confirms** it up to `working`; a candidate no
-one ever encounters just expires. So over-proposing is *safe* — quarantine + expiry is what lets you
-mine aggressively without poisoning the graph.
-
-- **Review → memory (after `/code-review` or `/security-review`):** for each finding you *confirmed is
-  real and chose to keep*, distil it to a one-line rule and persist it anchored to the reviewed locus,
-  with the anti-pattern as the rejected alternative:
-  `yigraf propose "<the rule, one line>" --from review --concerns sym:<path>#<name> --rejected "<the anti-pattern the finding flagged>"`
-  (defaults to `--type constraint`). Now the next agent to edit that code sees the finding at the moment
-  of action — the same class of bug re-surfaces where it happens, not in a report nobody re-reads.
-- **Mine durable reasoning from history/docs:** to seed a repo's memory from what already exists —
-  **distil, don't scrape** (this is *your* judgment, an LLM task): read commit rationale (`git log`), PR
-  discussion, and design docs, and for each genuine decision + its rejected alternative:
-  `yigraf propose "<the decision>" --from mined --concerns sym:<path>#<name> --rejected "<what was ruled out>" [--origin "commit abc123" | "docs/DESIGN.md"]`.
-  Skip the obvious and the already-captured (`propose` dedups against existing memory). `--origin` leaves
-  an audit trail back to the source.

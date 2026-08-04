@@ -17,7 +17,7 @@ from typing import NoReturn
 import typer
 
 from yigraf import (__version__, artifacts, counters, embeddings, graphdb, memory,
-                    relations, retrieval, status, update)
+                    obligations, relations, retrieval, status, update)
 from yigraf.astnorm import ANCHOR_ALGO, FILE_ANCHOR_ALGO, file_content_hash, parse_file_target
 from yigraf.config import load_config
 from yigraf.drift import compute_drift, is_surfaced
@@ -1763,6 +1763,46 @@ def _session_start(data: dict) -> dict | None:
     return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": result.text}}
 
 
+def _stop(data: dict) -> dict | None:
+    """Stop: notify the **principal** of obligations that appeared this turn (int:obligation-notice).
+
+    Returns ONLY the universal ``systemMessage`` field — documented as "warning message shown to the
+    user", never added to the agent's context. Two fields are deliberately never set (mem:bf00a1f5):
+
+    - ``decision: "block"`` — design law #5 is unconditional; this channel informs, it never gates.
+      It is also the honest shape: the sharpest obligation here (a *pending* supersede of a
+      human-attested node, mem:048) is one the agent structurally **cannot** clear, so blocking on it
+      would deadlock against a decision only the principal can make.
+    - ``hookSpecificOutput.additionalContext`` — that is the agent's channel, and human-facing graph
+      health does not spend the agent's budget (mem:012). Told "go fix that", the agent recovers the
+      locators through ``yigraf context`` on the existing path.
+
+    Silent unless something is *newly* unresolved (design law #4), and fail-open throughout: no
+    workspace, no obligations, or an unchanged fingerprint all return ``None``.
+    """
+    root = Path(data.get("cwd") or os.getcwd())
+    if not (root / WORKSPACE_DIRNAME).is_dir():
+        return None
+    config = load_config(root / WORKSPACE_DIRNAME / "config.yaml")
+    if not config.get("status", {}).get("obligation_notice", True):
+        return None
+
+    # Fast path first: this runs on every turn, so an unchanged input fingerprint must cost a stat walk
+    # and nothing more — no view load, no embedding index read.
+    session = str(data.get("session_id") or "default")
+    fingerprint = graphdb.source_fingerprint(root, config)
+    if obligations.is_unchanged(root, session, fingerprint):
+        return None
+
+    graph, _ = graphdb.load_or_build(root, config)
+    current = obligations.obligations(graph, root, config)
+    fresh = obligations.new_obligations(root, current, session, fingerprint=fingerprint)
+    if not fresh:
+        return None
+    max_lines = int(config.get("status", {}).get("obligation_notice_max", obligations.DEFAULT_MAX))
+    return {"systemMessage": obligations.render_notice(fresh, len(current), max_lines)}
+
+
 @hook_app.command("post-tool-use")
 def hook_post_tool_use() -> None:
     """PostToolUse(Edit|Write): inject governing intent + drift for the touched file (silent-unless)."""
@@ -1773,6 +1813,12 @@ def hook_post_tool_use() -> None:
 def hook_session_start() -> None:
     """SessionStart(clear|compact|…): re-inject the active plan + governing intents."""
     _run_hook(_session_start)
+
+
+@hook_app.command("stop")
+def hook_stop() -> None:
+    """Stop: notify the *principal* of newly-unresolved obligations (never blocks, never the agent)."""
+    _run_hook(_stop)
 
 
 def main() -> None:

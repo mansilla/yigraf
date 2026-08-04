@@ -89,6 +89,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # against the raw window). ~200k is where Opus-class quality degrades and per-turn cost climbs.
     "status": {
         "ctx_soft_limit": 250_000,
+        # The principal's turn-boundary notice (int:obligation-notice). Edge-triggered: it announces an
+        # obligation once, on first appearance, on the host's user-facing channel — never the agent's
+        # context (mem:012) and never as a block (design law #5). Off ⇒ the statusline counts remain the
+        # only human surface.
+        "obligation_notice": True,
+        "obligation_notice_max": 5,
     },
 }
 
@@ -194,6 +200,11 @@ embeddings:
 # unaffected. ~200k is where Opus-class quality degrades and cost climbs. Set 0 to use the raw window.
 status:
   ctx_soft_limit: 250000        # tokens of usable budget the ctx gauge scales to (0 = raw window)
+  # The turn-boundary obligation notice: tells YOU (not the agent) when a conflict, stale completion,
+  # or drift first appears, so you can direct the agent at it. Edge-triggered — announced once, never
+  # repeated while it stays open — and it never blocks the agent's workflow.
+  obligation_notice: true       # false ⇒ the statusline counts stay the only human surface
+  obligation_notice_max: 5      # max obligations listed per notice (overflow is stated, not hidden)
 """
 
 

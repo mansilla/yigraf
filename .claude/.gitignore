@@ -1,0 +1,3 @@
+# Machine-local Claude Code wiring written by `yigraf install-claude-hooks` — the commands bake
+# in this clone's absolute interpreter path, so they're per-machine and kept out of git.
+settings.local.json
