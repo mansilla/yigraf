@@ -158,7 +158,7 @@ def build(
         raise typer.Exit(code=1)
 
     config = load_config(workspace / "config.yaml")
-    graph, stats = graphdb.rebuild(root, config)  # build + materialize the view (maturity git-derived, R2)
+    graph, stats = graphdb.rebuild(root, config)  # build + materialize the view (survival git-derived, R2)
     reindexed = embeddings.refresh_index(root, graph, config)  # scoped semantic index (M8; no-op if no backend)
 
     typer.echo(
@@ -167,6 +167,14 @@ def build(
     typer.echo(f"  {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges.")
     if reindexed:
         typer.echo("  embedding index refreshed.")
+    if int(config.get("maturity_survival_floor", 0)) > 0 and not counters.survival_floor_applies(graph):
+        # Armed a gate the substrate can't measure: neither git nor a synced log can age these beliefs,
+        # so the floor is being ignored rather than silently blocking every promotion (design law #5).
+        typer.echo(
+            "  ⚠ maturity_survival_floor is set, but neither survival clock can measure here — git "
+            "tracks none of your memory artifacts and no shared log is synced. The floor is being "
+            "IGNORED (it would otherwise stop anything from ever settling). Commit yigraf/memory/, "
+            "connect a shared log, or set the floor back to 0.")
 
 
 def _require_workspace(root: Path) -> Path:
@@ -1411,7 +1419,7 @@ def sync(
 
     from yigraf.filelog import FileLog
     from yigraf.onlinelog import IngestRejected, SqliteAssertionStore
-    from yigraf.sync import HttpRemote, SyncError, push_assertion
+    from yigraf.sync import HttpRemote, RemoteUnavailable, SyncError, push_assertion
     from yigraf.sync import sync as sync_replica
 
     replica_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1438,14 +1446,24 @@ def sync(
         known = store.known_ids(project)
         outgoing = [a for a in local if a.id not in known]
         session = f"sync-{uuid.uuid4().hex[:12]}"
-        pushed = 0
-        for assertion in outgoing:
+        pushed, deferred = 0, 0
+        for index, assertion in enumerate(outgoing):
             try:
                 push_assertion(store, remote, project, _for_the_wire(assertion, repo, session))
                 pushed += 1
             except IngestRejected as exc:  # design law #1: a rejected write teaches the fix
                 typer.echo(f"⚠ {assertion.id} rejected by the server: {exc}")
-        if pushed:  # write-through leaves the cursor behind its own append; a second pull advances it
+            except RemoteUnavailable as exc:
+                # The remote went away mid-push. Stop rather than hammer it — every remaining assertion
+                # would fail the same way — and let the file log carry them: `outgoing` is re-derived
+                # from it on every run, so these go out on the next `yigraf sync` with no queue to keep
+                # (push_assertion's docstring). Everything already pushed stays pushed.
+                deferred = len(outgoing) - index
+                typer.echo(f"⚠ lost the remote mid-push ({exc}) — {pushed} pushed, {deferred} deferred.")
+                break
+        # Write-through leaves the cursor behind its own append; a second pull advances it. Skipped when
+        # the remote just dropped — re-polling it would only turn a clean partial sync into a hard exit.
+        if pushed and not deferred:
             result = sync_replica(store, remote, project)
         # Read the log's order out before the store closes — it is what says whose turn a conflict is.
         events, local_ids = store.iter_events(project), {a.id for a in local}
@@ -1456,12 +1474,22 @@ def sync(
                    f"The replica was left untouched. This means the remote's log is inconsistent with "
                    f"what this client last verified; nothing local is lost.")
         raise typer.Exit(code=1) from exc
+    except RemoteUnavailable as exc:
+        # Unreachable on head/pull — i.e. before any push was attempted. Recoverable weather, so it
+        # exits 0 with guidance (a non-zero exit here would train an agent to stop calling sync over a
+        # dropped wifi connection). Nothing is lost and nothing needs queueing: reads already run off
+        # the local replica, and unpushed assertions sit in the git-committed file log.
+        _guidance(f"Couldn't reach {remote_url}: {exc}\n"
+                  f"Nothing was lost — yigraf keeps working fully offline against the local replica, "
+                  f"and anything you've authored stays in the committed file log, so the next "
+                  f"`yigraf sync` sends it once the remote is back.")
     finally:
         store.close()
 
     graph = _rebuild(repo)
     typer.echo(f"Synced {project}: pulled {result.pulled}, pushed {pushed} — head seq {result.head.seq} "
-               f"({result.head.head_hash[:12]}).")
+               f"({result.head.head_hash[:12]})." +
+               (f" {deferred} deferred to the next sync (the remote dropped)." if deferred else ""))
     typer.echo("Their assertions now anchor to your code: run `yigraf drift` to see what your edits "
                "have moved under, and `yigraf status` for open conflicts.")
     notice = _responsibility_notice(repo, config, graph, events, local_ids)

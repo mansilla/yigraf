@@ -28,7 +28,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # Maturity (mem:033): a memory settles once its accumulated survived-encounter *upholds* reach
     # `maturity_k` and it isn't superseded. Upholds are read-time, sidecar-derived — a reaffirm books
     # `maturity_uphold_review`, a silent edit-hook survival books `maturity_uphold_edit`. Git-survival
-    # is an optional durability floor (0 = off): settled also requires `survival >= maturity_survival_floor`.
+    # is an optional durability floor (0 = off): settled also requires `survival >= maturity_survival_floor`,
+    # except where no survival clock can measure at all — there the floor abstains rather than denying
+    # every promotion forever (counters.apply_maturity_verdict).
     "maturity_k": 3,
     "maturity_confirm": 1.0,
     "maturity_uphold_review": 1.0,
@@ -153,7 +155,9 @@ maturity_k: 3                  # accumulated uphold weight (un-superseded) befor
 maturity_confirm: 1.0          # uphold weight that confirms a `proposed` candidate up to `working`
 maturity_uphold_review: 1.0    # uphold booked by a `reaffirm` (an explicit re-verification)
 maturity_uphold_edit: 0.25     # uphold booked by a silent edit-hook survival (no drift on the locus)
-maturity_survival_floor: 0     # optional git-durability gate (commits since intro); 0 = off
+maturity_survival_floor: 0     # optional git-durability gate (commits since intro); 0 = off.
+                               # Ignored (not enforced) where neither survival clock can measure —
+                               # e.g. a gitignored workspace with no shared log; `build` warns.
 proposed_ttl: 30               # GC archives a never-confirmed `proposed` candidate after this many commits (task #7)
 
 # --- Retrieval (M4) — how the token-budgeted context slice is seeded, traversed, and ranked ---

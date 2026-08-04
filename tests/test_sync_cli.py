@@ -270,3 +270,84 @@ def test_a_synced_belief_matures_on_the_logs_clock(tmp_path, shared_remote, monk
     _as(monkeypatch, "bob", "sync", "--repo", str(bob))
     graph, _ = build_graph(bob, config)
     assert graph.nodes[hers[0]]["survival"] == 1, "her belief outlived bob's later append"
+
+
+# ============================================================================================
+# An unreachable remote — recoverable weather, and the file log is the retry queue
+# ============================================================================================
+
+
+class _DeadRemote:
+    """A remote that is simply not there — every call fails at the transport."""
+
+    def __init__(self, *a, **kw):
+        pass
+
+    def _die(self, *a, **kw):
+        from yigraf.sync import RemoteUnavailable
+        raise RemoteUnavailable("http://localhost:0 is unreachable (Connection refused)")
+
+    head = pull = push = _die
+
+
+class _DiesAfter:
+    """A remote that accepts ``n`` pushes and then drops — the mid-push failure the retry must survive."""
+
+    def __init__(self, inner, n: int) -> None:
+        self.inner, self.left = inner, n
+
+    def head(self, project):
+        return self.inner.head(project)
+
+    def pull(self, project, since_seq):
+        return self.inner.pull(project, since_seq)
+
+    def push(self, project, assertions):
+        if self.left <= 0:
+            from yigraf.sync import RemoteUnavailable
+            raise RemoteUnavailable("http://localhost:0 is unreachable (Connection reset)")
+        self.left -= 1
+        return self.inner.push(project, assertions)
+
+
+def test_an_unreachable_remote_is_guidance_not_a_traceback(tmp_path, monkeypatch):
+    """Being offline is not a tool failure: exit 0 with guidance, so an agent doesn't learn to stop
+    calling sync over a dropped connection (design law #1, same contract as the token/config gaps)."""
+    monkeypatch.setattr(sync_mod, "HttpRemote", _DeadRemote)
+    monkeypatch.setenv(TOKEN_ENV, "test-token")
+    ws = _workspace(tmp_path / "a")
+    out = runner.invoke(app, ["sync", "--repo", str(ws)])
+    assert out.exit_code == 0, out.output
+    assert "Couldn't reach" in out.output
+    assert "committed file log" in out.output and "next" in out.output
+
+
+def test_a_mid_push_drop_defers_the_rest_and_the_next_sync_sends_them(tmp_path, monkeypatch):
+    """The retry story end-to-end: the remote dies after the first of two pushes. The run reports the
+    deferral instead of crashing, keeps what landed, and a later run — deriving its push set from the
+    file log, not a queue — sends exactly the remainder."""
+    log = OnlineLog(SqliteAssertionStore(), PROJECT, signer_key=SERVER_KEY)
+    flaky = _DiesAfter(_ServerLike(log, "test-token"), n=1)
+    monkeypatch.setattr(sync_mod, "HttpRemote", lambda url, token, **kw: flaky)
+    monkeypatch.setenv(TOKEN_ENV, "test-token")
+
+    ws = _workspace(tmp_path / "a")
+    for text in ("greet must not log the name", "greet must stay pure"):
+        assert runner.invoke(app, ["remember", text, "--why", "PII", "--concerns", SYM,
+                                   "--repo", str(ws)]).exit_code == 0
+
+    dropped = runner.invoke(app, ["sync", "--repo", str(ws)])
+    assert dropped.exit_code == 0, dropped.output
+    assert "lost the remote mid-push" in dropped.output
+    assert "1 pushed, 1 deferred" in dropped.output
+    assert log.store.head(PROJECT).seq == 1, "only the first push landed"
+
+    flaky.left = 5  # the remote comes back
+    recovered = runner.invoke(app, ["sync", "--repo", str(ws)])
+    assert recovered.exit_code == 0, recovered.output
+    assert "pushed 1" in recovered.output, "the deferred assertion goes out, and only it"
+    assert log.store.head(PROJECT).seq == 2
+
+    third = runner.invoke(app, ["sync", "--repo", str(ws)])
+    assert "pushed 0" in third.output, "nothing re-sends once the log has it (no duplicates)"
+    assert log.store.head(PROJECT).seq == 2

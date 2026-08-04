@@ -1,12 +1,17 @@
-"""Maturity, telemetry, and GC — v0 keeps graph.json recomputable (DESIGN R1/R2/R3).
+"""Maturity, telemetry, and GC — the projection stays recomputable (DESIGN R1/R2/R3).
 
-Covers: maturity is **git-derived** (settled after K commits un-superseded, recomputed each build, never
-a stored counter); telemetry (usage/last_seen) lives in the **gitignored sidecar**, never in
-graph.json; recency + maturity lift the relevance prior; GC **archives** superseded churn (never
-deletes, never gates on usage); and the union driver merges two graph.json without conflict.
+Covers: maturity is **behavioral, not git-derived** (mem:033 → mem:047 — build stamps only `survival`
+plus the provenance-derived landing tier; `settled` is a read-time verdict over sidecar `upholds`, and
+demotion stays deterministic via committed supersede edges); telemetry (usage/last_seen/upholds) lives
+in the **gitignored sidecar**, never in the materialized view; recency + maturity lift the relevance
+prior; GC **archives** superseded churn (never deletes, never gates on usage); and the legacy union
+driver still merges two node-link projections without conflict.
 
-The shared-committed-counter model (accumulated survival/usage in graph.json + a counter-reconciling
-merge driver) is v1/Enterprise — explicitly out of scope here.
+`survival` survives only as an opt-in durability floor + the proposed-TTL clock — and both readers
+ABSTAIN where no clock can measure, rather than acting on the resulting 0.
+
+The shared-committed-counter model (accumulated survival/usage in a committed projection + a
+counter-reconciling merge driver) is 2.0 (online) — explicitly out of scope here.
 """
 import json
 import re
@@ -503,3 +508,115 @@ def test_install_hooks_registers_no_merge_driver(tmp_path: Path):
     got = subprocess.run(["git", "-C", str(tmp_path), "config", "merge.yigraf-graph.driver"],
                          capture_output=True, text=True)
     assert got.returncode != 0 and not got.stdout.strip()  # never registered
+
+
+# --------------------------------------------------------------------------------------------------
+# An unmeasurable survival clock abstains — it must never silently deny every promotion
+# --------------------------------------------------------------------------------------------------
+
+
+def test_git_tracks_any_separates_untracked_from_freshly_added(tmp_path: Path):
+    """The distinction the whole fix rests on: survival scores 0 for BOTH 'landed in the tip commit'
+    and 'git has never seen this file', so the gate needs a second signal to tell them apart."""
+    _git_init(tmp_path)
+    (tmp_path / "yigraf").mkdir()
+    (tmp_path / "yigraf" / "tracked.md").write_text("x")
+    (tmp_path / "yigraf" / "ignored.md").write_text("x")
+    (tmp_path / ".gitignore").write_text("yigraf/ignored.md\n")
+    _commit(tmp_path, "add one, ignore the other")
+
+    assert counters.git_tracks_any(tmp_path, ["yigraf/tracked.md"]) is True
+    assert counters.git_tracks_any(tmp_path, ["yigraf/ignored.md"]) is False
+    assert counters.git_tracks_any(tmp_path, []) is False
+
+
+def test_git_tracks_any_is_false_without_git(tmp_path: Path):
+    """No repo at all ⇒ unmeasurable, via _git's fail-open None (design law #5)."""
+    assert counters.git_tracks_any(tmp_path, ["yigraf/memory/001-x.md"]) is False
+
+
+ARMED = {"maturity_survival_floor": 5}
+
+
+def test_apply_maturity_stamps_measurability(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(counters, "git_tracks_any", lambda root, paths: False)
+    g = _mem_graph(source_file="memory/001-x.md")
+    counters.apply_maturity(g, tmp_path, ARMED)
+    assert g.graph["survival_measurable"] is False
+
+    monkeypatch.setattr(counters, "git_tracks_any", lambda root, paths: True)
+    counters.apply_maturity(g, tmp_path, ARMED)
+    assert g.graph["survival_measurable"] is True
+
+
+def test_measurability_costs_no_git_call_when_the_floor_is_off(tmp_path: Path, monkeypatch):
+    """mem:9fc633503cea9709 pins a flat, HEAD-cached git budget on this path (the edit hook rebuilds
+    through it). With the floor off the answer can't change a verdict, so it must not be paid for."""
+    calls: list[int] = []
+    monkeypatch.setattr(counters, "git_tracks_any",
+                        lambda root, paths: (calls.append(1), False)[1])
+    g = _mem_graph(source_file="memory/001-x.md")
+
+    counters.apply_maturity(g, tmp_path, {})                      # floor off (the default)
+    assert calls == [] and "survival_measurable" not in g.graph
+
+    counters.apply_maturity(g, tmp_path, ARMED)                   # opted in ⇒ now it's worth a call
+    assert len(calls) == 1 and g.graph["survival_measurable"] is False
+
+
+def test_a_synced_log_makes_survival_measurable_without_git(tmp_path: Path, monkeypatch):
+    """Either clock counts: a workspace git can't measure is still measurable through the shared log."""
+    monkeypatch.setattr(counters, "git_tracks_any", lambda root, paths: False)
+    monkeypatch.setattr(counters, "log_survival", lambda root, config: {"mem:001": 4})
+    g = _mem_graph(source_file="memory/001-x.md")
+    counters.apply_maturity(g, tmp_path, ARMED)
+    assert g.graph["survival_measurable"] is True
+
+
+def test_an_unmeasurable_clock_drops_the_floor_instead_of_denying():
+    """The bug this fixes: with an armed floor and a clock that can't measure, EVERY memory scored
+    survival 0 and so could never settle — silently, forever. A gate that cannot be evaluated must
+    abstain, exactly as the proposed-TTL already does (design law #5)."""
+    g = _mem_graph(upholds=99, survival=0)
+    g.graph["survival_measurable"] = False
+    counters.apply_maturity_verdict(g, {"maturity_k": 3, "maturity_survival_floor": 5})
+    assert g.nodes["mem:001"]["maturity"] == "settled"
+
+
+def test_a_measurable_clock_still_enforces_the_floor():
+    """Failing open where it can't measure must not weaken the gate where it can."""
+    g = _mem_graph(upholds=99, survival=1)
+    g.graph["survival_measurable"] = True
+    counters.apply_maturity_verdict(g, {"maturity_k": 3, "maturity_survival_floor": 5})
+    assert g.nodes["mem:001"]["maturity"] == "working"
+
+
+def test_an_unstamped_graph_still_enforces_the_floor():
+    """Absent the stamp the floor stays ARMED: a graph that never ran the maturity pass has made no
+    claim, and inferring 'unmeasurable' from a missing key would disarm a gate the operator set."""
+    g = _mem_graph(upholds=99, survival=1)
+    assert "survival_measurable" not in g.graph
+    counters.apply_maturity_verdict(g, {"maturity_k": 3, "maturity_survival_floor": 5})
+    assert g.nodes["mem:001"]["maturity"] == "working"
+
+
+def test_measurability_survives_the_node_link_round_trip():
+    """It rides the graph-level attrs, so a graph loaded from the materialized view answers the same."""
+    from yigraf.graph import from_node_link
+    g = _mem_graph()
+    g.graph["survival_measurable"] = False
+    assert counters.survival_floor_applies(from_node_link(to_node_link(g))) is False
+
+
+def test_build_warns_when_the_floor_is_armed_but_unmeasurable(tmp_path: Path):
+    """End-to-end: the operator armed a gate the substrate can't measure, and hears about it once."""
+    root = _repo(tmp_path)
+    cfg = root / "yigraf" / "config.yaml"
+    cfg.write_text(cfg.read_text() + "\nmaturity_survival_floor: 5\n")
+    out = _run(["build", str(root)]).output
+    assert "maturity_survival_floor is set" in out and "IGNORED" in out
+
+
+def test_build_is_quiet_when_the_floor_is_off(tmp_path: Path):
+    root = _repo(tmp_path)
+    assert "maturity_survival_floor" not in _run(["build", str(root)]).output

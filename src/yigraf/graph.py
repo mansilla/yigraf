@@ -29,7 +29,8 @@ SCHEMA_VERSION = 0
 _EDGES_KEY = "links"
 
 #: Node attrs that are read-time overlays, never persisted (R1): the stored projection must be
-#: recomputable AND HEAD-stable. ``survival`` is git-derived (commits since a memory landed → moves
+#: recomputable AND HEAD-stable. ``survival`` is history-derived (commits/log-events since a memory
+#: landed, whichever is larger — :func:`yigraf.counters.apply_maturity`; the git side moves
 #: every commit, the mem:034 #10 churn); ``usage``/``last_seen``/``upholds`` are the machine-local
 #: sidecar overlay. All are re-derived on read paths, so dropping them from the view loses nothing.
 _VOLATILE_NODE_ATTRS = ("survival", "usage", "last_seen", "upholds")

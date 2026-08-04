@@ -51,6 +51,21 @@ class SyncError(Exception):
     corrupt sync must not silently poison the replica."""
 
 
+class RemoteUnavailable(Exception):
+    """The remote could not be reached, or answered with a *transient* failure (5xx / 429).
+
+    The third failure mode, and the only RECOVERABLE one — kept distinct because the three want
+    opposite handling. :class:`~yigraf.onlinelog.IngestRejected` is permanent (the assertion is
+    malformed; re-sending changes nothing, so the run reports it and moves on). :class:`SyncError` is
+    an integrity break (a stop, loud, replica untouched). This one is just weather: nothing is wrong
+    with the client, the replica, or the assertion, so the correct response is to say so plainly and
+    let the *next* run carry the work — see :func:`push_assertion` on why no queue is needed.
+
+    A 4xx that isn't 429 is deliberately NOT wrapped: a bad token or a wrong project URL fails
+    identically on every retry, so it must surface as itself rather than read as "try again later".
+    """
+
+
 @runtime_checkable
 class RemoteClient(Protocol):
     """The API the client speaks (never the DB). Three calls — the whole online transport surface.
@@ -124,8 +139,19 @@ def push_assertion(store: SqliteAssertionStore, remote: RemoteClient, project: s
                    assertion: Assertion) -> StoredEvent:
     """Write-through a local authoring write: append to the remote (the authority), then fold the
     authoritative event into the replica so local reads see it immediately. A following :func:`sync`
-    advances the cursor past it (idempotent). Offline queueing of a failed push is a later extension —
-    the prototype is write-through."""
+    advances the cursor past it (idempotent).
+
+    **A failed push needs no queue — the committed file log already is one.** The push set is not a
+    buffer this function drains; ``yigraf sync`` re-derives it every run as
+    ``[a for a in FileLog(repo) if a.id not in store.known_ids(project)]``. An assertion that never
+    reached the remote is therefore still in the file log and still absent from the replica, so the
+    next run picks it up unchanged — durably, because the file log is *git-committed* (a queue in
+    ``.local/`` would not survive a fresh clone, and would be a second source of truth to reconcile).
+    Idempotency makes the retry safe from the other side too: push is keyed by ``event_key``, so a
+    write that landed but whose response was lost collapses on re-push rather than duplicating.
+
+    What the caller owes this design is only to *stop* on :class:`RemoteUnavailable` rather than
+    treating it as data loss: the work is already persisted, and the next ``yigraf sync`` sends it."""
     authoritative = remote.push(project, [assertion])[0]
     store.upsert_event(project, authoritative)
     return authoritative
@@ -260,8 +286,22 @@ class HttpRemote:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 return _json.loads(resp.read())
         except urllib.error.HTTPError as exc:  # a rejected write teaches the fix (design law #1)
-            detail = _json.loads(exc.read() or b"{}").get("detail")
+            try:  # a 5xx often answers in HTML, so the detail parse must not become the error
+                detail = _json.loads(exc.read() or b"{}").get("detail")
+            except (OSError, ValueError):
+                detail = None
             if exc.code == 422 and isinstance(detail, dict) and "rejected" in detail:
                 from yigraf.onlinelog import IngestRejected
-                raise IngestRejected(detail["rejected"]) from exc
+                # IngestRejected takes a LIST of problems and "; "-joins it; the server sends exactly
+                # that (``exc.problems``). Wrap a bare string rather than let it iterate per-character.
+                rejected = detail["rejected"]
+                raise IngestRejected([rejected] if isinstance(rejected, str) else list(rejected)) from exc
+            if exc.code == 429 or exc.code >= 500:  # transient: the server is up but can't serve now
+                raise RemoteUnavailable(f"{self.base_url} answered {exc.code} {exc.reason}") from exc
             raise
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            # No answer at all — offline, DNS, refused, TLS, or timed out. HTTPError is a URLError
+            # subclass and URLError an OSError subclass, so this clause is reached only for failures
+            # the handler above did not already classify.
+            reason = getattr(exc, "reason", exc)
+            raise RemoteUnavailable(f"{self.base_url} is unreachable ({reason})") from exc
