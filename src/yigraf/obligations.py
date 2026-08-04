@@ -207,7 +207,10 @@ def obligations(graph: nx.DiGraph, root: Path, config: dict, index=None) -> list
     :func:`~yigraf.contradiction.detect_conflicts` and :func:`~yigraf.drift.compute_drift` already
     return — no new detection, no new thresholds. ``index`` is the optional pre-loaded embedding index
     (a caller holding one passes it through so the conflict sweep doesn't re-read it); absent an index
-    the sweep fails open to *silence*, so a repo with no embeddings simply reports no conflicts.
+    the *cosine sweep* contributes nothing (silence over noise, design law #4) — but a nominated
+    dispute still surfaces, because a nomination is an asserted verdict rather than a measurement and
+    rides the log index-free (int:team-reconciliation). So "no embeddings" means no *swept* conflicts,
+    never no conflicts at all.
     """
     found: list[Obligation] = [_stale(it) for it in stale_completions(graph)]
     found += [_conflict(c, graph) for c in detect_conflicts(graph, root, config, index=index)]
