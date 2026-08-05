@@ -135,5 +135,11 @@ memory](https://ricstalt.medium.com/typed-arrows-for-ai-agent-memory-e0b22915d75
 
 ## Status
 
-**yigraf 1.x is local** — everything runs self-contained inside a single repo/folder, no network, no
-account. Multi-user, hosted, real-time collaboration is the **2.0** roadmap. MIT licensed.
+**yigraf 1.x is local by default** — the engine is self-contained inside a single repo/folder. No
+account, no service, no code or reasoning leaving your machine; `yigraf status` checks PyPI once a day
+so it can tell you an update exists, and that is the only socket it opens.
+
+Since 1.2.0 a workspace *can* opt into a shared log — `yigraf sync` against a yigraf-server, off unless
+you configure it — which is what lets a team resolve each other's conflicts and see each other's
+beliefs drift against their own code. Reads still run against a local replica, so being offline costs
+you nothing. The hosted, multi-user, real-time product line is still the **2.0** roadmap. MIT licensed.
