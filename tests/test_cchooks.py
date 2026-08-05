@@ -106,6 +106,9 @@ def test_install_writes_settings_skill_and_agents(tmp_path: Path):
     assert any(e.get("matcher") == "Edit|Write" for e in settings["hooks"]["PostToolUse"])
     assert "hook post-tool-use" in json.dumps(settings)
     assert "hook session-start" in json.dumps(settings)
+    # Stop carries the principal's obligation notice (int:obligation-notice) — the one hook whose
+    # audience is the human, so it is wired alongside the two agent-facing ones.
+    assert "hook stop" in json.dumps(settings)
     assert "yigraf link" in result.skill_path.read_text()
     assert _AGENTS_START in result.agents_path.read_text()
 

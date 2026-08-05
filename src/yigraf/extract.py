@@ -24,7 +24,7 @@ from yigraf import artifacts, counters, drift, filelog, memory
 from yigraf.astnorm import ANCHOR_ALGO
 from yigraf.cache import StructureCache, file_sha
 from yigraf.filelog import FileLog
-from yigraf.fold import fold
+from yigraf.fold import fold, fold_assertions
 from yigraf.graph import empty_graph
 from yigraf.languages import (
     FileProjection,
@@ -45,6 +45,8 @@ class BuildStats:
     files: int = 0
     extracted: int = 0
     cached: int = 0
+    #: Assertions folded from the synced replica on top of the authored ones (0 when offline).
+    synced: int = 0
 
 
 def extract_file(relpath: str, source: bytes, parser=None) -> FileProjection:
@@ -126,13 +128,51 @@ def build_graph(root: Path, config: dict) -> tuple[nx.DiGraph, BuildStats]:
     # drift + retrieval still read (filelog.denormalize_danglings).
     filelog.inject_base_anchors(graph, root)
     fold(FileLog(root), base=graph)
+    stats.synced = _fold_replica(graph, root, config)
     filelog.denormalize_danglings(graph)
     drift.resolve_renames(graph)  # re-anchor moved/renamed implements + concerns targets (M3/M7)
-    counters.apply_maturity(graph, root, config, cache=cache)  # git-derived working/settled, HEAD-cached (R2)
+    # Stamps `survival` (HEAD-cached, R2) + the provenance-derived landing tier only; `settled` is the
+    # read-time verdict over sidecar upholds (counters.apply_maturity_verdict), never build-time (mem:033).
+    counters.apply_maturity(graph, root, config, cache=cache)
 
     cache.prune(set(relpaths))
     cache.save(cache_path)
     return graph, stats
+
+
+def _fold_replica(graph: nx.DiGraph, root: Path, config: dict) -> int:
+    """Fold the synced replica's assertions onto the same base the authored ones landed on.
+
+    This is what makes a teammate's belief a first-class citizen of *your* graph: their intent anchored
+    to ``sym:foo`` starts drifting when *you* edit ``foo``, and their decisions enter ``context``,
+    ``status``, and the coherence sweep exactly like your own. Only assertions cross the wire —
+    structure is always re-derived locally from your own source — so the shared log never needs a copy
+    of anyone's code, and drift stays computable client-side.
+
+    Two folds over one base is safe by construction, not by luck: assertions are content-addressed and
+    the fold is an idempotent, order-independent set-union (mem:060/mem:98d5a556), so a belief you
+    authored *and* pushed collapses to one node rather than doubling. A belief whose content genuinely
+    differs is not a merge decision — both stay live and the pair becomes a coherence finding
+    (:mod:`yigraf.contradiction`), which is the whole no-last-writer-wins design.
+
+    Fail-open (design law #5): unconfigured, absent, or unreadable replica ⇒ 0 folded and a purely
+    local graph. A workspace that has never synced must build exactly as it does today.
+    """
+    online = config.get("online") or {}
+    project = online.get("project")
+    if not project:
+        return 0
+    replica = Path(root) / "yigraf" / (online.get("replica") or "cache/replica.db")
+    if not replica.exists():
+        return 0
+    try:
+        from yigraf.onlinelog import SqliteAssertionStore
+        from yigraf.sync import replica_log
+
+        log = replica_log(SqliteAssertionStore(replica), project)
+        return len(fold_assertions(log.iter_assertions_in_causal_order(), base=graph))
+    except Exception:  # noqa: BLE001 - a broken replica must degrade to local, never break the build
+        return 0
 
 
 def symbol_content_hash(root: Path, symbol_id: str, config: dict) -> str | None:

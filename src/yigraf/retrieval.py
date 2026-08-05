@@ -426,6 +426,12 @@ _SOURCE_KINDS = frozenset({"function", "method", "class", "type"})
 #: gates ``source_for_seeds``). They still seed retrieval and bridge traversal — only the output drops them.
 _RENDER_SKIP_KINDS = frozenset({"file", "module"})
 
+#: Families suppressed from the render for the same reason: bookkeeping, not context. A ``resolution``
+#: is a principal's verdict on a pair of beliefs (:mod:`yigraf.resolution`) — what the agent needs is
+#: the *effect* (the beliefs that survived, and the conflict count on the status surface), not the
+#: minutes of the meeting. Rendering them would spend the budget twice on the same disagreement.
+_RENDER_SKIP_FAMILIES = frozenset({"resolution"})
+
 
 def _source_block(graph: nx.DiGraph, node_id: str, root: Path, max_lines: int) -> str | None:
     """A header + verbatim, line-numbered source slice for a structure symbol (A3), or ``None``.
@@ -529,7 +535,9 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
     src_emitted = 0
 
     # Drop file:/module: containers before rendering — they only eat budget and bury intent/drift.
-    renderable = [n for n in ranked if graph.nodes[n].get("kind") not in _RENDER_SKIP_KINDS]
+    renderable = [n for n in ranked
+                  if graph.nodes[n].get("kind") not in _RENDER_SKIP_KINDS
+                  and graph.nodes[n].get("family") not in _RENDER_SKIP_FAMILIES]
     renderable_set = set(renderable)
     by_family: dict[str, list[str]] = {fam: [] for fam in _FAMILY_ORDER}
     rendered_ids: list[str] = []
@@ -564,13 +572,15 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
         cost = len(line) + 1
         if used + cost > char_budget:
             return
-        if cap is not None and spent[fam] + cost > cap:
+        # .get, not [fam]: an unrecognized family must fall back to "no reserved share" rather than
+        # taking retrieval down (design law #5) — a new family should degrade, never crash the read path.
+        if cap is not None and spent.get(fam, 0) + cost > cap:
             return
         by_family.setdefault(fam, []).append(line)
         rendered_ids.append(node_id)
         rendered_set.add(node_id)
         used += cost
-        spent[fam] += cost
+        spent[fam] = spent.get(fam, 0) + cost
         if used_source:
             src_emitted += 1
 

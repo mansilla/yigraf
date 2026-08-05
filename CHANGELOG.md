@@ -4,6 +4,102 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.2.0] — 2026-08-04
+
+The first release in which yigraf is **usable by more than one person at a time** — and still, by
+default, entirely local. Nothing here opens a socket unless you configure it to: `online.project` and
+`online.remote` ship empty, `yigraf sync` says so and exits 0, and a workspace that never links behaves
+exactly as 1.1.1 did. The **2.0** number stays reserved for the hosted line; this is the client half,
+and it is additive.
+
+### Added — resolution across a team (`int:team-reconciliation`)
+- **`resolution.py` — verdicts are first-class appends.** `reconcile` / `supersede` / `dispute` are now
+  authorable by a principal who owns *neither* belief. The verdict names both operands by id and
+  projects the resolving edge between them, so it needs write access to no one's files. This is what a
+  conflict only its own authors may close costs you: it deadlocks the moment one of them leaves.
+- **`fold._apply_projection`** — the one place an assertion may emit an edge between two *other* nodes,
+  with shadow-protection when two verdicts compete for an ordered pair. Verdicts are read back off
+  resolution *nodes*, never the projected edge, so a dispute and a later reconcile both count in either
+  operand order.
+- **`yigraf dispute`** — nominate two beliefs as contradictory: the durable "open a PR" step. A
+  nomination is an assertion, so it rides the log and every client sees it. `contradiction` unions
+  these with the cosine sweep, which matters because the sweep is index-derived and fails open to
+  silence — right for one developer, wrong for a team, where the same merged log must yield the same
+  open set everywhere.
+- **`extract._fold_replica`** — a teammate's belief folds onto your **local** structure base, so their
+  intent anchored to `sym:foo` drifts when *you* edit `foo`. Only assertions cross the wire; structure
+  stays locally derived, so the shared log never needs a copy of anyone's code.
+- **`responsibility.py`** — whoever pushes second merges. Of two conflicting beliefs the higher `seq`
+  was written into a world that already contained the other, so its author owes the reconcile. Derived
+  from the log's existing order, never a stored assignment; identity comes from the server-stamped
+  actor, never a client's claim.
+
+### Added — the principal's notice channel (`int:obligation-notice`)
+- **A `Stop` hook that names newly-unresolved obligations to the human, once, with the command that
+  clears each one.** The statusline already counted conflicts, stale completions, and drift, and that
+  count reliably produced no action: a warning present on every refresh reads as furniture within a
+  day, and it carries neither a locator nor a verb. `obligations.py` re-shapes what `stale_completions`,
+  `detect_conflicts`, and `compute_drift` already return — no new detection, no new thresholds — and
+  diffs them against a session-keyed latch in gitignored `.local/`.
+- It returns **only** the universal `systemMessage` field. Never `decision: "block"` (design law #5 is
+  unconditional, and the sharpest obligation here — a pending supersede of a human-attested node — is
+  one the agent structurally *cannot* clear, so a gate would deadlock); never `additionalContext`
+  (mem:012 keeps human-facing graph health off the agent's budget). Edge-triggered, so `/clear`
+  correctly re-announces what is still open and resolution stays silent.
+- Config: `status.obligation_notice` (`true`) and `status.obligation_notice_max` (`5`).
+
+### Added — the online client
+- **`yigraf sync`** — pull the team's delta, push what the log hasn't seen. The pulled delta's Merkle
+  links are re-derived client-side before anything is folded in, so a server that dropped, reordered,
+  or forged an event is caught here. Push is idempotent by `event_key`, and needs no queue: the push
+  set is re-derived every run as the git-committed file log minus the replica's known ids, so an
+  assertion that never landed simply goes out next time. (A queue in `.local/` wouldn't survive a
+  clone, and would be a second source of truth to reconcile.)
+- Config: an `online:` block (`project`, `remote`, `replica`) — all empty by default. The bearer token
+  comes from `YIGRAF_TOKEN` and never from `config.yaml`, which is committed, and a token in git is a
+  leaked token.
+- `maturity_survival_floor` — an optional git-durability gate on promotion to `settled`.
+
+### Changed
+- **`reconcile` now always authors a resolution append**, rather than writing `equivalent_to`
+  frontmatter onto the left belief when it happened to be local. That silently broke the `memid-v1`
+  invariant: `memory.memory_id` does not cover `equivalent_to`, so the edit changed an assertion's
+  *body* while leaving its *id* fixed — two different bodies sharing one id, which `yigraf sync`
+  (identifying by id) could never see, so the reconciliation stayed local forever. Legacy frontmatter
+  is still **read** for compatibility, and deliberately does not block re-authoring, so a pre-sync
+  workspace can promote its old local reconciliations to real appends.
+- **`maturity_survival_floor` abstains where survival cannot be measured.** `survival` scores 0 both
+  for "landed in the tip commit" and for "git has never seen this file". Read as a quantity that
+  conflation is conservative and correct; read as a *gate* the same 0 inverts, so in any workspace
+  whose artifacts are untracked an armed floor meant nothing could ever settle, silently and forever.
+  A gate that cannot be evaluated must not be the thing that denies. `build` now warns when a floor is
+  armed but unmeasurable.
+
+### Fixed
+- **A failed push was an unhandled traceback.** `HttpRemote._request` let raw urllib errors escape and
+  the sync loop caught only `IngestRejected`, so being offline crashed rather than reported. New
+  `RemoteUnavailable` is kept distinct from the other two because all three want opposite handling: a
+  chain break is an integrity stop (exit 1, replica untouched), a rejection is permanent (reported
+  per-assertion, the run continues), and this one is weather — say so and let the next run carry it.
+- **A refused credential reached the operator as a 114-line Typer traceback.** `HttpRemote` re-raises a
+  non-429 4xx as itself on purpose — a bad token fails identically on every retry, so it must not read
+  as "try again later" — but that is a *transport* contract, and `cli.sync` never caught it. A 401,
+  403, or 404 is now `_guidance` at exit 0, the same contract the missing-token and unset-config gaps
+  already had: all three are one misconfiguration the caller can fix and re-run. The 404 message
+  deliberately does not guess between "no such project" and "you are not a member", because the server
+  answers both identically so that membership is not an existence oracle.
+
+### Documentation
+- **The guide gains a "Working with a team" section** — linking a workspace, what crosses the wire and
+  what doesn't, resolving a conflict you didn't author, and whose turn it is.
+- **`SKILL.md` §4 taught drift only.** `reconcile` and `attest` are live verbs the skill never named,
+  so an agent told to resolve a conflict had to guess. It now covers all three re-verify signals and,
+  for a pending conflict, says plainly that the agent cannot clear it.
+- Retired the pre-mem:033 "maturity is git-derived / settled after K commits" claim from the four
+  places still carrying it (`counters.py`'s module header, `extract`, `cli`, `graph`). Promotion has
+  been a read-time verdict over sidecar upholds since mem:047; the header described the model mem:033
+  replaced, which made it actively misleading next to the code it headed.
+
 ## [1.1.1] — 2026-08-01
 
 Follow-ups to the 1.1.0 typed edge algebra from a review of that release, plus a

@@ -101,6 +101,7 @@ _INTENT = frozenset({"intent"})
 #: valid. A task is a unit of work, not a goal — pin a decision to a task's code with ``concerns``.
 _GOAL = frozenset({"intent", "plan/plan"})
 _REVISABLE = frozenset({"memory", "intent"})             # supersedes is same-family belief revision
+_RESOLUTION = frozenset({"resolution"})                  # a principal's verdict on a pair (mem:062)
 
 #: The typed edge grammar. Structure endpoints are grounded in yigraf's own built graph (the observed
 #: ``calls``/``contains``/``imports``/``inherits`` endpoint kinds); cross-family endpoints mirror what
@@ -122,6 +123,11 @@ SIGNATURES: dict[str, Signature] = {
     "equivalent_to": Signature(_MEMORY, _MEMORY),
     # belief revision (same-family; the fold marks the target superseded)
     "supersedes": Signature(_REVISABLE, _REVISABLE),
+    # resolution → the pair it judges (yigraf.resolution). ``resolves`` attributes the verdict to its
+    # two operands; ``disputes`` is the verdict itself — a durable nomination of an OPEN conflict, the
+    # one relation that adds a finding instead of closing one.
+    "resolves": Signature(_RESOLUTION, _REVISABLE),
+    "disputes": Signature(_REVISABLE, _REVISABLE),
     # DERIVED-ONLY (never asserted, only produced by composition — see COMPOSE / DERIVED_RELATIONS)
     "depends_on": Signature(_TASK, _STRUCT),
 }

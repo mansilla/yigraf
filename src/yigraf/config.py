@@ -28,7 +28,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # Maturity (mem:033): a memory settles once its accumulated survived-encounter *upholds* reach
     # `maturity_k` and it isn't superseded. Upholds are read-time, sidecar-derived — a reaffirm books
     # `maturity_uphold_review`, a silent edit-hook survival books `maturity_uphold_edit`. Git-survival
-    # is an optional durability floor (0 = off): settled also requires `survival >= maturity_survival_floor`.
+    # is an optional durability floor (0 = off): settled also requires `survival >= maturity_survival_floor`,
+    # except where no survival clock can measure at all — there the floor abstains rather than denying
+    # every promotion forever (counters.apply_maturity_verdict).
     "maturity_k": 3,
     "maturity_confirm": 1.0,
     "maturity_uphold_review": 1.0,
@@ -89,8 +91,27 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # against the raw window). ~200k is where Opus-class quality degrades and per-turn cost climbs.
     "status": {
         "ctx_soft_limit": 250_000,
+        # The principal's turn-boundary notice (int:obligation-notice). Edge-triggered: it announces an
+        # obligation once, on first appearance, on the host's user-facing channel — never the agent's
+        # context (mem:012) and never as a block (design law #5). Off ⇒ the statusline counts remain the
+        # only human surface.
+        "obligation_notice": True,
+        "obligation_notice_max": 5,
+    },
+    # Online (int:yigraf-online-v1) — the shared log this workspace participates in. `project` is the
+    # key the hosted log is scoped by; `replica` is the local SQLite mirror `yigraf sync` maintains,
+    # relative to the workspace dir. With either unset, or the replica absent, the build is purely
+    # local — the offline default, and what every workspace does until it opts in.
+    "online": {
+        "project": None,
+        "remote": None,
+        "replica": "cache/replica.db",
     },
 }
+
+#: Environment variable holding the bearer token for the hosted log. Deliberately NOT a config key —
+#: config.yaml is committed, and a token in git is a leaked token.
+TOKEN_ENV = "YIGRAF_TOKEN"
 
 # Commented YAML written by ``yigraf init``. A test asserts this parses to DEFAULT_CONFIG, so the
 # friendly file and the in-code defaults can never silently drift apart.
@@ -134,7 +155,9 @@ maturity_k: 3                  # accumulated uphold weight (un-superseded) befor
 maturity_confirm: 1.0          # uphold weight that confirms a `proposed` candidate up to `working`
 maturity_uphold_review: 1.0    # uphold booked by a `reaffirm` (an explicit re-verification)
 maturity_uphold_edit: 0.25     # uphold booked by a silent edit-hook survival (no drift on the locus)
-maturity_survival_floor: 0     # optional git-durability gate (commits since intro); 0 = off
+maturity_survival_floor: 0     # optional git-durability gate (commits since intro); 0 = off.
+                               # Ignored (not enforced) where neither survival clock can measure —
+                               # e.g. a gitignored workspace with no shared log; `build` warns.
 proposed_ttl: 30               # GC archives a never-confirmed `proposed` candidate after this many commits (task #7)
 
 # --- Retrieval (M4) — how the token-budgeted context slice is seeded, traversed, and ranked ---
@@ -194,6 +217,25 @@ embeddings:
 # unaffected. ~200k is where Opus-class quality degrades and cost climbs. Set 0 to use the raw window.
 status:
   ctx_soft_limit: 250000        # tokens of usable budget the ctx gauge scales to (0 = raw window)
+  # The turn-boundary obligation notice: tells YOU (not the agent) when a conflict, stale completion,
+  # or drift first appears, so you can direct the agent at it. Edge-triggered — announced once, never
+  # repeated while it stays open — and it never blocks the agent's workflow.
+  obligation_notice: true       # false ⇒ the statusline counts stay the only human surface
+  obligation_notice_max: 5      # max obligations listed per notice (overflow is stated, not hidden)
+
+# --- Online (int:yigraf-online-v1) — the shared log this workspace participates in ---
+# Set `project` to the key the hosted log is scoped by, and the build folds the synced replica on top
+# of your authored artifacts: a teammate's intent starts drifting against YOUR local code, and their
+# beliefs enter `context`/`status` exactly like your own. Leave `project` empty (or let the replica be
+# absent) and the build is purely local — the offline default. Structure is never synced; only
+# assertions cross the wire, so reasoning stays on your machine.
+# `yigraf sync` pulls the delta, verifies it chains, then pushes anything you authored that the log
+# hasn't seen. The bearer token comes from the YIGRAF_TOKEN env var, never from this file — config.yaml
+# is committed, and a token in git is a leaked token.
+online:
+  project:                      # e.g. yigraf-server — empty means offline
+  remote:                       # e.g. https://yigraf.online — empty means offline
+  replica: cache/replica.db     # local SQLite mirror, relative to the yigraf/ workspace dir
 """
 
 

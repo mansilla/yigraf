@@ -10,6 +10,8 @@ a SQLite replica and reconcile by head hash; merging is a commutative set-union 
 fold re-derives belief, so no last-writer-wins). The capstone is convergence — independent writers'
 replicas fold to the identical graph.
 """
+import io
+
 import pytest
 
 from yigraf.fold import fold
@@ -24,9 +26,11 @@ from yigraf.onlinelog import (
 )
 from yigraf.sync import (
     GENESIS_HASH,
+    HttpRemote,
     LoopbackRemote,
     RemoteClient,
     RemoteHead,
+    RemoteUnavailable,
     SyncError,
     _verify_delta,
     push_assertion,
@@ -227,3 +231,98 @@ def test_replica_mirrors_the_remote_log_exactly():
     sync(client, remote, "proj")
     assert to_node_link(fold(replica_log(client, "proj"))) == \
            to_node_link(fold(OnlineLog(server, "proj", signer_key=SERVER_KEY)))
+
+
+# ============================================================================================
+# Transport failure — the third failure mode, and the only recoverable one
+# ============================================================================================
+
+
+class _Urlopen:
+    """A stand-in for ``urllib.request.urlopen`` that raises whatever it was handed."""
+
+    def __init__(self, error):
+        self.error = error
+
+    def __call__(self, req, timeout=None):
+        raise self.error
+
+
+def _http_error(code, body=b"{}", reason="Boom"):
+    import urllib.error
+    return urllib.error.HTTPError("https://api.example/x", code, reason, {}, io.BytesIO(body))
+
+
+def _request(monkeypatch, error):
+    """Drive one ``HttpRemote`` call with ``urlopen`` raising ``error``."""
+    import urllib.request
+    monkeypatch.setattr(urllib.request, "urlopen", _Urlopen(error))
+    return HttpRemote("https://api.example", "tok").head("proj")
+
+
+def test_an_unreachable_remote_raises_remote_unavailable(monkeypatch):
+    """Offline/DNS/refused surfaces as the recoverable signal, not a raw urllib traceback — the whole
+    point is that the caller can tell 'try again later' from 'this will never work'."""
+    import urllib.error
+    with pytest.raises(RemoteUnavailable) as exc:
+        _request(monkeypatch, urllib.error.URLError("Name or service not known"))
+    assert "unreachable" in str(exc.value)
+
+
+def test_a_timeout_is_transport_not_a_hard_error(monkeypatch):
+    with pytest.raises(RemoteUnavailable):
+        _request(monkeypatch, TimeoutError("timed out"))
+
+
+def test_a_5xx_is_transient_but_a_4xx_is_not(monkeypatch):
+    """A server that is up but can't serve is weather; a bad token fails identically forever, so it
+    must NOT read as 'retry later' (RemoteUnavailable's docstring)."""
+    import urllib.error
+    with pytest.raises(RemoteUnavailable):
+        _request(monkeypatch, _http_error(503))
+    with pytest.raises(RemoteUnavailable):  # rate-limited is the one 4xx that IS transient
+        _request(monkeypatch, _http_error(429))
+    with pytest.raises(urllib.error.HTTPError):
+        _request(monkeypatch, _http_error(401))
+
+
+def test_a_5xx_with_a_non_json_body_still_classifies(monkeypatch):
+    """A gateway answering HTML must not turn into a JSONDecodeError from the detail parse."""
+    with pytest.raises(RemoteUnavailable):
+        _request(monkeypatch, _http_error(502, body=b"<html>bad gateway</html>"))
+
+
+def test_an_ingest_rejection_still_wins_over_the_transient_classifier(monkeypatch):
+    """422 + a rejection detail stays permanent (design law #1: a rejected write teaches the fix)."""
+    body = b'{"detail": {"rejected": ["unknown causal parent mem:9"]}}'
+    with pytest.raises(IngestRejected) as exc:
+        _request(monkeypatch, _http_error(422, body=body))
+    assert exc.value.problems == ["unknown causal parent mem:9"]
+
+
+def test_a_string_valued_rejection_is_not_shredded_into_characters():
+    """``IngestRejected`` takes a LIST (the server sends ``exc.problems``); a variant server sending a
+    bare string would otherwise be iterated per-character into 'u; n; k; n; o; w; n'."""
+    body = b'{"detail": {"rejected": "unknown causal parent mem:9"}}'
+    with pytest.raises(IngestRejected) as exc:
+        with pytest.MonkeyPatch.context() as mp:
+            import urllib.request
+            mp.setattr(urllib.request, "urlopen", _Urlopen(_http_error(422, body=body)))
+            HttpRemote("https://api.example", "tok").head("proj")
+    assert exc.value.problems == ["unknown causal parent mem:9"]
+
+
+def test_an_unpushed_assertion_stays_in_the_next_runs_push_set():
+    """The retry invariant behind 'no queue needed': ``yigraf sync`` derives its push set as the file
+    log minus the replica's known ids, so a push that never landed is still outgoing next run — and a
+    push that DID land drops out, so the retry never duplicates (push_assertion's docstring)."""
+    remote, _ = _remote()
+    client = SqliteAssertionStore()
+    local = [_mem("mem:1"), _mem("mem:2")]  # what FileLog would yield from the committed artifacts
+
+    push_assertion(client, remote, "proj", local[0])          # lands
+    outgoing = [a for a in local if a.id not in client.known_ids("proj")]
+    assert [a.id for a in outgoing] == ["mem:2"]              # the un-pushed one is still queued
+
+    push_assertion(client, remote, "proj", local[1])          # the next run sends it
+    assert [a for a in local if a.id not in client.known_ids("proj")] == []

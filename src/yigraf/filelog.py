@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from yigraf import artifacts, memory
+from yigraf import artifacts, memory, resolution
 from yigraf.artifacts import CONF, Intent, Plan
 from yigraf.astnorm import ANCHOR_ALGO
 from yigraf.log import Assertion, causal_order
@@ -183,14 +183,49 @@ def _memory_assertion(mem) -> Assertion:
     )
 
 
+def _resolution_assertion(res) -> Assertion:
+    """One resolution artifact → one assertion (mem:062: a verdict is an append, not an edit).
+
+    Unlike every other family, the edge that *carries the verdict* runs between the two beliefs rather
+    than out of this node — emitted as a ``projections`` entry with an explicit ``source`` so the fold
+    can add it without the resolving principal owning either operand (:mod:`yigraf.resolution`). The
+    node's own ``resolves`` edges keep the verdict attributable and traversable from either side.
+    """
+    attrs = {
+        "kind": res.kind,
+        "label": f"{res.kind}: {res.left} ↔ {res.right}",
+        "confidence": CONF,
+        "left": res.left,
+        "right": res.right,
+        "why": res.why,
+        "source_file": res.source_file or f"resolutions/{res.kind}-{res.id.split(':', 1)[1]}.md",
+    }
+    edges = [_edge("resolves", res.left), _edge("resolves", res.right)]
+    projections = [{"source": res.left, "relation": res.relation, "target": res.right,
+                    "attrs": {"confidence": CONF, "via": res.id}}]
+    provenance = [dict(res.provenance)] if res.provenance else []
+    return Assertion(
+        id=res.id,
+        kind=resolution.RESOLUTION_FAMILY,
+        body={"family": resolution.RESOLUTION_FAMILY, "attrs": attrs,
+              "edges": edges, "projections": projections},
+        # Authored-after BOTH operands: causal order then guarantees each is folded before the verdict,
+        # so the projected edge resolves on the single pass rather than dangling.
+        parents=tuple(r for r in (res.left, res.right) if _is_log_id(r)),
+        provenance=provenance,
+    )
+
+
 def assertions_from_repo(root: Path) -> list[Assertion]:
-    """Read every authored intent/plan/memory artifact under ``root`` into the assertion log (unordered;
-    :func:`yigraf.log.causal_order` linearizes). Reuses the family readers so parsing stays single-sourced."""
+    """Read every authored intent/plan/memory/resolution artifact under ``root`` into the assertion log
+    (unordered; :func:`yigraf.log.causal_order` linearizes). Reuses the family readers so parsing stays
+    single-sourced."""
     root = Path(root)
     out: list[Assertion] = [_intent_assertion(i) for i in artifacts.iter_intents(root)]
     for plan in artifacts.iter_plans(root):
         out += _plan_assertions(plan)
     out += [_memory_assertion(m) for m in memory.iter_memories(root)]
+    out += [_resolution_assertion(r) for r in resolution.iter_resolutions(root)]
     return out
 
 
@@ -205,6 +240,8 @@ _TYPED_DANGLING = {
     "grounded_by": ("dangling_grounded_by", True),
     "supersedes": ("dangling_supersedes", False),
     "equivalent_to": ("dangling_equivalent_to", False),
+    "disputes": ("dangling_disputes", False),
+    "resolves": ("dangling_resolves", False),
     "tracks": ("dangling_tracks", False),
     "requires": ("dangling_requires", False),
     "implements": ("dangling_implements", True),

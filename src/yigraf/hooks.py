@@ -126,16 +126,42 @@ sees the decision and its rationale without reading the history.
 - `yigraf plan <slug> -t "<title>" --task "<description>"` then `yigraf link task:<plan>/1 int:<slug>`
   to track the intent.
 
-## 4. Drift means re-verify
-You don't poll for drift — `yigraf context` and the edit hook surface it for you: soft drift (a linked
-symbol's body changed) or hard drift (it's gone), for both `implements` (task→code) and `concerns`
-(decision→code) links. A pure rename auto-re-anchors. When drift surfaces, re-verify the code still
-satisfies the spec/decision, then re-anchor: `yigraf link task:<id> sym:…` for a task's `implements`,
-`yigraf reaffirm mem:<id>` for a decision's `concerns` that still holds (or `supersede` it if your mind
-changed). After an edit-heavy session that drifted many decisions on one locus, `yigraf reaffirm
-<sym|file>` reaffirms **every** memory concerning that locus in one call — scoped to a locus you
-actually re-verified (there's no blanket "clear all drift" — that would rubber-stamp). (`yigraf drift`
-exits non-zero on drift — that's the commit/CI gate, not something you poll.)
+## 4. The three re-verify signals: drift, stale, conflict
+You never poll for these — `yigraf context` and the hooks surface them. Each has **one** resolving verb;
+using the wrong one either rubber-stamps a belief you didn't check or destroys a reasoning trail.
+
+**Drift** — a live link's anchor no longer matches: soft (the symbol's body changed) or hard (it's
+gone), on `implements` (task→code), `concerns` (decision→code), or `grounded_by` (decision→evidence).
+A pure rename auto-re-anchors and never surfaces. Re-verify the code still satisfies the thing, then:
+- a task's `implements` → `yigraf link task:<id> sym:…` (re-anchors)
+- a decision's `concerns` that still holds → `yigraf reaffirm mem:<id>` (never re-`remember` — that
+  duplicates; never `supersede` unless your mind actually changed)
+- `grounded_by` → `yigraf reaffirm mem:<id> --grounding empirical` if you re-observed the evidence,
+  otherwise downgrade the claim to `inferred` — an `empirical` tier whose evidence moved is unearned
+- an edit-heavy session that drifted many decisions on one locus → `yigraf reaffirm <sym|file>`
+  reaffirms every memory concerning that locus at once. Scoped to a locus you *actually re-verified* —
+  there is deliberately no blanket "clear all drift", because that is rubber-stamping.
+
+**Stale completion** — a task marked **done** whose implementing symbol drifted. The completion isn't
+false, it's *unverified*: the evidence for "done" moved. Re-verify, then `yigraf link task:<id> sym:…`
+to re-anchor — or reopen the task if the change actually regressed it. Never flip it to `todo`
+automatically. You won't see these at the edit hook (a closed task must not nag mid-edit); they surface
+in `yigraf context`, at SessionStart, and to your principal at the turn boundary.
+
+**Conflict** — two live beliefs saying nearly the same thing about the same code, never reconciled.
+Either the cosine sweep found them, or a principal *nominated* them with `dispute`. Read both, then:
+- they're compatible / one refines the other → `yigraf reconcile mem:<a> mem:<b>`
+- one genuinely wins → `yigraf supersede mem:<loser> "<the surviving claim>" --why "…"`
+- you can see they conflict but the call isn't yours → `yigraf dispute mem:<a> mem:<b> --why "…"`.
+  This *nominates* the pair: it blocks nothing, both stay live, but the open question is now durable
+  and actor-stamped so it rides the log to everyone — unlike a swept finding, which is index-derived
+  and invisible to anyone without an index. Use it instead of silently moving on.
+- **pending** conflict (an agent supersede of a human-attested decision is held, never applied) → you
+  cannot clear this one. It needs `yigraf attest` from a human. Surface it and move on.
+- same provenance tier with no preferred side → that is not a bug. Two equal-authority beliefs stay an
+  open question for the principal rather than being tie-broken. Ask, or `dispute` it.
+
+(`yigraf drift` exits non-zero on drift — that's the commit/CI gate, not something you poll.)
 
 ## 5. Evolve an intent (retire or reverse a spec)
 Specs change too — but **never hand-edit a superseded intent into place**; use one of two supported paths:
@@ -259,6 +285,11 @@ def install_claude_hooks(root: Path) -> ClaudeHookResult:
                            f'"{py}" -m yigraf hook post-tool-use', "hook post-tool-use")
     changed |= _ensure_hook(hooks, "SessionStart", "startup|resume|clear|compact",
                             f'"{py}" -m yigraf hook session-start', "hook session-start")
+    # Stop: the PRINCIPAL's turn-boundary notice (int:obligation-notice) — the only yigraf hook whose
+    # audience is the human. It emits the universal `systemMessage` field (shown in the UI, never added
+    # to the agent's context) and never `decision`, so it informs without gating (mem:bf00a1f5).
+    changed |= _ensure_hook(hooks, "Stop", "",
+                            f'"{py}" -m yigraf hook stop', "hook stop")
 
     claude.mkdir(parents=True, exist_ok=True)
     # The statusline adapter is a dependency-free Python command — the [Yigraf] bar + ctx gauge, no jq.
