@@ -29,6 +29,18 @@ scripts/eval/runs/
 # --- Internal drafts / blog notes (not for publication from this repo) ---
 internal/
 
+# --- Article drafts + their publication assets, staged in docs/ ---
+# Same rule as internal/ above: written for Medium and submissions, rendered elsewhere, and revised
+# on a cadence that has nothing to do with the code. docs/ is a *reference* surface an agent is
+# pointed at (README links guide.md, hosts.md, mcp.md, statusline.md, language-support.md), so a
+# draft sitting beside them reads as documentation and isn't. Anchored to /docs/ and matched by
+# prefix so the published set can never be caught by accident.
+/docs/article-*
+/docs/typed-arrows*
+/docs/hero-*
+/docs/figure_*
+/docs/SUBMISSION-*
+
 # --- yigraf's own workspace data (self-hosted): intents/memory/plans/config live on disk,
 # not in this repo's history. Anchored to root so it never matches the src/yigraf/ package. ---
 /yigraf/
