@@ -1387,6 +1387,36 @@ def _online_settings(repo: Path, config: dict) -> tuple[str, str, Path]:
     return project, remote, replica
 
 
+def _auth_guidance(exc, remote_url: str, project: str) -> str:
+    """Name what the server refused, and the one thing that fixes it.
+
+    Every case here is a *credential or membership* problem, which is why none of them is
+    :class:`~yigraf.sync.RemoteUnavailable`: retrying changes nothing, so telling the caller to wait
+    would be a lie. What they need instead is the specific correction, per design law #1.
+
+    ``404`` is deliberately ambiguous and must stay that way in the message: the server answers it
+    identically for "no such project" and "you are not a member", so that membership is not an
+    existence oracle. Guessing one of the two here would re-leak what the route refused to say.
+    """
+    code = getattr(exc, "code", None)
+    if code == 401:
+        return (f"{remote_url} rejected your credential (401). ${TOKEN_ENV} is set but the server "
+                f"doesn't accept it — it's expired, revoked, or meant for a different host. Check the "
+                f"value, or re-issue a token for this workspace, then re-run `yigraf sync`.")
+    if code == 403:
+        return (f"{remote_url} authenticated you but refused this operation on '{project}' (403) — "
+                f"your access is read-only where a write was needed. Ask a project owner to raise "
+                f"your role, or point `online.project` at one you can write to.")
+    if code == 404:
+        return (f"{remote_url} has no project '{project}' that you can see (404) — either it doesn't "
+                f"exist or your credential isn't a member of it, and the server deliberately doesn't "
+                f"say which. Check `online.project` in yigraf/config.yaml for a typo, and that this "
+                f"credential belongs to the account the project was shared with.")
+    return (f"{remote_url} refused the request ({code} {getattr(exc, 'reason', '')}).".rstrip() +
+            f" This isn't a transient failure, so re-running alone won't clear it — check "
+            f"`online.remote`/`online.project` in yigraf/config.yaml and your ${TOKEN_ENV}.")
+
+
 @app.command()
 def sync(
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
@@ -1416,6 +1446,8 @@ def sync(
     if not token:
         _guidance(f"No {TOKEN_ENV} in the environment — `yigraf sync` needs a bearer token for "
                   f"{remote_url}. Export {TOKEN_ENV}=<token> and re-run.")
+
+    import urllib.error
 
     from yigraf.filelog import FileLog
     from yigraf.onlinelog import IngestRejected, SqliteAssertionStore
@@ -1483,6 +1515,17 @@ def sync(
                   f"Nothing was lost — yigraf keeps working fully offline against the local replica, "
                   f"and anything you've authored stays in the committed file log, so the next "
                   f"`yigraf sync` sends it once the remote is back.")
+    except urllib.error.HTTPError as exc:
+        # A credential/authorization refusal. HttpRemote deliberately re-raises a non-429 4xx as itself
+        # (it fails identically on every retry, so it must not read as "try again later") — but "as
+        # itself" is a transport contract, not a user-facing one. Unhandled here it reached the operator
+        # as a Typer traceback, which is precisely the error that teaches abandonment (design law #1).
+        # So it lands as guidance at exit 0, the same contract as the missing-token and unset-config
+        # gaps above: all three are one misconfiguration the caller can fix and re-run.
+        _guidance(f"{_auth_guidance(exc, remote_url, project)}\n"
+                  f"Nothing was pushed or pulled, and nothing local was touched — the replica and the "
+                  f"committed file log are unchanged, so `yigraf sync` resumes once the credential is "
+                  f"sorted out.")
     finally:
         store.close()
 

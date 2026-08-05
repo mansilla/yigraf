@@ -351,3 +351,68 @@ def test_a_mid_push_drop_defers_the_rest_and_the_next_sync_sends_them(tmp_path, 
     third = runner.invoke(app, ["sync", "--repo", str(ws)])
     assert "pushed 0" in third.output, "nothing re-sends once the log has it (no duplicates)"
     assert log.store.head(PROJECT).seq == 2
+
+
+class _RefusingRemote:
+    """A remote that answers every call with one HTTP status — the credential/authorization refusals.
+
+    ``HttpRemote`` re-raises a non-429 4xx as itself on purpose (it fails identically on every retry,
+    so it must not read as "try again later"), which makes the *CLI* the only place that can turn it
+    into something an operator can act on.
+    """
+
+    def __init__(self, code: int, reason: str = "Refused") -> None:
+        self.code, self.reason = code, reason
+
+    def _refuse(self):
+        import io
+        import urllib.error
+        raise urllib.error.HTTPError("https://api.example/x", self.code, self.reason, {}, io.BytesIO(b""))
+
+    def head(self, project):
+        self._refuse()
+
+    def pull(self, project, since_seq):
+        self._refuse()
+
+    def push(self, project, assertions):
+        self._refuse()
+
+
+@pytest.mark.parametrize("code, expected", [
+    (401, "rejected your credential"),
+    (403, "refused this operation"),
+    (404, "no project"),
+    (418, "refused the request"),  # anything else still explains itself rather than raising
+])
+def test_a_refused_credential_is_guidance_not_a_traceback(tmp_path, monkeypatch, code, expected):
+    """A bad/expired/revoked token must not reach the operator as a Typer traceback.
+
+    This is design law #1's sharpest case: the condition is *entirely* fixable by the caller, so a
+    stack trace teaches "sync is broken, stop calling it" when the truth is "your token is stale".
+    Exit 0 with the fix, exactly as the missing-token and unset-config gaps already do.
+    """
+    monkeypatch.setattr(sync_mod, "HttpRemote", lambda url, token, **kw: _RefusingRemote(code))
+    monkeypatch.setenv(TOKEN_ENV, "stale-token")
+    ws = _workspace(tmp_path / "a")
+
+    out = runner.invoke(app, ["sync", "--repo", str(ws)])
+
+    assert out.exit_code == 0, out.output
+    assert "Traceback" not in out.output
+    assert expected in out.output
+    assert "nothing local was touched" in out.output
+
+
+def test_a_404_does_not_guess_between_absent_and_forbidden(tmp_path, monkeypatch):
+    """The server answers 404 identically for "no such project" and "not a member" so that membership
+    is not an existence oracle (docs/online-access.md B4). The client's message must preserve that —
+    naming either one would re-leak precisely what the route refused to say."""
+    monkeypatch.setattr(sync_mod, "HttpRemote", lambda url, token, **kw: _RefusingRemote(404))
+    monkeypatch.setenv(TOKEN_ENV, "some-token")
+    ws = _workspace(tmp_path / "a")
+
+    out = runner.invoke(app, ["sync", "--repo", str(ws)])
+
+    assert "doesn't exist or your credential isn't a member" in out.output
+    assert "deliberately doesn't say which" in out.output
