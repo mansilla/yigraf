@@ -155,6 +155,42 @@ def is_surfaced(graph: nx.DiGraph, item: DriftItem) -> bool:
     return True
 
 
+def is_reverifiable(graph: nx.DiGraph, node_id: str) -> bool:
+    """Whether asking a principal to "re-verify this still holds" about ``node_id`` is an honest prompt.
+
+    The node-shaped counterpart to :func:`is_surfaced`, which answers the same question about an *edge*.
+    Both exist because a drifted symbol reaches governed nodes two ways — the anchored edge that drifted
+    (``is_surfaced``) and the typed reverse-reachability ripple in ``cli._blast_reconcile_lines`` — and
+    the ripple must not re-surface what the direct path deliberately withheld.
+
+    Three states have no honest re-verification, one per authored family:
+
+    - a **done task** — int:drift-done-suppression: a closed task's drift is provenance, and re-``link``
+      only rubber-stamps the anchor (the dishonesty mem:031/mem:039 guard against). This is the same
+      rule :func:`is_surfaced` applies to ``implements``, restated per-node so it also covers a done task
+      reached by a *derived* relation (``depends_on`` over ``implements ∘ calls``), which the edge form
+      never sees. It is also already counted, once, as a STALE completion.
+    - a **superseded memory** (``superseded_in > 0``) — a retracted belief. Reaffirming it would re-assert
+      a claim its own successor withdrew; it stays readable as a rejected alternative (memory.py) but is
+      not a live obligation. A *pending* supersede does not count, matching ``retrieval._premise_holds``.
+    - an **archived intent** — the goal that justified the governance is retired.
+
+    Non-authored nodes (``sym:``/``file:``) and anything unrecognized pass: never invent a suppression
+    for a family whose liveness this module does not model.
+    """
+    if node_id not in graph.nodes:
+        return False
+    attrs = graph.nodes[node_id]
+    family = attrs.get("family")
+    if family == "plan":
+        return attrs.get("state") != "done"
+    if family == "memory":
+        return attrs.get("status", "active") == "active" and not attrs.get("superseded_in", 0)
+    if family == "intent":
+        return attrs.get("status") != "archived"
+    return True
+
+
 def stale_completions(graph: nx.DiGraph) -> list[DriftItem]:
     """Done tasks whose implementing symbol drifted (int:drift-as-stale): the *completion* is STALE —
     the shipped work's evidence changed, so ``done`` is no longer verified.

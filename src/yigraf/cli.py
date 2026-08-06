@@ -22,7 +22,7 @@ from yigraf import (__version__, artifacts, counters, embeddings, graphdb, memor
                     obligations, relations, resolution, retrieval, status, update)
 from yigraf.astnorm import ANCHOR_ALGO, FILE_ANCHOR_ALGO, file_content_hash, parse_file_target
 from yigraf.config import TOKEN_ENV, load_config
-from yigraf.drift import compute_drift, is_surfaced
+from yigraf.drift import compute_drift, is_reverifiable, is_surfaced
 from yigraf.extract import build_graph, symbol_content_hash
 from yigraf.graph import from_node_link, write_graph  # legacy graph.json union-merge driver only
 from yigraf.languages import available_extractors, extension_map
@@ -1283,11 +1283,20 @@ def _blast_reconcile_lines(graph, drifted_loci: set[str], exclude: set[str]) -> 
     Only *soft* drift can ripple: hard drift means the symbol is gone from the graph, so
     :func:`relations.reach` returns nothing for it (no node ⇒ no incoming edges to walk back through).
     The direct hard-drift line is the whole signal there, by construction.
+
+    Every line ends in "re-verify it still holds", so a node that *cannot* honestly be re-verified must
+    not appear: :func:`~yigraf.drift.is_reverifiable` drops done tasks, superseded memories and archived
+    intents. Without it the ripple silently undid the suppression the caller applies one call earlier —
+    ``is_surfaced`` withholds a done task's ``implements`` drift precisely so the agent is never prompted
+    to rubber-stamp a closed task (int:drift-done-suppression), and reverse reachability handed it
+    straight back, re-framed as a reconcile prompt and double-counting what ``stale`` already reports.
+    Measured on yigraf's own graph when this landed: 10 of 11 ripple lines were unactionable (7 done
+    tasks, 3 superseded memories), i.e. the section was ~9% signal.
     """
     best: dict[str, relations.Reach] = {}
     for locus in drifted_loci:
         for r in relations.blast_radius(graph, locus):
-            if r.target in exclude:
+            if r.target in exclude or not is_reverifiable(graph, r.target):
                 continue
             prior = best.get(r.target)
             if prior is None or (r.depth, r.relation, r.path) < (prior.depth, prior.relation, prior.path):

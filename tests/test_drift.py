@@ -163,3 +163,60 @@ def test_satisfied_intent_still_flagged_when_only_done_link_drifts(tmp_path: Pat
     text = retrieval.context(graph, "refresh", default_config(), root=root).text
     assert "task:auth/1 → " not in text                                  # drift line suppressed
     assert "int:refresh-works is satisfied but not verified" in text     # yet the intent is flagged
+
+
+# --- the "also affected" ripple must not re-surface what the direct path suppressed ---------------
+#
+# `_blast_reconcile_lines` walks reverse reachability from a drifted symbol to find governed nodes the
+# direct drift lines did NOT name — a node correctly anchored to the same symbol, or reached over a
+# derived relation. Every line it prints ends in "re-verify it still holds", so a node with no honest
+# re-verification must never appear there (drift.is_reverifiable).
+
+def _second_task_anchored_after_the_edit(root: Path) -> None:
+    """A task correctly anchored to the CURRENT body — so it never drifts, but the symbol it governs
+    did, which is exactly what puts it in the ripple rather than in a direct drift line."""
+    plan = root / "yigraf" / "plans" / "active" / "auth.md"
+    plan.write_text(plan.read_text().rstrip("\n") + "\n- [ ] {#2} verify it\n")
+    assert runner.invoke(app, ["link", "task:auth/2", SYM, "--repo", str(root)]).exit_code == 0
+
+
+def test_ripple_surfaces_a_live_node_governing_the_drifted_symbol(tmp_path: Path):
+    """The section's reason to exist: a correctly-anchored, still-open task governing code that
+    drifted for someone else is a real prompt, and must keep showing up."""
+    root = _linked_repo(tmp_path)
+    _drift_the_body(root)
+    _second_task_anchored_after_the_edit(root)
+    result = runner.invoke(app, ["drift", str(root)])
+    assert "also affected" in result.output
+    assert "task:auth/2" in result.output
+
+
+def test_ripple_withholds_a_done_task(tmp_path: Path):
+    """int:drift-done-suppression, restated for reverse reachability: is_surfaced keeps a done task's
+    drift out of the report, and the ripple must not hand it straight back as a reconcile prompt."""
+    root = _linked_repo(tmp_path)
+    _drift_the_body(root)
+    _second_task_anchored_after_the_edit(root)
+    plan = root / "yigraf" / "plans" / "active" / "auth.md"
+    plan.write_text(plan.read_text().replace("- [ ] {#2}", "- [x] {#2}"))
+    result = runner.invoke(app, ["drift", str(root)])
+    assert "soft drift" in result.output, "the direct line is unaffected"
+    assert "task:auth/2" not in result.output
+
+
+def test_ripple_withholds_a_superseded_memory(tmp_path: Path):
+    """A retracted belief has nothing to reaffirm — its successor already withdrew the claim."""
+    root = _linked_repo(tmp_path)
+    _drift_the_body(root)
+    assert runner.invoke(app, ["build", str(root)]).exit_code == 0
+    old = runner.invoke(app, ["remember", "refresh must be pure", "--concerns", SYM,
+                              "--repo", str(root)])
+    assert old.exit_code == 0
+    mem_id = old.output.split("Captured ")[1].split(" ")[0].strip()
+
+    assert "also affected" in runner.invoke(app, ["drift", str(root)]).output
+    assert mem_id in runner.invoke(app, ["drift", str(root)]).output, "live: it belongs in the ripple"
+
+    assert runner.invoke(app, ["supersede", mem_id, "refresh may cache", "--repo",
+                               str(root)]).exit_code == 0
+    assert mem_id not in runner.invoke(app, ["drift", str(root)]).output
