@@ -1939,8 +1939,21 @@ def install_cmd(
     # --- Capability check: semantic recall (fastembed core → on by default; warn only if degraded) -
     emb = embeddings.status(config)
     if emb["active"]:
-        typer.echo(f"\n✓ semantic recall is ON (backend: {emb['backend']}; the bge-small model "
-                   "downloads from HuggingFace on first build).")
+        # The model is fetched HERE, not on first build: every other path loads it local-only so a
+        # missing model degrades to lexical instead of blocking the agent on a download (design law
+        # #5). This is the one place a wait is expected, and the one place it is reported.
+        if embeddings.model_cached(config):
+            typer.echo(f"\n✓ semantic recall is ON (backend: {emb['backend']}, model cached in "
+                       f"{emb['cache_dir']}).")
+        else:
+            typer.echo(f"\n… fetching the {embeddings.model_name(config)} model into "
+                       f"{emb['cache_dir']} (~70MB, once) — nothing else ever downloads it.")
+            if embeddings.fetch_model(config):
+                typer.echo(f"✓ semantic recall is ON (backend: {emb['backend']}).")
+            else:
+                typer.echo("⚠ semantic recall is OFF — the model couldn't be fetched, so retrieval is "
+                           "lexical-only (correct, just less recall). Nothing is broken and nothing "
+                           "will retry in the background; re-run `yigraf install` when you're online.")
     else:
         typer.echo("\n⚠ semantic recall is OFF — retrieval is lexical-only.")
         if emb["backend"] in ("none", None):

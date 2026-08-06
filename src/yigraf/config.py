@@ -71,6 +71,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "embeddings": {
         "backend": "fastembed",  # fastembed | sentence-transformers | none
         "model": "BAAI/bge-small-en-v1.5",
+        # Where the model artifacts live. None ⇒ ~/.cache/yigraf/models (XDG-aware). Deliberately NOT
+        # fastembed's default of $TMPDIR/fastembed_cache: macOS reaps /var/folders/…/T by access time,
+        # which evicts the big ONNX blob, leaves a dangling snapshot symlink, and turns every later
+        # load into a silent re-download. Nothing downloads implicitly anyway (embeddings.get_embedder
+        # is local-only; `yigraf install` fetches) — but the model should be fetched *once*.
+        "cache_dir": None,
         "dup_cosine": 0.9,  # write-time near-duplicate threshold for `remember` (capture-flow §4)
         # `context` cosine floor below which it prints a low-confidence banner (C#8). Calibrated for
         # bge-small, whose cosines compress into a high, narrow band: on this corpus off-topic/gibberish
@@ -203,7 +209,10 @@ relevance:                     # w1·log(1+refs_in) + w2·recency + w3·maturity
 # sentence-transformers to use the opt-in torch backend (`pip install 'yigraf[embeddings-torch]'`).
 embeddings:
   backend: fastembed            # fastembed | sentence-transformers | none
-  model: BAAI/bge-small-en-v1.5  # local CPU model, version-pinned, downloaded on first use
+  model: BAAI/bge-small-en-v1.5  # local CPU model, version-pinned, fetched once by `yigraf install`
+  cache_dir:                    # empty ⇒ ~/.cache/yigraf/models. Never $TMPDIR: macOS reaps it, and an
+                                # evicted model is a silent re-download. Nothing fetches implicitly —
+                                # a missing model degrades to lexical, it never blocks a command.
   dup_cosine: 0.9               # write-time near-duplicate threshold for `remember` (capture-flow §4)
   relevance_floor: 0.65         # `context` cosine floor below which a low-confidence banner shows (C#8).
                                 # Calibrated for bge-small (off-topic ≈0.62, on-topic ≈0.68); retune per model.

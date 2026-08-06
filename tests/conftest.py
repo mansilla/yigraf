@@ -33,7 +33,14 @@ def pytest_configure(config):
 
 @pytest.fixture(autouse=True)
 def _disable_embeddings(request, monkeypatch):
-    """Force the lexical fallback unless a test is marked ``embeddings`` (then leave the real backend)."""
+    """Force the lexical fallback unless a test is marked ``embeddings`` (then leave the real backend).
+
+    ``fetch_model`` is stubbed alongside the embedder because it is the one function in the package
+    permitted to use the network (``yigraf install`` calls it). Patching ``get_embedder`` alone left
+    ``install`` free to pull ~70MB from HuggingFace mid-suite — offline is a property of this fixture,
+    so every network-capable entry point belongs here.
+    """
     if request.node.get_closest_marker("embeddings"):
         return
     monkeypatch.setattr(embeddings, "get_embedder", lambda config: None)
+    monkeypatch.setattr(embeddings, "fetch_model", lambda config: False)

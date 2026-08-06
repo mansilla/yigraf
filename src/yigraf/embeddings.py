@@ -17,12 +17,25 @@ is tiny and a query is a single numpy matmul (exact, sub-millisecond). Two layer
 ``None``, the index stays empty, and retrieval falls back to the lexical/IDF seeder (= v0). Semantic
 recall is on by default but never a *hard* dependency — this module is import-safe even with no
 backend present, and every public function returns an empty/None result instead of raising.
+
+**No implicit network, ever (design law #5).** Loading the model is a LOCAL-ONLY operation: every
+implicit path (:func:`get_embedder`, and so every ``context``/``remember``/hook that reaches it) opens
+the model with ``local_files_only`` and degrades to lexical if it is not on disk. Fetching is a
+separate, explicit verb (:func:`fetch_model`, run by ``yigraf install``). The reason is a measured
+failure, not a hypothesis: fastembed's default cache is ``$TMPDIR/fastembed_cache``, and macOS purges
+``/var/folders/…/T`` on an access-time cadence — so the ~130 MB ONNX blob is evicted every few days
+while the small metadata files survive, leaving a *dangling snapshot symlink*. Every later load then
+re-fetched it through ``hf_xet``'s parallel transport with no wall-clock bound, and a stalled fetch
+hung a ``remember`` for 10+ minutes at 0% CPU. Two guards, because either alone is insufficient:
+:func:`model_cache_dir` moves the artifacts somewhere the OS does not reap, and ``local_files_only``
+means a miss costs a lexical fallback rather than an unbounded download on the agent's critical path.
 """
 from __future__ import annotations
 
 import hashlib
 import importlib.util
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -126,46 +139,113 @@ def model_name(config: dict) -> str:
     return _emb_config(config).get("model", "BAAI/bge-small-en-v1.5")
 
 
-def _load_fastembed(name: str):
+def model_cache_dir(config: dict) -> Path:
+    """Where the model artifacts live — a *stable* per-user directory, never ``$TMPDIR``.
+
+    fastembed defaults its cache to ``tempfile.gettempdir()/fastembed_cache``. On macOS that is
+    ``/var/folders/…/T``, which the OS reaps by access time: the ~130 MB ONNX blob is evicted while the
+    kilobyte metadata files stay, so the snapshot survives as a *dangling symlink* and the next load
+    silently re-downloads the model. Under ``local_files_only`` that is merely a lost capability
+    (semantic recall goes quiet); without it, it was a multi-minute stall on the agent's path. Pinning
+    the cache to ``~/.cache/yigraf/models`` is what makes "downloaded once" actually mean once.
+
+    Precedence: ``embeddings.cache_dir`` in config, then ``$FASTEMBED_CACHE_PATH`` (fastembed's own
+    knob — an explicit choice we must not fight), then the XDG user cache.
+    """
+    configured = _emb_config(config).get("cache_dir") or os.environ.get("FASTEMBED_CACHE_PATH")
+    if configured:
+        return Path(configured).expanduser()
+    base = os.environ.get("XDG_CACHE_HOME") or (Path.home() / ".cache")
+    return Path(base) / "yigraf" / "models"
+
+
+def _load_fastembed(name: str, cache_dir: Path, *, allow_download: bool):
     try:
         from fastembed import TextEmbedding
     except ImportError:  # pragma: no cover - only when fastembed core dep is somehow absent
         return None
     try:
-        return _FastEmbedEmbedder(TextEmbedding(model_name=name), name)
-    except Exception:  # pragma: no cover - network/model-load failure ⇒ degrade, never crash
+        model = TextEmbedding(model_name=name, cache_dir=str(cache_dir),
+                              local_files_only=not allow_download)
+        return _FastEmbedEmbedder(model, name)
+    except Exception:  # a cache miss, a partial download, or a load failure ⇒ degrade, never crash
         return None
 
 
-def _load_sentence_transformers(name: str):
+def _load_sentence_transformers(name: str, cache_dir: Path, *, allow_download: bool):
     try:
         from sentence_transformers import SentenceTransformer
     except ImportError:
         return None
+    kwargs = {"cache_folder": str(cache_dir), "local_files_only": not allow_download}
     try:
-        return _LocalEmbedder(SentenceTransformer(name), name)
-    except Exception:  # pragma: no cover - network/model-load failure ⇒ degrade, never crash
+        return _LocalEmbedder(SentenceTransformer(name, **kwargs), name)
+    except TypeError:  # pragma: no cover - an older sentence-transformers without the kwargs
+        try:
+            return _LocalEmbedder(SentenceTransformer(name), name)
+        except Exception:
+            return None
+    except Exception:  # pragma: no cover - a cache miss / load failure ⇒ degrade, never crash
         return None
 
 
 def get_embedder(config: dict):
-    """Load the configured embedding backend, or ``None`` if unavailable (⇒ lexical fallback).
+    """Load the configured embedding backend from the LOCAL cache, or ``None`` (⇒ lexical fallback).
 
     Default backend is ``fastembed`` (bundled). ``sentence-transformers`` is the opt-in torch backend;
-    ``local`` is a back-compat alias for the default. Never raises: a missing dep, an offline first-run
-    download failure, or an unknown backend all resolve to ``None`` so the caller degrades to lexical.
+    ``local`` is a back-compat alias for the default.
+
+    **This never touches the network** — it opens the model ``local_files_only``, so an absent or
+    half-downloaded model costs a lexical fallback rather than an unbounded fetch on whatever the agent
+    was doing (design law #5; int:semantic-recall's "degrade to lexical" scenario). Fetching is
+    :func:`fetch_model`, an explicit step ``yigraf install`` runs. Never raises: a missing dep, a cache
+    miss, or an unknown backend all resolve to ``None``.
     """
+    return _load(config, allow_download=False)
+
+
+def _load(config: dict, *, allow_download: bool):
     if np is None:
         return None
     backend = _emb_config(config).get("backend", _DEFAULT_BACKEND)
     if backend in (None, "none"):
         return None
-    name = model_name(config)
+    name, cache_dir = model_name(config), model_cache_dir(config)
     if backend in _FASTEMBED_BACKENDS:
-        return _load_fastembed(name)
+        return _load_fastembed(name, cache_dir, allow_download=allow_download)
     if backend in _ST_BACKENDS:
-        return _load_sentence_transformers(name)
+        return _load_sentence_transformers(name, cache_dir, allow_download=allow_download)
     return None  # ollama/openai/voyage backends are post-M8 (retrieval-design §10) — degrade.
+
+
+def model_cached(config: dict) -> bool:
+    """Whether the model is on disk and loadable *right now*, with no network. The honest form of
+    "is semantic recall on" — :func:`backend_available` only says the *library* imports, and the gap
+    between the two is precisely the silent-lexical state this module guards against.
+
+    Deliberately routed through :func:`get_embedder` rather than :func:`_load`, so that whatever
+    disables the embedder disables this too: it must never report a capability the callers of
+    ``get_embedder`` won't actually get (the test suite's fixture is exactly that case)."""
+    return get_embedder(config) is not None
+
+
+def fetch_model(config: dict) -> bool:
+    """Download the model into :func:`model_cache_dir` if it isn't there. The ONE path allowed to use
+    the network, called explicitly (``yigraf install``) where the caller is already waiting on setup.
+
+    Returns whether the model is usable afterwards. Bounds the per-read socket timeout as belt-and-
+    braces: it is not a wall-clock bound (``hf_xet`` streams in parallel and a slow link is still
+    slow), which is exactly why the *implicit* paths don't download at all rather than relying on it.
+    """
+    if _load(config, allow_download=False) is not None:
+        return True  # already cached — never re-check upstream, that was the original round-trip
+    try:  # read at call time off the module attr, so setting it after import still takes effect
+        import huggingface_hub.constants as _hf
+
+        _hf.HF_HUB_DOWNLOAD_TIMEOUT = min(getattr(_hf, "HF_HUB_DOWNLOAD_TIMEOUT", 10) or 10, 20)
+    except Exception:  # pragma: no cover - no huggingface_hub ⇒ nothing to bound
+        pass
+    return _load(config, allow_download=True) is not None
 
 
 def backend_available(config: dict) -> bool:
@@ -189,12 +269,18 @@ def backend_available(config: dict) -> bool:
 
 def status(config: dict) -> dict:
     """Semantic-recall status for ``yigraf install --plan`` — configured backend, whether it's active,
-    and whether the opt-in torch backend is importable. Pure inspection; never loads a model."""
+    and whether the opt-in torch backend is importable. Pure inspection; never loads a model.
+
+    ``active`` means only that the *library* is importable. Whether the model is actually on disk —
+    the difference between working semantic recall and a silent lexical fallback — is
+    :func:`model_cached`, which costs a real (local-only) model load and so is asked for separately.
+    """
     backend = _emb_config(config).get("backend", _DEFAULT_BACKEND)
     return {
         "backend": backend,
         "active": backend not in (None, "none") and backend_available(config),
         "torch_available": importlib.util.find_spec("sentence_transformers") is not None,
+        "cache_dir": str(model_cache_dir(config)),
     }
 
 

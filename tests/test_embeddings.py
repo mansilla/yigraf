@@ -130,3 +130,102 @@ def test_dedup_guard_blocks_a_near_duplicate_then_new_forces(tmp_path: Path):
     forced = runner.invoke(app, ["remember", "refreshing a session relies on optimistic locks",
                                  "--why", "hot path", "--concerns", sym, "--new", "--repo", str(root)])
     assert forced.exit_code == 0
+
+
+# --------------------------------------------------------------------------------------------------
+# The local-only guard: no command may reach the network to load a model (design law #5)
+# --------------------------------------------------------------------------------------------------
+#
+# The failure this pins was measured, not imagined: fastembed caches into $TMPDIR, macOS reaps
+# /var/folders/…/T by access time, and the evicted ~130MB ONNX blob left a dangling snapshot symlink.
+# Every later load re-fetched it through hf_xet with no wall-clock bound — a `remember` hung 10+
+# minutes at 0% CPU. Two independent guards, so each is pinned separately.
+
+
+#: Bound at import time — i.e. before conftest's autouse fixture stubs the module attribute out to
+#: keep the suite offline. This is the only test that wants the real, network-capable function.
+_REAL_FETCH_MODEL = embeddings.fetch_model
+
+
+class _SpyTextEmbedding:
+    """Stands in for ``fastembed.TextEmbedding`` to record how yigraf asks for a model."""
+
+    calls: list[dict] = []
+
+    def __init__(self, **kwargs):
+        type(self).calls.append(kwargs)
+
+    def embed(self, texts):  # pragma: no cover - never reached; we only inspect construction
+        return iter([])
+
+
+@pytest.fixture
+def spy_fastembed(monkeypatch):
+    fastembed = pytest.importorskip("fastembed")
+    _SpyTextEmbedding.calls = []
+    monkeypatch.setattr(fastembed, "TextEmbedding", _SpyTextEmbedding)
+    return _SpyTextEmbedding
+
+
+def test_implicit_model_load_is_local_only(spy_fastembed):
+    """Every implicit path goes through ``_load(allow_download=False)`` — so it can never download.
+
+    Calls ``_load`` rather than ``get_embedder`` because conftest stubs the latter out; the point here
+    is precisely what the *real* function asks fastembed for.
+    """
+    assert embeddings._load(default_config(), allow_download=False) is not None
+    assert spy_fastembed.calls[-1]["local_files_only"] is True
+
+
+def test_fetch_model_probes_locally_before_it_ever_downloads(spy_fastembed):
+    # Model already on disk (the spy always constructs) ⇒ the local probe settles it and no download
+    # is attempted. This is the original round-trip: a cached model must cost zero network.
+    assert _REAL_FETCH_MODEL(default_config()) is True
+    assert [c["local_files_only"] for c in spy_fastembed.calls] == [True]
+
+
+def test_fetch_model_is_the_only_path_that_may_download(monkeypatch, spy_fastembed):
+    fastembed = pytest.importorskip("fastembed")
+
+    def _only_downloadable(**kwargs):  # a genuine cache miss: local-only fails, a fetch succeeds
+        if kwargs.get("local_files_only"):
+            raise ValueError("not cached")
+        return _SpyTextEmbedding(**kwargs)
+
+    monkeypatch.setattr(fastembed, "TextEmbedding", _only_downloadable)
+    assert _REAL_FETCH_MODEL(default_config()) is True
+    assert [c["local_files_only"] for c in spy_fastembed.calls] == [False]
+
+    # …and the implicit path, on that same miss, stays local and simply degrades.
+    spy_fastembed.calls = []
+    assert embeddings._load(default_config(), allow_download=False) is None
+    assert spy_fastembed.calls == []
+
+
+def test_model_cache_dir_is_never_a_reapable_temp_dir(monkeypatch, tmp_path: Path):
+    import tempfile
+
+    monkeypatch.delenv("FASTEMBED_CACHE_PATH", raising=False)
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    default = embeddings.model_cache_dir(default_config())
+    assert tempfile.gettempdir() not in str(default)
+    assert default == Path.home() / ".cache" / "yigraf" / "models"
+
+    # An explicit choice — config first, then fastembed's own env knob — is never overridden.
+    monkeypatch.setenv("FASTEMBED_CACHE_PATH", str(tmp_path / "env"))
+    assert embeddings.model_cache_dir(default_config()) == tmp_path / "env"
+    cfg = dict(default_config())
+    cfg["embeddings"] = {**cfg["embeddings"], "cache_dir": str(tmp_path / "cfg")}
+    assert embeddings.model_cache_dir(cfg) == tmp_path / "cfg"
+
+
+def test_a_missing_model_degrades_to_lexical_rather_than_raising(monkeypatch):
+    """int:semantic-recall's fallback scenario, for the cache-miss case specifically."""
+    import fastembed
+
+    def _always_missing(**kwargs):
+        raise ValueError("model not found locally")
+
+    monkeypatch.setattr(fastembed, "TextEmbedding", _always_missing)
+    assert embeddings._load(default_config(), allow_download=False) is None
+    assert embeddings.model_cached(default_config()) is False
