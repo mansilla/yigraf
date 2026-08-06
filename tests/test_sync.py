@@ -326,3 +326,61 @@ def test_an_unpushed_assertion_stays_in_the_next_runs_push_set():
 
     push_assertion(client, remote, "proj", local[1])          # the next run sends it
     assert [a for a in local if a.id not in client.known_ids("proj")] == []
+
+
+def test_a_real_repos_revisions_survive_the_prefix_closed_ingest_check(tmp_path):
+    """End-to-end over the LOOPBACK SERVER: a whole repo's assertions push, an edit re-pushes, and the
+    server accepts both.
+
+    The half of the revision change that only a server can refuse. Causal parents must name an
+    *assertion*, so a memory that serves ``int:foo`` now parents on ``int:foo@<rev>`` rather than the
+    bare locator — and ``validate_ingest`` demands every parent already be in the log (prefix-closed).
+    If ``_resolve_parents`` failed to rewrite a locator, or causal order stopped landing a revision
+    before its dependents, this is where it surfaces: as ``IngestRejected``, not a wrong graph.
+    """
+    from typer.testing import CliRunner
+
+    from yigraf.cli import _for_the_wire, app
+    from yigraf.filelog import FileLog
+
+    runner = CliRunner()
+    assert runner.invoke(app, ["init", str(tmp_path)]).exit_code == 0
+    (tmp_path / "app.py").write_text("def greet():\n    return 'hi'\n")
+    assert runner.invoke(app, ["build", str(tmp_path)]).exit_code == 0
+    assert runner.invoke(app, ["intent", "greeting", "--statement", "yigraf SHALL greet",
+                               "--repo", str(tmp_path)]).exit_code == 0
+    assert runner.invoke(app, ["plan", "greet", "--title", "Greet", "--task", "write greet()",
+                               "--repo", str(tmp_path)]).exit_code == 0
+    assert runner.invoke(app, ["remember", "greet returns a constant", "--why", "it is a stub",
+                               "--serves", "int:greeting", "--concerns", "sym:app.py#greet",
+                               "--repo", str(tmp_path)]).exit_code == 0
+
+    remote, _ = _remote()
+    client = SqliteAssertionStore()
+
+    def _push_everything_outgoing() -> list[str]:
+        local = list(FileLog(tmp_path).iter_assertions_in_causal_order())
+        outgoing = [a for a in local if a.id not in client.known_ids("proj")]
+        for assertion in outgoing:  # in causal order, so parents land first
+            # Through the same envelope-completion the CLI uses, then `actor` — which the real server
+            # stamps from the authenticated principal, and LoopbackRemote (a bare OnlineLog) does not.
+            # Provenance is not part of the id, so none of this changes what is pushed.
+            wire = _for_the_wire(assertion, tmp_path, "sess")
+            wire.provenance[0]["actor"] = "alice"
+            push_assertion(client, remote, "proj", wire)
+        return [a.id for a in outgoing]
+
+    first = _push_everything_outgoing()
+    assert any(i.startswith("int:greeting@") for i in first)
+    assert any(i.startswith("task:greet/1@") for i in first)
+    assert _push_everything_outgoing() == [], "a second run with no edits pushes nothing"
+
+    # Two edits to mutable bodies: a task re-anchor and an intent status change.
+    assert runner.invoke(app, ["link", "task:greet/1", "sym:app.py#greet",
+                               "--repo", str(tmp_path)]).exit_code == 0
+    assert runner.invoke(app, ["intent", "greeting", "--status", "satisfied",
+                               "--repo", str(tmp_path)]).exit_code == 0
+
+    second = _push_everything_outgoing()
+    assert any(i.startswith("task:greet/1@") for i in second), "the re-anchor must reach the log"
+    assert any(i.startswith("int:greeting@") for i in second), "the status change must reach the log"

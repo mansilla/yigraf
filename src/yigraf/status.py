@@ -89,6 +89,9 @@ class StatusSummary:
     # dimension distinct from freshness; a cheap count only (the full findings go to the resolution UI)
     stale: int = 0  # done-task completions whose implementing symbol drifted (int:drift-as-stale): the
     # completion is no longer verified. Principal-facing, shown only when >0 — never at the edit hook (mem:056)
+    diverged: int = 0  # locators another workspace's log holds a DIFFERENT revision of (extract._fold_replica).
+    # The local file won, as design law #6 says — this counts the losing copies that no git merge will
+    # ever reconcile, because the artifacts are not committed. Shown only when >0.
 
     @property
     def _ctx_effective(self) -> int | None:
@@ -142,6 +145,8 @@ class StatusSummary:
             parts.append(f"⚠ {self.coherence} conflict")
         if self.stale:  # done completions whose evidence drifted (int:drift-as-stale) — shown only when >0
             parts.append(f"⚠ {self.stale} stale")
+        if self.diverged:  # another workspace holds a different revision no git merge will reconcile
+            parts.append(f"⚠ {self.diverged} diverged")
         if self.semantic:
             parts.append(f"sem {self.embedded}")
         if self.ctx_pct is not None:
@@ -171,6 +176,8 @@ class StatusSummary:
             segs.append(_c(f"⚠ {self.coherence} conflict", "1;33"))
         if self.stale:  # int:drift-as-stale: done completions whose evidence drifted, shown only when >0
             segs.append(_c(f"⚠ {self.stale} stale", "1;33"))
+        if self.diverged:  # another workspace holds a different revision no git merge will reconcile
+            segs.append(_c(f"⚠ {self.diverged} diverged", "1;33"))
         if self.semantic:
             segs.append(_c("✦", "35") + _c(f" sem {self.embedded}", "2"))
         if self.ctx_pct is not None:
@@ -268,6 +275,9 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
         symbols=symbols, intents=intents, plans=plans,
         tasks_total=tasks_total, tasks_open=tasks_open, decisions=decisions,
         drifting=drifting, freshness=_freshness(root, graph), coherence=coherence, stale=stale,
+        # Computed at fold time (only the fold sees what it declined) and carried on the graph, so a
+        # statusline read costs nothing extra — extract._fold_replica.
+        diverged=len(graph.graph.get("diverged") or ()),
         semantic=embedded > 0, embedded=embedded,
         head=head[:7] if head else None, update=available,
         ctx_used=ctx_used, ctx_limit=ctx_limit, ctx_soft_limit=soft_limit,

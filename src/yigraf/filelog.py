@@ -26,12 +26,13 @@ Two things make the single-pass fold resolve every cross-family edge without the
 read seam. Wiring writes onto the log is later (online, tasks #7–#9)."""
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from yigraf import artifacts, memory, resolution
 from yigraf.artifacts import CONF, Intent, Plan
 from yigraf.astnorm import ANCHOR_ALGO
-from yigraf.log import Assertion, causal_order
+from yigraf.log import Assertion, assertion_id, causal_order
 
 #: An edge target that is itself an assertion (folded from the log) rather than a structure ``base``
 #: node — so it must precede its referrer in causal order. ``sym:``/``file:``/``commit:``/url/text
@@ -43,6 +44,93 @@ def _is_log_id(target: str) -> bool:
     return target.split(":", 1)[0] in _LOG_FAMILIES
 
 
+# --------------------------------------------------------------------------------------------------
+# Revisions — the two families whose LOCATOR is stable while their BODY changes
+# --------------------------------------------------------------------------------------------------
+#
+# mem:063 defines an assertion ``id`` as the content-hash of its ``body``: two writers who say the same
+# thing mint the same id and COLLAPSE. Every downstream mechanism reads it that way —
+# :func:`~yigraf.log.merge_assertion` keeps the existing body on an id match, :func:`causal_order` keeps
+# the last, and the fold uses the id as the graph NODE id (so one id is one node, never two beliefs to
+# compare).
+#
+# Intents and tasks broke that invariant: their id was a slug (``int:<slug>``) and a positional locator
+# (``task:<plan>/<n>``) while their MUTABLE state — a task's ``[ ]``/``[x]`` and its ``implements``
+# anchors, an intent's ``status`` — lived in the body. The consequences were all silent. Once a locator
+# had been pushed, ``yigraf sync``'s push set (``a.id not in known_ids``) skipped every later edit as
+# already-known, so re-anchors, completions and ``--status satisfied`` never propagated; and where a
+# revision did reach the replica, the three sites above each picked a different winner.
+#
+# So the id carries the revision and the body carries the locator. The fold materializes the node under
+# the ``locator`` (:func:`yigraf.fold._apply`), so every cross-family edge still targets ``task:plan/1``
+# and nothing downstream changes — while the push set becomes correct for free, since an edited body is
+# a new id the log has not seen.
+#
+# Which revision of a locator is LIVE is decided by design law #6, not by a clock: these families' truth
+# is a git-committed FILE, and the log is a derived projection of it. The local working tree wins, and a
+# replica revision may not overwrite it (:func:`yigraf.extract._fold_replica`). Two people editing one
+# plan concurrently is a git merge on the markdown — the same place every other conflict in the repo is
+# already resolved — never a last-writer-wins race in the log.
+
+
+#: The families whose truth is a git-committed FILE, not the log (design law #6). The local working
+#: tree decides which body is live; a replica assertion naming a node this workspace already
+#: materialized is declined rather than merged (:func:`yigraf.fold.fold_assertions`'s
+#: ``defer_families``, applied in :func:`yigraf.extract._fold_replica`). This is ALL FOUR authored
+#: families — every one of them is a ``.md`` file the principal edits.
+#:
+#: Memory and resolution were initially excluded, on the reasoning that they are content-addressed, so
+#: a same-id assertion is the same claim and a genuine disagreement is two DIFFERENT ids that
+#: :mod:`yigraf.contradiction` surfaces as a knowledge conflict. That is true of the CLAIM and false of
+#: the ASSERTION. :func:`yigraf.memory.memory_id` hashes what a memory claims — statement, why,
+#: rejected — and deliberately not its drift anchors, because a re-anchor must not mint a new belief.
+#: So ``reaffirm`` and ``link`` produce the same id with a DIFFERENT body, which is exactly the
+#: invariant break revisioning fixed for intents and tasks, and it failed the same two ways: `yigraf
+#: sync`'s push set (``a.id not in known_ids``) skipped the re-anchor as already-known so it never
+#: propagated, and the replica fold — running after the local one — overwrote the fresh anchor with the
+#: pushed one, so `yigraf drift` re-reported drift the principal had just cleared and no amount of
+#: reaffirming could clear it.
+#:
+#: Deferring costs the collapse union (mem:060): when two principals mint the same claim the replica's
+#: provenance and scope are dropped rather than unioned, so attribution reads local. That is the same
+#: trade already taken for intent/plan, and it is the right side of it — a belief you can see in your
+#: own working tree should not be narrated by someone else's copy of it. Note the deferral is keyed on
+#: the NODE being present, so a teammate's memory you do not have folds normally; only a competing copy
+#: of a node you already hold is declined.
+FILE_TRUTH_FAMILIES = frozenset({artifacts.INTENT_FAMILY, artifacts.PLAN_FAMILY,
+                                 memory.MEMORY_FAMILY, resolution.RESOLUTION_FAMILY})
+
+
+def _revision_id(locator: str, kind: str, body: dict) -> str:
+    """``<locator>@<content-hash>`` — a mutable family's assertion id.
+
+    Keeps the locator legible and prefix-parseable (``_is_log_id`` and every ``id.split(':')`` reader
+    still see ``task``/``int``) while making the id honor mem:063: a different body is a different
+    assertion. ``parents``/``provenance`` stay out of the hash, exactly as :func:`assertion_id` requires,
+    so two people who tick the same task to the same state still collapse to one event.
+    """
+    return f"{locator}@{assertion_id(kind, body)}"
+
+
+def _resolve_parents(assertions: list[Assertion]) -> list[Assertion]:
+    """Rewrite causal parents from LOCATORS to the current revision ids they name.
+
+    The family builders emit parents as locators, because that is what an edge target is. But a parent
+    must name an *assertion*, and for a revisioned family the assertion is the revision — so a parent of
+    ``int:foo`` becomes ``int:foo@<rev>``. Without this the online log's prefix-closed check
+    (:func:`yigraf.onlinelog.validate_ingest`) would reject every dependent assertion, and
+    :func:`causal_order` would silently drop the ordering constraint that makes edges resolve in one pass.
+
+    A locator with no local revision (a dangling reference) is left as-is — fail-open (R5), and exactly
+    the behaviour it had before revisions existed.
+    """
+    by_locator = {a.body["locator"]: a.id for a in assertions if a.body.get("locator")}
+    if not by_locator:
+        return assertions
+    return [replace(a, parents=tuple(dict.fromkeys(by_locator.get(p, p) for p in a.parents)))
+            for a in assertions]
+
+
 def _edge(relation: str, target: str, **attrs) -> dict:
     """One outgoing-edge spec in the assertion body contract. ``confidence`` is always ``CONF`` —
     authored artifacts are asserted truth, matching project_into's per-edge ``confidence=CONF``."""
@@ -51,7 +139,10 @@ def _edge(relation: str, target: str, **attrs) -> dict:
 
 def _intent_assertion(intent: Intent) -> Assertion:
     """One intent artifact → one assertion. Mirrors :func:`yigraf.artifacts.project_into`'s intent node
-    plus its int→int ``supersedes`` reversal edges (the second pass, now a causal parent)."""
+    plus its int→int ``supersedes`` reversal edges (the second pass, now a causal parent).
+
+    Revisioned: ``status`` (and the statement itself) are mutable, so the id is
+    ``int:<slug>@<rev>`` and the node id stays ``int:<slug>`` via ``body.locator``."""
     attrs = {
         "kind": intent.type,
         "label": intent.statement or intent.slug,
@@ -64,10 +155,11 @@ def _intent_assertion(intent: Intent) -> Assertion:
         "source_file": f"intents/{intent.slug}.md",
     }
     edges = [_edge("supersedes", old) for old in intent.supersedes]
+    body = {"family": artifacts.INTENT_FAMILY, "locator": intent.id, "attrs": attrs, "edges": edges}
     return Assertion(
-        id=intent.id,
+        id=_revision_id(intent.id, artifacts.INTENT_FAMILY, body),
         kind=artifacts.INTENT_FAMILY,
-        body={"family": artifacts.INTENT_FAMILY, "attrs": attrs, "edges": edges},
+        body=body,
         parents=tuple(old for old in intent.supersedes if _is_log_id(old)),
     )
 
@@ -76,7 +168,12 @@ def _plan_assertions(plan: Plan) -> list[Assertion]:
     """One plan artifact → the plan assertion (``contains`` each task) + one assertion per task.
 
     The plan takes its tasks as causal parents so the ``contains`` edges resolve on the single pass;
-    each task carries its ``tracks``/``requires``/``implements`` edges exactly as project_into did."""
+    each task carries its ``tracks``/``requires``/``implements`` edges exactly as project_into did.
+
+    Both are revisioned (``@<rev>`` ids, ``body.locator`` node ids): a task's ``state`` and its
+    ``implements`` anchors are the most-edited bodies in the repo, and they were the ones a fixed id
+    made invisible to sync. The plan node revises too — its ``contains`` set changes when a task is
+    added — so it is not a special case."""
     out: list[Assertion] = []
     for task in plan.tasks:
         attrs = {
@@ -103,19 +200,21 @@ def _plan_assertions(plan: Plan) -> list[Assertion]:
             edges.append(_edge("implements", impl.sym, **extra))
             if _is_log_id(impl.sym):
                 parents.append(impl.sym)
+        body = {"family": artifacts.PLAN_FAMILY, "locator": task.id, "attrs": attrs, "edges": edges}
         out.append(Assertion(
-            id=task.id,
+            id=_revision_id(task.id, artifacts.PLAN_FAMILY, body),
             kind=artifacts.PLAN_FAMILY,
-            body={"family": artifacts.PLAN_FAMILY, "attrs": attrs, "edges": edges},
+            body=body,
             parents=tuple(parents),
         ))
 
     plan_attrs = {"kind": "plan", "label": plan.title, "confidence": CONF, "phase": plan.phase}
+    plan_body = {"family": artifacts.PLAN_FAMILY, "locator": plan.id, "attrs": plan_attrs,
+                 "edges": [_edge("contains", t.id) for t in plan.tasks]}
     out.append(Assertion(
-        id=plan.id,
+        id=_revision_id(plan.id, artifacts.PLAN_FAMILY, plan_body),
         kind=artifacts.PLAN_FAMILY,
-        body={"family": artifacts.PLAN_FAMILY, "attrs": plan_attrs,
-              "edges": [_edge("contains", t.id) for t in plan.tasks]},
+        body=plan_body,
         parents=tuple(t.id for t in plan.tasks),  # tasks fold before the plan that contains them
     ))
     return out
@@ -219,14 +318,18 @@ def _resolution_assertion(res) -> Assertion:
 def assertions_from_repo(root: Path) -> list[Assertion]:
     """Read every authored intent/plan/memory/resolution artifact under ``root`` into the assertion log
     (unordered; :func:`yigraf.log.causal_order` linearizes). Reuses the family readers so parsing stays
-    single-sourced."""
+    single-sourced.
+
+    The parent rewrite runs last, over the whole set, because a parent locator can only be mapped to a
+    revision id once every revision in the repo is known (a memory serving an intent is read after it,
+    but a task requiring a later-numbered task is not)."""
     root = Path(root)
     out: list[Assertion] = [_intent_assertion(i) for i in artifacts.iter_intents(root)]
     for plan in artifacts.iter_plans(root):
         out += _plan_assertions(plan)
     out += [_memory_assertion(m) for m in memory.iter_memories(root)]
     out += [_resolution_assertion(r) for r in resolution.iter_resolutions(root)]
-    return out
+    return _resolve_parents(out)
 
 
 #: The fold stashes every unresolved edge on one ``dangling_edges`` list (family-agnostic); the drift

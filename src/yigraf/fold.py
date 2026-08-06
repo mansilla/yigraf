@@ -74,19 +74,53 @@ def fold(log: Log, base: nx.DiGraph | None = None) -> nx.DiGraph:
     return graph
 
 
-def fold_assertions(assertions: Iterable[Assertion], base: nx.DiGraph | None = None) -> list[Assertion]:
+def fold_assertions(assertions: Iterable[Assertion], base: nx.DiGraph | None = None, *,
+                    defer_families: frozenset[str] = frozenset(),
+                    declined: list[Assertion] | None = None) -> list[Assertion]:
     """Fold an assertion sequence onto ``base``, returning what was folded (in causal order).
 
     The seam for a caller folding a *second* substrate onto a graph the first already populated — the
     replica-over-FileLog case in :func:`yigraf.extract.build_graph`. Identical to :func:`fold` except it
     takes assertions rather than a :class:`~yigraf.log.Log`, and hands back the linearized sequence so
     the caller can count or report on it without iterating the substrate twice.
+
+    ``defer_families`` names families for which the graph's EXISTING node wins: an assertion of that
+    family whose node is already materialized is skipped whole — attributes *and* edges. That is the
+    policy seam for design law #6, and the caller states the policy because the fold itself is
+    family-agnostic (it transports opaque assertions; only the caller knows which families' truth is a
+    git-committed file). The test is per-NODE, not per-family: an assertion whose node is absent still
+    folds normally, so a teammate's belief you do not have arrives over the log exactly as before — only
+    a competing copy of a node this workspace already materialized is declined.
+
+    ``declined`` collects every assertion the deferral skipped, because the caller cannot otherwise tell
+    the two very different reasons one gets skipped apart. Usually declining is a no-op — the same
+    content arriving back over the wire. But it can also be the caller's ONLY notice that another
+    workspace's copy of that node says something different, which for a family whose truth is an
+    *uncommitted* file is a divergence nothing else will ever reconcile
+    (:func:`yigraf.extract._fold_replica`). The fold does not judge which it is; it hands back what it
+    dropped and lets the caller, who knows the substrate, decide.
     """
     graph = base if base is not None else empty_graph()
     ordered = causal_order(list(assertions))
     for assertion in ordered:
+        if defer_families and assertion.body.get("family") in defer_families \
+                and _node_id(assertion) in graph:
+            if declined is not None:
+                declined.append(assertion)
+            continue
         _apply(graph, assertion)
     return ordered
+
+
+def _node_id(assertion: Assertion) -> str:
+    """The graph node an assertion materializes.
+
+    Normally the content-addressed ``id`` itself. The mutable families (intent, plan) instead carry a
+    stable ``body.locator`` — ``int:<slug>`` / ``task:<plan>/<n>`` — while their *id* carries the
+    revision, so that an edited body is a distinct assertion (mem:063) without renaming the node every
+    cross-family edge targets (:mod:`yigraf.filelog`).
+    """
+    return assertion.body.get("locator") or assertion.id
 
 
 def _apply(graph: nx.DiGraph, assertion: Assertion) -> None:
@@ -96,11 +130,12 @@ def _apply(graph: nx.DiGraph, assertion: Assertion) -> None:
     the fold never has to merge conflicting attributes for the same node.
     """
     body = assertion.body
+    node_id = _node_id(assertion)
     # Split source claim from derived belief (task #5): a claim may not assert its own acceptance/
     # supersession — those are the fold's verdict, so strip them before splatting and set them below.
     attrs = {k: v for k, v in body.get("attrs", {}).items() if k not in _DERIVED_KEYS}
     graph.add_node(
-        assertion.id,
+        node_id,
         family=body.get("family"),
         provenance=list(assertion.provenance),  # attribution rides onto the view (mem:063)
         scope=sorted(assertion.scope),  # reserved ATMS assumption-set, carried onto the view (task #5)
@@ -110,9 +145,9 @@ def _apply(graph: nx.DiGraph, assertion: Assertion) -> None:
         **attrs,
     )
     for edge in body.get("edges", []):
-        _apply_edge(graph, assertion.id, edge)
+        _apply_edge(graph, node_id, edge)
     for edge in body.get("projections", []):
-        _apply_projection(graph, assertion.id, edge)
+        _apply_projection(graph, node_id, edge)
 
 
 def _apply_projection(graph: nx.DiGraph, assertion_id: str, edge: dict[str, Any]) -> None:

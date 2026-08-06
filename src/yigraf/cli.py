@@ -10,6 +10,7 @@ import difflib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import uuid
@@ -1484,6 +1485,12 @@ def sync(
         # Push after pulling, git-style: everything the log hasn't seen, in causal order so parents
         # land first. Identity is the assertion ``id`` (content-addressed, excludes provenance —
         # mem:063), NOT the event key, because the server stamps ``actor`` and re-signs on ingest.
+        #
+        # This is correct only because EVERY family's id is content-addressed. It was not: intents and
+        # tasks keyed on a slug / positional locator while their status, state and implements anchors
+        # lived in the mutable body, so once a locator had been pushed this filter skipped every later
+        # edit as already-known — re-anchors, completions and `--status satisfied` silently never
+        # propagated. Revisioned ids (yigraf.filelog) make an edited body a new id, and this line right.
         known = store.known_ids(project)
         outgoing = [a for a in local if a.id not in known]
         session = f"sync-{uuid.uuid4().hex[:12]}"
@@ -1544,9 +1551,62 @@ def sync(
                (f" {deferred} deferred to the next sync (the remote dropped)." if deferred else ""))
     typer.echo("Their assertions now anchor to your code: run `yigraf drift` to see what your edits "
                "have moved under, and `yigraf status` for open conflicts.")
+    _report_divergence(repo, graph)
     notice = _responsibility_notice(repo, config, graph, events, local_ids)
     if notice:
         typer.echo(notice)
+
+
+def _artifacts_are_committed(repo: Path) -> bool:
+    """Does git track this workspace's authored artifacts? Fail-open to ``True`` (assume the safe world).
+
+    Design law #6's answer to two workspaces editing one artifact is "the local file wins, and git
+    merges the markdown." The second clause is an *assumption about the repo*, and yigraf cannot make it
+    true — a repo may gitignore ``yigraf/`` (yigraf's own does), and then the merge point does not exist.
+    Only the guidance changes on this, never the fold's verdict.
+    """
+    try:
+        out = subprocess.run(["git", "ls-files", "--", str(WORKSPACE_DIRNAME)], cwd=repo,
+                             capture_output=True, text=True, timeout=5)
+        # A non-zero exit (not a repo, git unusable) is "I don't know" — and `git ls-files` reports that
+        # by exiting 128 with an EMPTY stdout, i.e. indistinguishable from a real "tracks nothing" unless
+        # the returncode is checked. Reading only stdout would turn every non-git directory into a
+        # confident warning that the user has lost data.
+        if out.returncode != 0:
+            return True
+        return bool(out.stdout.strip())
+    except Exception:  # noqa: BLE001 - no git binary, a timeout ⇒ don't scare the caller
+        return True
+
+
+def _report_divergence(repo: Path, graph) -> None:
+    """Name the locators another workspace holds a different revision of (extract._fold_replica).
+
+    Silent when there are none (design law #4). This is the one moment the news is actionable — the
+    divergence is *created* by the pull that just happened — and it is deliberately not an error: the
+    build is correct either way, your working tree won, and nothing was lost locally.
+
+    What is lost is the *other* copy, and only when the artifacts aren't committed. So the guidance
+    forks on that: with git tracking the artifacts this is a routine merge and yigraf should not invent a
+    ceremony for it; without, yigraf is the only thing that will ever mention it.
+    """
+    diverged = list(graph.graph.get("diverged") or ())
+    if not diverged:
+        return
+    shown = diverged[:10]
+    typer.echo(f"\n⚠ {len(diverged)} locator(s) diverged — the shared log holds a different revision of:")
+    for locator in shown:
+        typer.echo(f"    {locator}")
+    if len(diverged) > len(shown):
+        typer.echo(f"    … and {len(diverged) - len(shown)} more")
+    if _artifacts_are_committed(repo):
+        typer.echo("  Your working tree won locally (design law #6). These artifacts are committed, so "
+                   "the other side is in git — reconcile them the way you would any other merge.")
+    else:
+        typer.echo("  Your working tree won locally (design law #6). But this repo does not commit "
+                   f"{WORKSPACE_DIRNAME}/, so there is no git history holding the other revision and no "
+                   "merge will ever reconcile these — each machine will go on believing its own copy. "
+                   "Reconcile by hand, or start committing the workspace.")
 
 
 def _responsibility_notice(repo: Path, config: dict, graph, events, local_ids: set[str]) -> str:

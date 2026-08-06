@@ -23,8 +23,8 @@ import networkx as nx
 from yigraf import artifacts, counters, drift, filelog, memory
 from yigraf.astnorm import ANCHOR_ALGO
 from yigraf.cache import StructureCache, file_sha
-from yigraf.filelog import FileLog
-from yigraf.fold import fold, fold_assertions
+from yigraf.filelog import FILE_TRUTH_FAMILIES, FileLog
+from yigraf.fold import fold_assertions
 from yigraf.graph import empty_graph
 from yigraf.languages import (
     FileProjection,
@@ -127,8 +127,10 @@ def build_graph(root: Path, config: dict) -> tuple[nx.DiGraph, BuildStats]:
     # first; the fold's family-agnostic dangling_edges are re-expanded to the per-relation dangling_* keys
     # drift + retrieval still read (filelog.denormalize_danglings).
     filelog.inject_base_anchors(graph, root)
-    fold(FileLog(root), base=graph)
-    stats.synced = _fold_replica(graph, root, config)
+    # Keep the local assertion ids: they are what tells a replica assertion that merely *echoes* this
+    # workspace apart from one that genuinely disagrees with it (see _fold_replica's divergence note).
+    local = fold_assertions(FileLog(root).iter_assertions_in_causal_order(), base=graph)
+    stats.synced = _fold_replica(graph, root, config, {a.id for a in local})
     filelog.denormalize_danglings(graph)
     drift.resolve_renames(graph)  # re-anchor moved/renamed implements + concerns targets (M3/M7)
     # Stamps `survival` (HEAD-cached, R2) + the provenance-derived landing tier only; `settled` is the
@@ -140,7 +142,8 @@ def build_graph(root: Path, config: dict) -> tuple[nx.DiGraph, BuildStats]:
     return graph, stats
 
 
-def _fold_replica(graph: nx.DiGraph, root: Path, config: dict) -> int:
+def _fold_replica(graph: nx.DiGraph, root: Path, config: dict,
+                  local_ids: frozenset[str] | set[str] = frozenset()) -> int:
     """Fold the synced replica's assertions onto the same base the authored ones landed on.
 
     This is what makes a teammate's belief a first-class citizen of *your* graph: their intent anchored
@@ -155,9 +158,39 @@ def _fold_replica(graph: nx.DiGraph, root: Path, config: dict) -> int:
     differs is not a merge decision — both stay live and the pair becomes a coherence finding
     (:mod:`yigraf.contradiction`), which is the whole no-last-writer-wins design.
 
-    Fail-open (design law #5): unconfigured, absent, or unreadable replica ⇒ 0 folded and a purely
-    local graph. A workspace that has never synced must build exactly as it does today.
+    **Every authored family defers to the local file (design law #6):** ``FILE_TRUTH_FAMILIES``
+    (:mod:`yigraf.filelog`) is intent, plan, memory and resolution — a node this workspace already
+    materialized above keeps the body the working tree says, and the replica's copy is declined. Without
+    that, this fold running *after* the local one silently reverted local edits: a teammate's older
+    snapshot of ``task:plan/1`` undid your completions, and — because ``memory_id`` hashes a memory's
+    claim and deliberately not its drift anchors — the replica's pushed copy of a memory overwrote an
+    anchor ``reaffirm`` had just re-stamped, so drift re-appeared and could not be cleared.
+
+    It is not last-writer-wins in the other direction either. The deferral is keyed on the NODE already
+    being present, so a belief you do not have folds normally and drifts against your code as ever. And
+    a genuine disagreement was never this seam's business: it is two DIFFERENT ids, both live, surfaced
+    as a coherence finding by :mod:`yigraf.contradiction` — which is untouched by any of this.
+
+    **Divergence — the case design law #6 assumed git would clean up.** "The local file wins" is only a
+    complete answer while the losing side survives somewhere. In a repo that COMMITS its ``yigraf/``
+    artifacts it does: two machines editing one plan is an ordinary git merge on the markdown, the same
+    place every other conflict in the repo is resolved. A workspace that *gitignores* its artifacts —
+    which yigraf's own repo does, and any repo may — has no such merge point, so declining the replica's
+    revision silently discards the only other copy, permanently, with each machine convinced it is
+    current. So the declined set is inspected rather than dropped: an assertion whose id this workspace
+    also authored is a harmless echo, and one whose id is unknown is a locator two workspaces genuinely
+    disagree about. The locators land on ``graph.graph["diverged"]`` for ``status`` and ``sync`` to
+    surface (never a node attr — it is a property of the pair of logs, not of the belief).
+
+    This can only fire for the revisioned families. Memory and resolution key their node on the content
+    hash itself, so a differing body is a different NODE and never reaches the deferral at all — their
+    divergence is, correctly, a knowledge conflict instead.
+
+    Fail-open (design law #5): unconfigured, absent, or unreadable replica ⇒ 0 folded, no divergence
+    reported, and a purely local graph. A workspace that has never synced must build exactly as it does
+    today.
     """
+    graph.graph.setdefault("diverged", [])
     online = config.get("online") or {}
     project = online.get("project")
     if not project:
@@ -170,7 +203,13 @@ def _fold_replica(graph: nx.DiGraph, root: Path, config: dict) -> int:
         from yigraf.sync import replica_log
 
         log = replica_log(SqliteAssertionStore(replica), project)
-        return len(fold_assertions(log.iter_assertions_in_causal_order(), base=graph))
+        declined: list = []
+        folded = fold_assertions(log.iter_assertions_in_causal_order(), base=graph,
+                                 defer_families=FILE_TRUTH_FAMILIES, declined=declined)
+        graph.graph["diverged"] = sorted({
+            a.body["locator"] for a in declined
+            if a.id not in local_ids and a.body.get("locator")})
+        return len(folded)
     except Exception:  # noqa: BLE001 - a broken replica must degrade to local, never break the build
         return 0
 
