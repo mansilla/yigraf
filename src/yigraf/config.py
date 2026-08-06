@@ -112,11 +112,18 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "project": None,
         "remote": None,
         "replica": "cache/replica.db",
+        # The root-commit SHA the hosted project is about, written by `yigraf online` when it binds.
+        # Safe to commit (it is a public git SHA) and worth committing: it makes the binding auditable,
+        # and `yigraf sync` re-derives the local root commit and compares before pushing — which
+        # catches the one case the bind-time check cannot, a config.yaml copied into another repo.
+        "repo_fingerprint": None,
     },
 }
 
 #: Environment variable holding the bearer token for the hosted log. Deliberately NOT a config key —
-#: config.yaml is committed, and a token in git is a leaked token.
+#: config.yaml is committed, and a token in git is a leaked token. It takes precedence over the
+#: credentials file `yigraf online` writes (see yigraf.online.resolve_token), which is what makes CI
+#: and containers work without an interactive link step.
 TOKEN_ENV = "YIGRAF_TOKEN"
 
 # Commented YAML written by ``yigraf init``. A test asserts this parses to DEFAULT_CONFIG, so the
@@ -239,12 +246,15 @@ status:
 # absent) and the build is purely local — the offline default. Structure is never synced; only
 # assertions cross the wire, so reasoning stays on your machine.
 # `yigraf sync` pulls the delta, verifies it chains, then pushes anything you authored that the log
-# hasn't seen. The bearer token comes from the YIGRAF_TOKEN env var, never from this file — config.yaml
-# is committed, and a token in git is a leaked token.
+# hasn't seen. You don't normally write these by hand: `yigraf online <link-url>` fills them in when it
+# binds this workspace to a hosted project. The token is never here — it goes to
+# ~/.config/yigraf/credentials.json (or $YIGRAF_TOKEN), because config.yaml is committed and a token in
+# git is a leaked token.
 online:
   project:                      # e.g. yigraf-server — empty means offline
   remote:                       # e.g. https://yigraf.online — empty means offline
   replica: cache/replica.db     # local SQLite mirror, relative to the yigraf/ workspace dir
+  repo_fingerprint:             # root-commit SHA this binding is for; checked before every push
 """
 
 

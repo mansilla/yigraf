@@ -1391,8 +1391,10 @@ def _online_settings(repo: Path, config: dict) -> tuple[str, str, Path]:
         missing = " and ".join(absent) + (" are" if len(absent) > 1 else " is")
         _guidance(
             f"This workspace isn't connected to a shared log — {missing} unset in "
-            f"yigraf/config.yaml. Set both (project: <name>, remote: https://…), export "
-            f"{TOKEN_ENV}=<token>, then re-run `yigraf sync`. Until then yigraf works fully offline.")
+            f"yigraf/config.yaml.\nDon't fill them in by hand: generate a link code in the web console "
+            f"(a project's Machines tab) and run `yigraf online <the URL>`, which redeems it, checks "
+            f"that this repo and that project match, and writes all of this for you. Until then yigraf "
+            f"works fully offline.")
     replica = Path(repo) / "yigraf" / (online.get("replica") or "cache/replica.db")
     return project, remote, replica
 
@@ -1427,6 +1429,178 @@ def _auth_guidance(exc, remote_url: str, project: str) -> str:
             f"`online.remote`/`online.project` in yigraf/config.yaml and your ${TOKEN_ENV}.")
 
 
+def _patch_online_config(workspace: Path, values: dict[str, str | None]) -> None:
+    """Write the ``online:`` keys into ``yigraf/config.yaml`` in place, preserving the file.
+
+    Round-tripping through a YAML dumper would be one line and would strip every comment out of a
+    committed, human-authored file — so this patches the block textually instead, keeping each key's
+    trailing comment and adding any key an older workspace predates.
+    """
+    path = workspace / "config.yaml"
+    from yigraf.config import DEFAULT_CONFIG_YAML
+
+    text = path.read_text(encoding="utf-8") if path.exists() else DEFAULT_CONFIG_YAML
+    if not re.search(r"^online:\s*$", text, re.M):
+        text = text.rstrip("\n") + "\n\nonline:\n"
+    for key, value in values.items():
+        rendered = "" if value is None else str(value)
+        pattern = re.compile(rf"^([ \t]+{key}:)([^#\n]*)(#.*)?$", re.M)
+        if pattern.search(text):
+            text = pattern.sub(lambda m: f"{m.group(1)} {rendered}".rstrip()
+                               + (f"  {m.group(3)}" if m.group(3) else ""), text, count=1)
+        else:  # a workspace older than this key: append it inside the block
+            text = re.sub(r"^online:\s*$", f"online:\n  {key}: {rendered}".rstrip(), text,
+                          count=1, flags=re.M)
+    path.write_text(text, encoding="utf-8")
+
+
+@app.command()
+def online(
+    code: str = typer.Argument(None, help="The link URL you were given (or a bare ygl_ code)."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+    remote: str = typer.Option(None, "--remote", help="Server base URL, when passing a bare code."),
+    label: str = typer.Option(None, "--label", help="Name this machine in the project's machine list."),
+    force: bool = typer.Option(False, "--force", help="Override a repo mismatch / re-point the replica."),
+) -> None:
+    """Bring this workspace online: redeem a link code for a machine token and bind to the project.
+
+    Generate the code in the web console (a project's Machines tab) while logged in, and paste the URL
+    here. That is the whole of the CLI's identity story — redeem once, keep the token it returns. There
+    is no login here, no browser, no callback port: a person's accounts, projects and invitations all
+    live in the browser, and `yigraf` never meets a stranger.
+
+    Run with no argument to report the current binding instead — project, remote, identity, and
+    whether the credential still works.
+
+    Before anything is written, three things are checked. **Repo identity**: the project's root-commit
+    SHA against this one, because the shared graph is full of implements/concerns edges anchored to code
+    symbols, and binding to a project about a different codebase leaves every one of them dangling — the
+    graph still folds, still renders, and is silently meaningless. **Wire version**: that this client and
+    that server would round-trip each other's events at all. **Replica state**: that the local mirror
+    isn't already carrying a cursor for a different project. Only then is the code spent.
+    """
+    from yigraf import __version__ as engine_version
+    from yigraf import online as online_mod
+    from yigraf.sync import WIRE_VERSION
+
+    workspace = _require_workspace(repo)
+    config = load_config(workspace / "config.yaml")
+    settings = config.get("online") or {}
+
+    if not code:
+        _report_binding(repo, settings)
+        return
+
+    try:
+        base_url, link_code = online_mod.parse_link(code, remote)
+    except online_mod.LinkError as exc:
+        _guidance(exc.guidance)
+
+    bound_project = settings.get("project")
+    if bound_project and not force:
+        try:
+            info_project = online_mod.preflight(base_url, link_code).get("project")
+        except online_mod.LinkError as exc:
+            _guidance(exc.guidance)
+        if info_project != bound_project:
+            _guidance(
+                f"This workspace is already bound to '{bound_project}'. Binding it to "
+                f"'{info_project}' would strand the existing replica, whose cursor is scoped per "
+                f"project.\nRe-run with --force if that's what you want (the replica is renamed, "
+                f"never deleted).")
+
+    try:
+        info = online_mod.preflight(base_url, link_code)
+        fingerprint = online_mod.repo_fingerprint(repo)
+        online_mod.check_compatibility(info, fingerprint, force=force)
+        replica = Path(repo) / "yigraf" / (settings.get("replica") or "cache/replica.db")
+        moved = online_mod.check_replica(replica, bound_project, settings.get("remote"),
+                                         info["project"], base_url, force=force)
+        result = online_mod.redeem(
+            base_url, link_code, repo_fingerprint=fingerprint,
+            label=label or online_mod.default_label(repo),
+            engine_version=engine_version, wire_version=WIRE_VERSION)
+    except online_mod.LinkError as exc:
+        _guidance(exc.guidance)
+
+    # Order matters, and it is not arbitrary: a code is spent the moment it is redeemed, so the
+    # credential is written FIRST. A token stored without config is recoverable (re-run and it resumes
+    # from the stored credential); config written without a token is a dead binding and a dead code.
+    creds = online_mod.store_credential(base_url, {
+        "token": result["token"], "actor": result["actor"],
+        "email": result.get("email"), "project": result["project"]})
+    _patch_online_config(workspace, {
+        "project": result["project"], "remote": base_url,
+        "repo_fingerprint": result.get("repo_fingerprint") or fingerprint or ""})
+
+    if moved:
+        typer.echo(f"Moved the previous replica aside to {moved.name} (nothing was deleted).")
+    if fingerprint is None:
+        typer.echo("⚠ Couldn't fingerprint this repository (shallow clone, or not a git repo), so the "
+                   "project's repo identity was left unclaimed. yigraf can't warn you later if this "
+                   "config lands in a different repo.")
+    typer.echo(f"Linked '{result['project']}' at {base_url} as {result.get('email') or result['actor']} "
+               f"({result['role']}). Token saved to {creds}.")
+    typer.echo("Pulling the project's graph…")
+    sync(repo=repo, dry_run=False)
+
+
+def _report_binding(repo: Path, settings: dict) -> None:
+    """`yigraf online` with no code answers "am I connected?" — the other half of the command."""
+    from yigraf import online as online_mod
+
+    project, remote_url = settings.get("project"), settings.get("remote")
+    if not (project and remote_url):
+        typer.echo("This workspace isn't online. Generate a link code in the web console (a project's "
+                   "Machines tab) and run `yigraf online <the URL>`. Until then yigraf works fully "
+                   "offline.")
+        return
+    token = online_mod.resolve_token(remote_url, TOKEN_ENV)
+    typer.echo(f"Project:  {project}\nRemote:   {remote_url}")
+    if settings.get("repo_fingerprint"):
+        typer.echo(f"Repo:     root commit {str(settings['repo_fingerprint'])[:12]}")
+    if not token:
+        typer.echo("Identity: no credential — export $" + TOKEN_ENV + " or re-run "
+                   "`yigraf online <url>` with a fresh link code.")
+        return
+    try:
+        me = online_mod.whoami(remote_url, token)
+    except online_mod.LinkError as exc:
+        typer.echo(f"Identity: unverified — {exc.guidance}")
+        return
+    typer.echo(f"Identity: {me.get('email') or me.get('actor')} ({me.get('role') or 'unknown role'})"
+               + (f" as {me['label']}" if me.get("label") else ""))
+
+
+@app.command()
+def whoami(
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Which identity is this workspace pushing as?
+
+    One call to the server, so the answer never requires reading a graph — and it is the fastest way to
+    tell "my token is wrong" apart from "my project name is wrong", which otherwise look identical.
+    """
+    from yigraf import online as online_mod
+
+    workspace = _require_workspace(repo)
+    settings = (load_config(workspace / "config.yaml").get("online") or {})
+    remote_url = settings.get("remote")
+    if not remote_url:
+        _guidance("This workspace isn't online — run `yigraf online <link-url>` first.")
+    token = online_mod.resolve_token(remote_url, TOKEN_ENV)
+    if not token:
+        _guidance(f"No credential for {remote_url}. Export ${TOKEN_ENV}, or run "
+                  f"`yigraf online <link-url>` with a fresh link code.")
+    try:
+        me = online_mod.whoami(remote_url, token)
+    except online_mod.LinkError as exc:
+        _guidance(exc.guidance)
+    typer.echo(f"{me.get('email') or me.get('actor')} — {me.get('role') or 'no role'} on "
+               f"{me.get('project') or settings.get('project')} at {remote_url}"
+               + (f" (machine: {me['label']})" if me.get("label") else ""))
+
+
 @app.command()
 def sync(
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
@@ -1452,10 +1626,31 @@ def sync(
     _require_workspace(repo)
     config = load_config(_require_workspace(repo) / "config.yaml")
     project, remote_url, replica_path = _online_settings(repo, config)
-    token = os.environ.get(TOKEN_ENV)
+
+    from yigraf import online as online_mod
+
+    token = online_mod.resolve_token(remote_url, TOKEN_ENV)
     if not token:
-        _guidance(f"No {TOKEN_ENV} in the environment — `yigraf sync` needs a bearer token for "
-                  f"{remote_url}. Export {TOKEN_ENV}=<token> and re-run.")
+        _guidance(f"No credential for {remote_url} — `yigraf sync` needs one, and there is no "
+                  f"${TOKEN_ENV} in the environment and nothing stored for this host.\n"
+                  f"Generate a link code in the web console (a project's Machines tab) and run "
+                  f"`yigraf online <the URL>`, which redeems it and binds this workspace. For CI, "
+                  f"reveal a token in the console instead and export it as ${TOKEN_ENV}.")
+
+    # The one check the bind-time check cannot make: a config.yaml copied into a DIFFERENT repository.
+    # It is nearly free (one `git rev-list`), and it catches a failure that is otherwise silent — the
+    # assertions would push fine and anchor to code that isn't here.
+    expected = (config.get("online") or {}).get("repo_fingerprint")
+    if expected:
+        actual = online_mod.repo_fingerprint(repo)
+        if actual and actual != expected:
+            _guidance(
+                f"This workspace's config is bound to a different repository: '{project}' expects root "
+                f"commit {str(expected)[:12]}, and this repo's is {actual[:12]}.\n"
+                f"Nothing was pushed. The shared graph's implements/concerns edges are anchored to that "
+                f"repo's symbols, so pushing from this one would file assertions against code that "
+                f"isn't here. If you copied yigraf/config.yaml between repos, run `yigraf online "
+                f"<link-url>` here to bind this workspace properly.")
 
     import urllib.error
 

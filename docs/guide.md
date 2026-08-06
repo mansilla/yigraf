@@ -249,19 +249,35 @@ blocks nothing; it makes the disagreement a named, actor-stamped open question.
 
 ## Working with a team
 
-yigraf works fully offline. Point it at a shared log and your teammates' assertions join *your* graph:
+yigraf works fully offline. Point it at a shared log and your teammates' assertions join *your* graph.
 
-```yaml
-# yigraf/config.yaml
-online:
-  project: my-project
-  remote: https://yigraf.online
-```
+You don't configure this by hand. In the web console — the browser is where all identity work happens —
+open your project's **Machines** tab, generate a link code, and paste the URL it gives you:
 
 ```sh
-export YIGRAF_TOKEN=…          # never in config.yaml — that file is committed
-yigraf sync --dry-run          # what would move
-yigraf sync                    # pull the team's assertions, push yours
+yigraf online https://your-server/link/ygl_…   # redeem it, bind this workspace, first sync
+yigraf online                                  # ...and later: am I connected, and as whom?
+yigraf sync --dry-run                          # what would move
+yigraf sync                                    # pull the team's assertions, push yours
+```
+
+That one command redeems the code for a **per-machine** token, writes it to
+`~/.config/yigraf/credentials.json` at mode 0600 (never `config.yaml` — that file is committed, and a
+token in git is a leaked token), and fills in `online.project`, `online.remote` and
+`online.repo_fingerprint` for you.
+
+Before it writes anything it checks that this repo and that project are about the same codebase, by
+comparing your **root-commit SHA** against the project's. That check exists because the shared graph is
+full of `implements`/`concerns` edges anchored to code symbols: bind to a project about a different
+codebase and every one of them dangles — the graph still folds, still renders, and is quietly
+meaningless. `yigraf sync` re-checks it before each push, which catches the one case binding can't: a
+`config.yaml` copied into another repository.
+
+A link code is single-use and lasts about 15 minutes, so it is the wrong shape for CI. For a pipeline,
+reveal a token in the console instead (it is shown once) and put it in your secret store:
+
+```sh
+export YIGRAF_TOKEN=…          # wins over the credentials file, for CI and containers
 ```
 
 **Only assertions cross the wire — your source never does.** Structure is always re-derived locally

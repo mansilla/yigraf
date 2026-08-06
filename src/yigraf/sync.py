@@ -197,6 +197,15 @@ class LoopbackRemote:
 # Wire format — the JSON shapes the API speaks, single-sourced so client and server can never drift
 # --------------------------------------------------------------------------------------------------
 
+#: The version of the four shapes below. Bump it when a change would stop events round-tripping —
+#: a new OPTIONAL field that old clients ignore is not a bump; a renamed, removed or re-meant one is.
+#:
+#: It exists so a bind can be refused rather than risked. A server advertises what it speaks on
+#: ``/healthz`` and on the link preflight, and ``yigraf online`` compares before it writes anything:
+#: a client that can't round-trip a project's events must find out at bind time, not on the first
+#: sync that silently drops a field.
+WIRE_VERSION = 1
+
 
 def assertion_to_wire(assertion: Assertion) -> dict:
     """Serialize a client-submitted :class:`~yigraf.log.Assertion` for ``POST``. The server treats the
