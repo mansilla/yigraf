@@ -140,6 +140,7 @@ account, no service, no code or reasoning leaving your machine; `yigraf status` 
 so it can tell you an update exists, and that is the only socket it opens.
 
 Since 1.2.0 a workspace *can* opt into a shared log — `yigraf sync` against a yigraf-server, off unless
-you configure it — which is what lets a team resolve each other's conflicts and see each other's
-beliefs drift against their own code. Reads still run against a local replica, so being offline costs
-you nothing. The hosted, multi-user, real-time product line is still the **2.0** roadmap. MIT licensed.
+you bind it (`yigraf online <link-url>`, 1.3.0) — which is what lets a team resolve each other's
+conflicts and see each other's beliefs drift against their own code. Reads still run against a local
+replica, so being offline costs you nothing. The hosted, multi-user, real-time product line is still
+the **2.0** roadmap. MIT licensed.

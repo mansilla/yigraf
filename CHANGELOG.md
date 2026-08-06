@@ -4,6 +4,124 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.3.0] — 2026-08-06
+
+1.2.0 made a shared log *possible*; this release makes the three seams it exposed actually hold. Two
+of them were silent — the failure mode was a workspace that believed it had synced, or had cleared
+drift, and had not. Binding is no longer three hand-edited settings that nothing checked against each
+other. Local, unlinked workspaces are unaffected by all of it: node ids, the fold's verdict, and every
+graph a solo repo builds are identical to 1.2.0.
+
+Minor, not major: **2.0 stays reserved for the hosted line.**
+
+### Added — `yigraf online` (workspace binding)
+- **`yigraf online <link-url>`** — redeem a single-use link code, generated in the web console, for a
+  per-machine token; then bind. It replaces hand-writing `online.project`, `online.remote` and a
+  `YIGRAF_TOKEN` export, which was three chances to bind to the wrong project with no check that any
+  of them agreed. Humans do all identity work in the browser: there is no OIDC client here, no
+  callback port, no refresh, and a self-hoster runs the identical flow against their own server.
+- **The code is a redemption code, not the credential.** If the pasted string were itself the bearer
+  token, every assertion authored through it would carry the same `actor` and the audit trail would
+  say nothing. The machine token it returns goes to `~/.config/yigraf/credentials.json` at mode 0600,
+  keyed by host — never `config.yaml`, which is committed. `$YIGRAF_TOKEN` still takes precedence,
+  which is what keeps CI working with no interactive link step (a link code is single-use and lasts
+  ~15 minutes, so it is the wrong shape for a pipeline; reveal a token in the console instead).
+- **Three checks, on a side-effect-free preflight** so a failure never burns the user's single-use
+  code. *Repo identity* compares root-commit SHAs — a remote URL changes on rename, re-host or org
+  move and the root commit survives all three — because the shared graph is full of
+  `implements`/`concerns` edges anchored to code symbols, and binding to a project about a different
+  codebase leaves every one of them dangling: the graph still folds, still renders, and is quietly
+  meaningless. *Wire version* refuses a bind that could not round-trip, rather than risking it (no
+  `--force` there, deliberately: a repo mismatch is a judgement call, an unsupported wire is not).
+  *Replica state* moves a mirror already carrying another project's cursor aside under `--force` —
+  renamed, never deleted.
+- **`yigraf online` with no argument, and `yigraf whoami`** — am I connected, and as whom. One call to
+  the server, so the answer never requires reading a graph, and it is the fastest way to tell "my
+  token is wrong" from "my project name is wrong", which otherwise look identical.
+- Every way the server can refuse — unknown, expired, spent, revoked code; a human invitation pasted
+  in place of a machine link code; a non-member — is translated into a specific correction at exit 0
+  (design law #1), never a status code.
+- **`sync.WIRE_VERSION`** (= 1) — the version of the four wire shapes, advertised by the server and
+  compared at bind time. A new *optional* field old clients ignore is not a bump; a renamed, removed
+  or re-meant one is.
+- Config: `online.repo_fingerprint` — written by `yigraf online`, safe to commit (it is a public git
+  SHA), and re-derived by `yigraf sync` before every push. That catches the one case bind-time cannot:
+  a `config.yaml` copied into a different repository.
+
+### Fixed — edits stopped propagating once a locator had been pushed
+- **Intents and tasks now carry a revisioned assertion id** (`int:<slug>@<hash>`,
+  `task:<plan>/<n>@<hash>`) with the locator in the body. mem:063 defines an id as the content-hash of
+  its body — two writers who say the same thing collapse to one event — and these two families broke
+  it, keying on a slug or a positional locator while their *mutable* state (a task's `[ ]`/`[x]` and
+  its `implements` anchors, an intent's `status`) lived in the body. Consequence: `yigraf sync`'s push
+  set is `a.id not in known_ids`, so once a locator had been pushed, **every later edit was skipped as
+  already-known** — `link` re-anchors, completions and `--status satisfied` silently never propagated,
+  and where a revision did reach a replica, `merge_assertion`, `causal_order` and the fold each picked
+  a different winner. The fold materializes the node under `body.locator`, so `task:plan/1` is still
+  the node every cross-family edge targets and nothing downstream changes.
+- **Causal parents are rewritten from locators to the revision ids they name.** A parent must name an
+  *assertion*; without the rewrite the online log's prefix-closed ingest check would reject every
+  dependent assertion, and `causal_order` would silently drop the ordering constraint that makes edges
+  resolve in one pass.
+- **A replica may no longer revert what the working tree says.** All four authored families are
+  git-committed files (design law #6), so a replica assertion naming a node this workspace already
+  materialized is declined — `fold_assertions` gains `defer_families`, and the *caller* states the
+  policy because the fold is family-agnostic. Without it, `_fold_replica` running after the local fold
+  let a teammate's older snapshot undo local completions; and because `memory.memory_id` hashes what a
+  memory *claims* and deliberately not its drift anchors, the replica's pushed copy overwrote an
+  anchor `reaffirm` had just re-stamped — so `yigraf drift` re-reported drift the principal had just
+  cleared, and no amount of reaffirming could clear it. The test is per-**node**, not per-family: a
+  teammate's belief you do not hold folds in exactly as before.
+- **`yigraf install` no longer promises a download that later happens at the worst moment.** fastembed
+  caches into `$TMPDIR`, and macOS reaps `/var/folders/…/T` by access time: the ~130 MB ONNX blob is
+  evicted while the kilobyte metadata files survive, leaving a *dangling snapshot symlink*, so every
+  later load silently re-fetched it through `hf_xet` with no wall-clock bound — a `remember` hung 10+
+  minutes at 0% CPU. Two guards, because either alone is insufficient. `embeddings.model_cache_dir`
+  pins the artifacts to `~/.cache/yigraf/models`, somewhere the OS does not reap, so "downloaded once"
+  means once. And every *implicit* path — `get_embedder`, therefore every `context`, `remember` and
+  hook — now opens the model `local_files_only`, so a cache miss costs a lexical fallback rather than
+  an unbounded download on the agent's critical path (design law #5). Fetching becomes an explicit
+  verb, `fetch_model`, run by `yigraf install` where the caller is already waiting on setup and the
+  wait can be reported.
+- **The drift report's "also affected" ripple re-surfaced what the direct path deliberately withheld.**
+  Every ripple line ends in "re-verify it still holds", so a node with no honest re-verification must
+  not appear there — and three did. `is_surfaced` withholds a done task's `implements` drift precisely
+  so the agent is never asked to rubber-stamp a closed task (`int:drift-done-suppression`), and
+  reverse reachability handed it straight back one call later, re-framed as a reconcile prompt and
+  double-counting what `stale` already reports. New `drift.is_reverifiable` is the node-shaped
+  counterpart, stated per-node so it also covers a done task reached by a *derived* relation
+  (`depends_on` over `implements ∘ calls`), which the edge-shaped test never sees; superseded memories
+  and archived intents are the same shape. Measured on yigraf's own graph when this landed: 10 of 11
+  ripple lines were unactionable — the section was ~9% signal.
+
+### Added — divergence, the case design law #6 assumed git would clean up
+- **`⚠ n diverged` in `status`, and a named list at the end of `sync`.** "The local file wins" is a
+  complete answer only while the losing copy survives somewhere. In a repo that *commits* its
+  `yigraf/` artifacts it does — two machines editing one plan is an ordinary git merge on the
+  markdown. In a repo that gitignores them (yigraf's own does, and any repo may) there is no merge
+  point, so declining the replica's revision discards the only other copy permanently, with each
+  machine convinced it is current. The declined set is therefore inspected rather than dropped: an
+  assertion whose id this workspace also authored is a harmless echo, one whose id is unknown is a
+  locator two workspaces genuinely disagree about. The fold's verdict is unchanged either way — what
+  changes is that the discarded locator is named instead of vanishing, and the guidance forks on
+  whether git actually holds the other side. Silent when there is none (design law #4).
+
+### Changed
+- Config gains `embeddings.cache_dir` (empty ⇒ `~/.cache/yigraf/models`; `$FASTEMBED_CACHE_PATH` is
+  honoured as an explicit choice) and `online.repo_fingerprint`. Both default to the prior behaviour.
+- `embeddings.status()` reports `cache_dir`; new `embeddings.model_cached()` is the honest form of "is
+  semantic recall on" — `backend_available` only says the *library* imports, and the gap between the
+  two is exactly the silent-lexical state this release closes.
+
+### Upgrading
+- **Local-only workspaces: nothing to do.** Node ids are unchanged (the locator), so a rebuild
+  produces an identical graph.
+- **A workspace that already pushed under 1.2.0** will re-push every intent and task under its new
+  `@<rev>` id, so a shared log ends up holding both the old fixed-id copies and the new revisioned
+  ones. Merging is a commutative set-union and nothing is lost or overwritten, but the older copies
+  remain as inert history. No public server exists yet, so this is expected to affect no one; it is
+  recorded because a shared log's contents should never be a surprise.
+
 ## [1.2.0] — 2026-08-04
 
 The first release in which yigraf is **usable by more than one person at a time** — and still, by
@@ -334,6 +452,8 @@ Three orthogonal axes on a memory node, all overlaid at read time (never stored)
   resolution UI (consuming the derived `accepted`/`dominant` fields), and a native
   TaskList host-adapter (blocked until a host exposes a writable task API).
 
+[1.3.0]: https://github.com/mansilla/yigraf/releases/tag/v1.3.0
+[1.2.0]: https://github.com/mansilla/yigraf/releases/tag/v1.2.0
 [1.1.1]: https://github.com/mansilla/yigraf/releases/tag/v1.1.1
 [1.1.0]: https://github.com/mansilla/yigraf/releases/tag/v1.1.0
 [1.0.0]: https://github.com/mansilla/yigraf/releases/tag/v1.0.0
