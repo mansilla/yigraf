@@ -91,7 +91,9 @@ class StatusSummary:
     # dimension distinct from freshness; a cheap count only (the full findings go to the resolution UI)
     stale: int = 0  # done-task completions whose implementing symbol drifted (int:drift-as-stale): the
     # completion is no longer verified. Principal-facing, shown only when >0 — never at the edit hook (mem:056)
-    diverged: int = 0  # locators another workspace's log holds a DIFFERENT revision of (extract._fold_replica).
+    diverged: int = 0  # locators ANOTHER PRINCIPAL's log revision differs on (extract._fold_replica) —
+    # your own replaced revisions are classified as history upstream (OnlineLog.superseded_revisions), so
+    # this never counts the previous revision of a locator you simply edited again.
     # The local file won, as design law #6 says — this counts the losing copies that no git merge will
     # ever reconcile, because the artifacts are not committed. Shown only when >0.
 

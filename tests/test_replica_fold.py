@@ -4,6 +4,7 @@
 so a belief that exists in no markdown file in this repo still anchors to *this* repo's code — and
 starts drifting when you edit it. Structure never crosses the wire; only assertions do.
 """
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -331,6 +332,67 @@ def test_a_competing_revision_of_a_local_locator_is_reported(repo):
     graph, _ = build_graph(repo, config)
     assert list(graph.graph.get("diverged")) == ["task:greeting/1"]
     assert graph.nodes["task:greeting/1"]["state"] == "done", "the verdict is unchanged"
+
+
+def _replica(repo: Path) -> OnlineLog:
+    return OnlineLog(SqliteAssertionStore(repo / "yigraf" / "cache" / "replica.db"), PROJECT,
+                     signer_key=None, require_signed_provenance=False)
+
+
+def _task_assertion(repo: Path, actor: str = "me@example.com", **kw):
+    """The local task assertion, stamped with an actor the way a real ``push_assertion`` does.
+
+    File-authored assertions carry ``provenance: []``; attribution is added on the way to the log. The
+    divergence classifier keys on the actor, so a test that appends unattributed assertions is testing a
+    shape production never produces.
+    """
+    from yigraf import filelog
+
+    local = [a for a in filelog.assertions_from_repo(repo)
+             if a.body.get("locator") == "task:greeting/1"][0]
+    return replace(local, provenance=[{"actor": actor, "source": "cli"}], **kw)
+
+
+def _complete_the_task(repo: Path) -> None:
+    plan_md = next((repo / "yigraf" / "plans").rglob("*.md"))
+    plan_md.write_text(plan_md.read_text().replace("- [ ]", "- [x]", 1))
+
+
+def test_my_own_replaced_revision_is_history_not_divergence(repo):
+    """For a revisioned family the id IS the revision, so every edit to an already-pushed plan leaves
+    its previous revision in the log — declined, id unknown to the current files, and thus reported as a
+    disagreement with nobody. Dogfooding hit exactly this: 8 phantom divergences from re-linking 8 tasks
+    in a single-actor log, unclearable by any verb and growing on ordinary solo work."""
+    _plan_repo(repo)
+    config = _config(repo)
+    log = _replica(repo)
+
+    old = _task_assertion(repo)  # what an earlier session pushed
+    log.append(old)
+    _complete_the_task(repo)
+    new = _task_assertion(repo)  # today's revision, pushed after it
+    log.append(new)
+
+    assert old.id != new.id, "the revision must be part of the id, or there is nothing to classify"
+    assert _diverged(repo, config) == []
+
+
+def test_a_teammates_competing_revision_survives_my_later_push(repo):
+    """The guard on the fix: superseding is keyed on (locator, ACTOR), so arriving later than a teammate
+    never silences them. Their machine may still hold that revision — it stays the open question."""
+    _plan_repo(repo)
+    config = _config(repo)
+    log = _replica(repo)
+
+    theirs = _task_assertion(repo, actor="teammate@example.com",
+                             id="task:greeting/1@theirs", parents=())
+    log.append(theirs)          # their revision arrives FIRST
+    _complete_the_task(repo)
+    log.append(_task_assertion(repo))  # mine arrives later and wins locally
+
+    graph, _ = build_graph(repo, config)
+    assert list(graph.graph.get("diverged")) == ["task:greeting/1"]
+    assert graph.nodes["task:greeting/1"]["state"] == "done", "the local verdict is still unchanged"
 
 
 def test_a_teammate_only_locator_is_not_divergence(repo):

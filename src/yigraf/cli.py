@@ -1849,11 +1849,23 @@ def _report_divergence(repo: Path, graph) -> None:
     if not diverged:
         return
     shown = diverged[:10]
-    typer.echo(f"\n⚠ {len(diverged)} locator(s) diverged — the shared log holds a different revision of:")
+    # Deliberately NOT "another principal": superseded_revisions can only recognize a replaced revision
+    # once the replacement has actually reached the log, so an edit you have not pushed yet lands here
+    # too — the log's newest word on that locator really is the older revision. Both cases are honestly
+    # "the log disagrees with your file and you have not replaced it there"; the push hint separates them
+    # without yigraf having to know, offline, which actor is "you".
+    typer.echo(f"\n⚠ {len(diverged)} locator(s) diverged — the shared log holds a revision of these that "
+               f"differs from your file and that you have not replaced there:")
     for locator in shown:
         typer.echo(f"    {locator}")
     if len(diverged) > len(shown):
         typer.echo(f"    … and {len(diverged) - len(shown)} more")
+    # First the cheap explanation, because it covers the common case and costs nothing to check: an edit
+    # you have not pushed looks identical to a disagreement from here, and one `sync` tells them apart —
+    # the replaced revision then classifies as your own history and these lines stop appearing.
+    typer.echo("  If you have local edits to these that you haven't pushed, `yigraf sync` is the whole "
+               "fix — the log simply hasn't heard your revision yet. What follows applies to whatever "
+               "survives a sync.")
     if _artifacts_are_committed(repo):
         typer.echo("  Your working tree won locally (design law #6). These artifacts are committed, so "
                    "the other side is in git — reconcile them the way you would any other merge.")
