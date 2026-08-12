@@ -118,7 +118,12 @@ def test_a_flood_never_evicts_a_pinned_conflict_explanation(flood, budget):
     """Whenever the budget admits the conflicted belief *at all* (measured with no flood), it still renders
     with any number of higher-ranked same-family beliefs crowding ahead of it — because a shown signal
     line names it, so the render pins it first. Quantified over flood size and budget, this is the
-    invariant the point-test in test_reserved_budget checks at one operating point."""
+    invariant the point-test in test_reserved_budget checks at one operating point.
+
+    The ``assume`` is load-bearing and stays: pinning is priority, not exemption, so the guarantee is
+    "a flood never evicts the pin", not "the pin renders at any budget". A budget too small for the
+    render frame admits nothing, pinned or not — the baseline measures exactly that floor, and an
+    exemption that lifted it was measured re-creating the unbounded-block flood (see ``_place``)."""
     g0 = nx.DiGraph()
     g0.add_node("mem:conflicted", family="memory", kind="decision", statement=_CONFLICT_BODY)
     baseline = _render(g0, ["mem:conflicted"], budget, conflict_lines=_CONFLICT_LINE)

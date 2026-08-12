@@ -20,6 +20,7 @@ import networkx as nx
 
 from yigraf import counters
 from yigraf.drift import compute_drift, is_surfaced
+from yigraf.scaffold import WORKSPACE_DIRNAME
 
 #: Edges that count toward a node's incoming "importance" (refs_in). Shared with the GC/relevance
 #: engine so the two notions of "referenced" can't drift apart.
@@ -42,6 +43,10 @@ _DEFAULT_FAMILY_SHARES = {"intent": 0.25, "plan": 0.15, "structure": 0.30, "memo
 #: Any graph locator, extracted from a surfaced signal line to *pin* its explanation (task 4 / task 7
 #: invariant: budget reduction must never drop the node a shown conflict/drift/obligation names).
 _LOCATOR_RE = re.compile(r"(?:sym|int|mem|task|file|module|plan):[^\s,;()]+")
+
+#: Tail for nodes the budget elided — a handle, not an apology. Held as a template because its cost is
+#: *reserved up front* (:func:`_render`): the frame has to be paid out of the same budget it describes.
+_ELISION_HINT = "… {n} more node(s) elided — narrow with `--family <f>` or a more specific query."
 
 
 # --------------------------------------------------------------------------------------------------
@@ -308,17 +313,29 @@ def _drift_line(item) -> str:
     return f"  ⚠ {item.task_id} → {item.locator} {verb} — {tail}"
 
 
-def _drift_block(items: list) -> list[str]:
-    """The ⚠ Drift body: one sorted line per item, plus the verb fork once when it applies.
+def _drift_block(items: list, config: dict | None = None) -> list[str]:
+    """The ⚠ Drift body: hard-first, one line per item up to a cap, plus the verb fork when it applies.
 
     The fork is appended (never sorted in) so it reads as a footer, and only when a ``concerns`` item
-    is present — that is the relation whose two verbs assert *different things about the belief* and
+    is *shown* — that is the relation whose two verbs assert *different things about the belief* and
     whose wrong choice is expensive in both directions (a needless ``supersede`` fabricates a
     mind-change; a ``reaffirm`` of a belief that did change is rubber-stamping). ``grounded_by`` and
     ``implements`` lines already carry their whole recipe, so a fork note over them would be noise.
+
+    **Bounded** (``retrieval.max_drift_lines``). Drift scales with how much anchored belief a locus
+    carries, so on a well-annotated file it floods exactly as the ✔ obligation block did: measured at
+    714 tokens of an 800-token packet on yigraf's own retrieval.py, leaving 0 of 55 nodes. Capping the
+    obligation block alone just moved the flood to this one. Hard drift sorts first — a symbol that is
+    *gone* outranks one whose body merely changed — and the tail names ``yigraf drift``, which renders
+    from its own path and is unaffected by this cap, so the complete report is always one verb away.
     """
-    lines = sorted(_drift_line(i) for i in items)
-    if any(i.relation == "concerns" for i in items):
+    cap = ((config or {}).get("retrieval", {}) or {}).get("max_drift_lines", 4)
+    ordered = sorted(items, key=lambda i: (i.kind != "hard", _drift_line(i)))
+    shown = ordered[:cap] if cap and len(ordered) > cap else ordered
+    lines = [_drift_line(i) for i in shown]
+    if len(shown) < len(ordered):
+        lines.append(f"  … +{len(ordered) - len(shown)} more drifted — `yigraf drift` for the full report.")
+    if any(i.relation == "concerns" for i in shown):
         lines.append(f"  {VERB_FORK}")
     return lines
 
@@ -419,10 +436,15 @@ def _pending_conflicts(graph: nx.DiGraph, scope: set[str] | None = None) -> list
     return sorted(lines)
 
 
-def _proof_obligations(graph: nx.DiGraph, seeds: list[str]) -> list[str]:
+def _proof_obligations(graph: nx.DiGraph, seeds: list[str]) -> list[list[str]]:
     """Invariants the edit must PRESERVE (int:proof-obligations): the acceptance criteria of the
     intents that govern the touched locus — surfaced at the action moment so the agent knows what its
     change must keep true, not merely what exists.
+
+    Returns one **group per governing intent** (its criteria lines), ordered by governance density —
+    grouped, not flat, because :func:`_render` truncates this block to a share of the budget and an
+    intent must go in whole or not at all: half a contract's criteria reads as "these are the
+    obligations" and is worse than an honest count of what was elided.
 
     Governing-ness is structural (mem:051), not ranked: an intent governs the locus when a task that
     ``implements`` one of its symbols ``tracks`` that intent — the acceptance criteria of the work
@@ -437,8 +459,9 @@ def _proof_obligations(graph: nx.DiGraph, seeds: list[str]) -> list[str]:
     retired contract governs nothing), and ``[]`` keeps the block silent (design law #4).
     """
     bridge = {"implements": "tracks"}  # locus's tasks → the intents they implement (acceptance criteria)
-    intents: set[str] = set()
+    governed: dict[str, int] = {}  # intent → how many of THIS locus's symbols it governs (density)
     for s in seeds:
+        here: set[str] = set()  # per-seed, so two tasks implementing one symbol don't double-count
         for src, _, a in graph.in_edges(s, data=True):
             want = bridge.get(a.get("relation"))
             if not want:
@@ -447,15 +470,22 @@ def _proof_obligations(graph: nx.DiGraph, seeds: list[str]) -> list[str]:
                 if (b.get("relation") == want
                         and graph.nodes[dst].get("family") == "intent"
                         and graph.nodes[dst].get("status") != "archived"):
-                    intents.add(dst)
-    lines: list[str] = []
-    for intent in sorted(intents):  # sorted → deterministic across hosts (folded-view stability)
+                    here.add(dst)
+        for intent in here:
+            governed[intent] = governed.get(intent, 0) + 1
+    # Density order (task 4's deferred bound, mem:fd34ed792cda518b): the contract anchored to the most
+    # of this file's symbols is the one this edit is most likely to break. Alphabetical — the order this
+    # replaces — puts an intent governing 1 symbol ahead of one governing 4 for no reason, which only
+    # became load-bearing once the block is truncatable. Id tie-breaks → deterministic across hosts.
+    ranked = sorted(governed, key=lambda i: (-governed[i], i))
+    groups: list[list[str]] = []
+    for intent in ranked:
         attrs = graph.nodes[intent]
         criteria = [c for c in (attrs.get("scenarios") or []) if c.strip()]
         if not criteria:  # a bare MUST contract with no Given/When/Then still owes an obligation
             criteria = [attrs.get("statement") or attrs.get("label", "")]
-        lines += [f"  ✔ {intent}: {c}" for c in criteria]
-    return lines
+        groups.append([f"  ✔ {intent}: {c}" for c in criteria])
+    return groups
 
 
 #: Structure kinds whose source is a meaningful slice (a whole file/module is not — skip those).
@@ -519,6 +549,36 @@ def _explanation_ids(signal_lines: list[str]) -> set[str]:
     return ids
 
 
+def _fit_obligations(groups: list[list[str]], char_cap: int) -> tuple[list[str], int, int]:
+    """Fit whole governing intents into ``char_cap``; return (lines, criteria elided, intents elided).
+
+    The bound mem:fd34ed792cda518b deferred to task 4 and task 4 never delivered: reserved *family*
+    shares bound the node render, but the obligation block sat outside the budget entirely, so a
+    heavily-governed file emitted every criterion of every governing intent and left ``used`` already
+    past ``char_budget`` — every node then failed the fit test. Measured on yigraf itself before this:
+    ``src/yigraf/cli.py`` injected 3833 tokens against an 800 budget with **0 of 86 nodes** rendered.
+    That inverts the tool: the better-governed the file, the less context the agent got.
+
+    Whole intents in or out, in density order. A partial criteria set is worse than an honest count —
+    an agent reading 2 of a contract's 6 scenarios believes it has the obligations and ships against
+    the other 4. The top-ranked group is admitted unconditionally (bounded only by the caller's global
+    budget): the most-governing contract is the one thing this block exists to say, and a cap that
+    could silence it entirely would re-create the inversion in miniature. Later groups that still fit
+    are taken even after a bigger one was skipped — same no-wasted-budget rule as the leftover pass.
+    """
+    lines: list[str] = []
+    spent = elided_criteria = elided_intents = 0
+    for i, group in enumerate(groups):
+        cost = sum(len(line) + 1 for line in group)
+        if i > 0 and spent + cost > char_cap:
+            elided_intents += 1
+            elided_criteria += len(group)
+            continue
+        lines.extend(group)
+        spent += cost
+    return lines, elided_criteria, elided_intents
+
+
 def _provenance(graph: nx.DiGraph, node_id: str, parent: dict[str, tuple[str, str]],
                 in_packet: set[str]) -> str:
     """Why this node entered the packet — the one-line "why" annotation (task 4, the question yigraf's
@@ -551,13 +611,13 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
             relevance_note: str | None = None, scores: dict[str, float] | None = None,
             task_reconcile_lines: list[str] | None = None,
             conflict_lines: list[str] | None = None,
-            obligation_lines: list[str] | None = None,
+            obligation_groups: list[list[str]] | None = None,
             stale_lines: list[str] | None = None,
             parent: dict[str, tuple[str, str]] | None = None) -> ContextResult:
     capture_lines = capture_lines or []
     task_reconcile_lines = task_reconcile_lines or []
     conflict_lines = conflict_lines or []
-    obligation_lines = obligation_lines or []
+    obligation_groups = obligation_groups or []
     stale_lines = stale_lines or []
     parent = parent or {}
     char_budget = budget_tokens * 3  # Graphify's ≈3:1 char:token estimate (retrieval-design §9)
@@ -565,13 +625,24 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
     # A3: top-ranked symbols render as verbatim source when the knob is on AND we know the repo root.
     source_mode = rcfg.get("render", "signature_only") == "source_for_seeds" and root is not None
     max_src, max_src_lines = rcfg.get("source_max_symbols", 3), rcfg.get("source_max_lines", 40)
-    signal_lines = (drift_lines + reconcile_lines + capture_lines + task_reconcile_lines
-                    + conflict_lines + obligation_lines + stale_lines)
+    # ⚠ blocks report a real, bounded condition and are never truncated — they say something is WRONG.
+    # The ✔ obligation block scales with how governed the locus is, not with anything wrong, so it is
+    # the one that floods; it takes a share of what the warnings leave (design law #2).
+    warn_lines = (drift_lines + reconcile_lines + capture_lines + task_reconcile_lines
+                  + conflict_lines + stale_lines)
+    warn_cost = sum(len(line) + 1 for line in warn_lines)
+    obligation_cap = int(rcfg.get("obligation_share", 0.35) * max(0, char_budget - warn_cost))
+    obligation_lines, obl_criteria, obl_intents = _fit_obligations(obligation_groups, obligation_cap)
+    obligation_tail = ([f"  … +{obl_criteria} more criteria across {obl_intents} governing intent(s) — "
+                        f"see {WORKSPACE_DIRNAME}/intents/."] if obl_intents else [])
+    # Only *shown* obligations join signal_lines: they set `used` (so the block can no longer overrun
+    # the budget) and they seed the pin set, and pinning the explanation of a signal we elided would
+    # spend the node budget on a contract the agent was never told about.
+    signal_lines = warn_lines + obligation_lines + obligation_tail
     reserved = "\n".join(signal_lines)
     out = [f'Context for "{query}":', ""]
     if relevance_note:  # C#8: a one-line honesty banner when nothing matched the query strongly
         out.extend([relevance_note, ""])
-    used = len(reserved) + len(relevance_note or "")
     src_emitted = 0
 
     # Drop file:/module: containers before rendering — they only eat budget and bury intent/drift.
@@ -579,6 +650,31 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
                   if graph.nodes[n].get("kind") not in _RENDER_SKIP_KINDS
                   and graph.nodes[n].get("family") not in _RENDER_SKIP_FAMILIES]
     renderable_set = set(renderable)
+
+    # The ✔/⚠ blocks in emit order — one table, so the frame accounting here and the emit loop below
+    # can never disagree about which headings get paid for. Obligations lead: what the edit must KEEP
+    # true outranks what is already wrong, because only the former constrains the next keystroke.
+    blocks: list[tuple[str, list[str]]] = [
+        ("Proof obligations — must still hold after this edit:", obligation_lines + obligation_tail),
+        ("⚠ Conflict (pending — needs human):", conflict_lines),
+        ("⚠ Drift:", drift_lines),
+        ("⚠ Stale (re-verify completion):", stale_lines),
+        ("⚠ Reconcile (R9c):", reconcile_lines),
+        ("⚠ Capture gaps:", capture_lines),
+        ("⚠ Task reconcile:", task_reconcile_lines),
+    ]
+    # The frame is not free, and none of it was charged to `used`: the query line, every block and
+    # family heading, the blank separators, and the elision tail are real tokens in the agent's window.
+    # Unbounded blocks hid this (they overran by 480%); bounding them left a systematic ~9% overrun.
+    # Family headings are reserved for any family that *could* render — if the budget then places none
+    # of them the reservation goes unspent, which errs under budget, the harmless direction.
+    frame = len(out[0]) + 2
+    frame += len(relevance_note) + 2 if relevance_note else 0
+    frame += sum(len(heading) + 2 for heading, lines in blocks if lines)
+    frame += len(_ELISION_HINT) + 1
+    frame += sum(len(_FAMILY_HEADING[fam]) + 3 for fam in _FAMILY_ORDER
+                 if any(graph.nodes[n].get("family", "structure") == fam for n in renderable))
+    used = len(reserved) + frame
     by_family: dict[str, list[str]] = {fam: [] for fam in _FAMILY_ORDER}
     rendered_ids: list[str] = []
     rendered_set: set[str] = set()
@@ -603,7 +699,15 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
 
     def _place(node_id: str, cap: int | None) -> None:
         """Render ``node_id`` if it fits the global budget and (unless it's a pinned explanation) its
-        family's reserved cap. ``cap=None`` bypasses the family cap (pinned pass + leftover pass)."""
+        family's reserved cap. ``cap=None`` bypasses the family cap (pinned pass + leftover pass).
+
+        Pinning is **priority, not exemption**: a pin jumps the queue but still has to fit the global
+        budget. Exempting it was tried and measured — because every ⚠ drift line names a memory, an
+        exemption pins every drifted belief and renders each in full, which took yigraf's own
+        retrieval.py from 864 to 2063 tokens against an 800 budget: the same unbounded-block flood the
+        obligation cap above exists to stop, re-entered through the pin. At any budget that clears the
+        frame, first-in-line already *is* never-dropped; below that no packet is coherent anyway.
+        """
         nonlocal used, src_emitted
         if node_id in rendered_set:
             return
@@ -649,38 +753,15 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
             out.extend(by_family[fam])
             out.append("")
 
-    if obligation_lines:  # int:proof-obligations: what the edit must keep true, not a ⚠ problem
-        out.append("Proof obligations — must still hold after this edit:")
-        out.extend(obligation_lines)
-        out.append("")
-    if conflict_lines:
-        out.append("⚠ Conflict (pending — needs human):")
-        out.extend(conflict_lines)
-        out.append("")
-    if drift_lines:
-        out.append("⚠ Drift:")
-        out.extend(drift_lines)
-        out.append("")
-    if stale_lines:  # int:drift-as-stale: done-task completions whose evidence drifted (principal-facing)
-        out.append("⚠ Stale (re-verify completion):")
-        out.extend(stale_lines)
-        out.append("")
-    if reconcile_lines:
-        out.append("⚠ Reconcile (R9c):")
-        out.extend(reconcile_lines)
-        out.append("")
-    if capture_lines:
-        out.append("⚠ Capture gaps:")
-        out.extend(capture_lines)
-        out.append("")
-    if task_reconcile_lines:
-        out.append("⚠ Task reconcile:")
-        out.extend(task_reconcile_lines)
-        out.append("")
+    for heading, lines in blocks:  # the same table the frame accounting above paid for
+        if lines:
+            out.append(heading)
+            out.extend(lines)
+            out.append("")
 
     elided = len(renderable) - rendered
     if elided > 0:
-        out.append(f"… {elided} more node(s) elided — narrow with `--family <f>` or a more specific query.")
+        out.append(_ELISION_HINT.format(n=elided))
 
     text = "\n".join(out).rstrip() + "\n"
     return ContextResult(text=text, token_estimate=len(text) // 3, nodes_rendered=rendered,
@@ -873,8 +954,8 @@ def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict,
     ranked = _rank(graph, hops, {}, config)  # action-driven: no NL match
     reconcile = _verified_reconcile(graph, drifted_edges)
     obligations = _proof_obligations(graph, seeds)  # what this edit must keep true (int:proof-obligations)
-    return _render(graph, ranked, f"editing {file_relpath}", _drift_block(drift_items), reconcile, budget,
-                   root=root, config=config, obligation_lines=obligations, parent=parent)
+    return _render(graph, ranked, f"editing {file_relpath}", _drift_block(drift_items, config), reconcile, budget,
+                   root=root, config=config, obligation_groups=obligations, parent=parent)
 
 
 def _plan_has_open_work(graph: nx.DiGraph, plan_id: str) -> bool:
@@ -943,7 +1024,7 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
     capture = _capture_gaps(graph)  # global: SessionStart is the orientation dashboard for graph health
     task_reconcile = _implemented_open_tasks(graph, drifted_edges)
     conflicts = _pending_conflicts(graph)
-    return _render(graph, ranked, "active plan & governing intents", _drift_block(drift_items), reconcile,
+    return _render(graph, ranked, "active plan & governing intents", _drift_block(drift_items, config), reconcile,
                    budget, root=root, config=config, capture_lines=capture,
                    task_reconcile_lines=task_reconcile, conflict_lines=conflicts,
                    stale_lines=sorted(stale_lines), parent=parent)
@@ -1037,7 +1118,7 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
     task_reconcile = _implemented_open_tasks(graph, drifted_edges, scope=in_scope)
     conflicts = _pending_conflicts(graph, scope=in_scope)
     scores = {n: sem_match[n] for n in hops if n in sem_match} if show_scores else None
-    return _render(graph, ranked, query, _drift_block(surfaced), reconcile_lines, budget,
+    return _render(graph, ranked, query, _drift_block(surfaced, config), reconcile_lines, budget,
                    root=root, config=config, capture_lines=capture_lines,
                    relevance_note=_relevance_note(sem_match, query, config), scores=scores,
                    task_reconcile_lines=task_reconcile, conflict_lines=conflicts,

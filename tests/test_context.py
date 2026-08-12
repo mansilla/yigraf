@@ -280,6 +280,32 @@ def test_proof_obligations_exclude_the_concerns_serves_path(tmp_path: Path):
     assert "audit row exists" not in text       # concerns→serves scenario must NOT leak as an obligation
 
 
+def test_obligations_lead_with_the_intent_governing_most_of_the_locus(tmp_path: Path):
+    """Density order, not alphabetical. The block is truncatable now, so *which* obligations lead is
+    load-bearing: the contract anchored to the most of this file's symbols is the one the edit is most
+    likely to break. The narrow intent is named to sort FIRST alphabetically — the ordering this
+    replaced would have led with it despite it governing a single symbol."""
+    root = _repo(tmp_path)
+    (root / "auth" / "session.py").write_text(
+        "def refresh(token):\n    return token\n\ndef issue(u):\n    return u\n\ndef revoke(t):\n    return t\n")
+    assert runner.invoke(app, ["build", str(root)]).exit_code == 0
+    for slug, statement in (("aaa-narrow", "Narrow SHALL hold."), ("zzz-broad", "Broad SHALL hold.")):
+        assert runner.invoke(app, ["intent", slug, "--repo", str(root), "-s", statement]).exit_code == 0
+    assert runner.invoke(app, ["plan", "cov", "--repo", str(root), "-t", "Cov",
+                               "--task", "narrow work", "--task", "broad work"]).exit_code == 0
+    assert runner.invoke(app, ["link", "task:cov/1", "int:aaa-narrow", "--repo", str(root)]).exit_code == 0
+    assert runner.invoke(app, ["link", "task:cov/2", "int:zzz-broad", "--repo", str(root)]).exit_code == 0
+    assert runner.invoke(app, ["link", "task:cov/1", SYM, "--repo", str(root)]).exit_code == 0
+    for sym in (SYM, "sym:auth/session.py#issue", "sym:auth/session.py#revoke"):
+        assert runner.invoke(app, ["link", "task:cov/2", sym, "--repo", str(root)]).exit_code == 0
+
+    graph, _ = build_graph(root, default_config())
+    groups = retrieval._proof_obligations(graph, retrieval._file_structure_nodes(graph, SRC))
+    leading = [g[0] for g in groups if "int:aaa-narrow" in g[0] or "int:zzz-broad" in g[0]]
+    assert "int:zzz-broad" in leading[0]   # governs 3 symbols
+    assert "int:aaa-narrow" in leading[1]  # governs 1, and would lead under an alphabetical sort
+
+
 def _memory_concerning(root: Path, statement: str = "refresh must stay idempotent") -> str:
     """Land a decision anchored to SYM and return its id."""
     out = runner.invoke(app, ["remember", statement, "--repo", str(root), "--new", "--concerns", SYM])
