@@ -2451,8 +2451,17 @@ def _post_tool_use(data: dict) -> dict | None:
     except ValueError:
         return None  # edited file is outside the repo
     graph, config = built
-    if rel.suffix not in extension_map(available_extractors(config)):
-        return None  # not a language yigraf indexes in this repo
+    # Indexed language OR a file something is explicitly anchored to. The suffix gate alone made a
+    # `file:` anchor write-only at the moment of action: `remember --concerns file:docs/guide.md` is
+    # accepted, stored, and answered by `yigraf context` — and `context_for_locus` returns that decision
+    # for the doc — but the hook discarded it unasked, because .md is not an extracted language. An
+    # anchor the principal placed by hand is the strongest possible signal that this locus is governed;
+    # dropping it is design law #4 inverted (silence where there IS something worth saying). The graph
+    # is already loaded here, so the extra test is a dict lookup, and an un-anchored .md still returns
+    # None at the gate below — the hook stays silent on ordinary prose edits.
+    if (rel.suffix not in extension_map(available_extractors(config))
+            and f"file:{rel.as_posix().casefold()}" not in graph):  # casefold: context_for_locus's key
+        return None  # neither indexed nor anchored → nothing this hook could say
     _ranked_with_telemetry(root, graph, config)  # recency/popularity + maturity verdict (R1)
     result = retrieval.context_for_locus(graph, rel.as_posix(), config, root=root)
     if result is None:
