@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 from yigraf.cli import app
 from yigraf.config import default_config
 from yigraf.extract import build_graph
-from yigraf import graphdb
+from yigraf import graphdb, memory
 
 runner = CliRunner()
 
@@ -139,6 +139,70 @@ def test_unlink_rejects_an_unknown_task(tmp_path: Path):
     _run(["plan", "auth", "--repo", str(root), "-t", "Auth", "--task", "do it"])
     out = _run(["unlink", "task:auth/9", SYM, "--repo", str(root)])
     assert "not a task" in out.output
+
+
+# --- unlink mem:<id> <ref>: retiring a dead grounded_by ref -----------------------------------------
+
+TEST_SYM = "sym:tests/test_auth.py#test_refresh_is_single_use"
+
+
+def _evidence_refs(root: Path, mem_id: str) -> list[str]:
+    """The refs actually on the artifact. Read from the FILE, not a node attr: evidence projects as
+    `grounded_by` EDGES, so `nodes[mem_id]["evidence"]` is always None and asserting on it is vacuous."""
+    return [e.ref for e in memory.read_memory(memory.find_memory(root, mem_id)).evidence]
+
+
+def _grounded(tmp_path: Path, extra_evidence: bool = False) -> tuple[Path, str]:
+    """A repo with an ·empirical decision grounded by a real test symbol; returns (root, mem id)."""
+    root = _repo(tmp_path)
+    (root / "tests").mkdir()
+    (root / "tests" / "test_auth.py").write_text(
+        "def test_refresh_is_single_use():\n    assert True\n\ndef test_other():\n    assert True\n")
+    _run(["build", str(root)])
+    args = ["remember", "refresh tokens stay single-use", "--repo", str(root), "--new",
+            "--concerns", SYM, "--grounding", "empirical", "--evidence", TEST_SYM]
+    if extra_evidence:
+        args += ["--evidence", "sym:tests/test_auth.py#test_other"]
+    out = _run(args)
+    return root, out.output.split()[1]
+
+
+def test_unlink_retires_a_dead_evidence_ref_from_a_memory(tmp_path: Path):
+    """The gap `reaffirm --evidence` leaves: it upserts, so a ref whose test was DELETED can neither be
+    re-anchored nor replaced — naming fresh evidence adds beside the corpse and downgrading the tier
+    doesn't touch it. Retiring the ref is a graph edit, not a mind-change, so it is `unlink`'s shape."""
+    root, mem_id = _grounded(tmp_path, extra_evidence=True)
+    out = _run(["unlink", mem_id, TEST_SYM, "--repo", str(root)])
+    assert "grounded_by" in out.output and TEST_SYM in out.output
+    assert TEST_SYM not in _evidence_refs(root, mem_id)
+
+
+def test_unlink_refuses_to_strand_an_empirical_claim_with_no_grounding(tmp_path: Path):
+    """Retiring the LAST evidence ref would leave an ·empirical belief with nothing behind it — the
+    loophole the capture/reaffirm gate closes. `unlink` must not become the quiet way to keep a tier you
+    can no longer justify, so it teaches both honest exits instead (design law #1: exit 0 with guidance)."""
+    root, mem_id = _grounded(tmp_path)
+    out = _run(["unlink", mem_id, TEST_SYM, "--repo", str(root)])
+    assert "nothing grounding it" in out.output
+    assert "--grounding inferred" in out.output          # the honest downgrade
+    assert "--grounding empirical --evidence" in out.output  # or name the replacement
+    assert TEST_SYM in _evidence_refs(root, mem_id)  # untouched
+
+
+def test_downgrading_first_then_retiring_the_dead_ref_is_the_honest_path(tmp_path: Path):
+    """The two-step the guidance names actually works end to end."""
+    root, mem_id = _grounded(tmp_path)
+    _run(["reaffirm", mem_id, "--grounding", "inferred", "--repo", str(root)])
+    out = _run(["unlink", mem_id, TEST_SYM, "--repo", str(root)])
+    assert "grounded_by" in out.output
+    assert TEST_SYM not in _evidence_refs(root, mem_id)
+
+
+def test_unlink_names_what_actually_grounds_the_memory(tmp_path: Path):
+    """Same guidance shape as the task path: a ref that reads right but isn't the string on disk."""
+    root, mem_id = _grounded(tmp_path, extra_evidence=True)
+    out = _run(["unlink", mem_id, "sym:tests/test_auth.py#test_nope", "--repo", str(root)])
+    assert "isn't grounded by" in out.output and TEST_SYM in out.output
 
 
 def test_editing_a_linked_symbol_makes_the_anchor_drift(tmp_path: Path):

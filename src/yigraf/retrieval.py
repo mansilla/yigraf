@@ -300,9 +300,17 @@ def _drift_line(item) -> str:
                 f"the locus is gone, so `reaffirm` can't re-anchor it — if the decision moved, "
                 f'`supersede {item.task_id} "<restated>" --concerns <new locus>`.')
     elif item.relation == "grounded_by":
+        # Kind-aware for the same reason the concerns fork is (mem:05f50ec0daf05115): on hard drift the
+        # observation is GONE, so "re-verify it still holds" names something unreadable and `--evidence`
+        # can only upsert *beside* the dead ref, never remove it. `unlink` is the verb that reaches it.
         tail = (f"the evidence grounding this ·empirical belief {verb} — re-verify the observation "
                 f"still holds, then `reaffirm {item.task_id} --grounding empirical --evidence <fresh>`, "
-                f"or honestly downgrade: `reaffirm {item.task_id} --grounding inferred`.")
+                f"or honestly downgrade: `reaffirm {item.task_id} --grounding inferred`."
+                if item.kind == "soft" else
+                f"the evidence grounding this ·empirical belief is gone, so there is nothing left to "
+                f"re-verify — name what replaces it, `reaffirm {item.task_id} --grounding empirical "
+                f"--evidence <fresh>`, or downgrade, `reaffirm {item.task_id} --grounding inferred`, "
+                f"then retire the dead ref: `unlink {item.task_id} {item.locator}`.")
         return f"  ⚠ {item.task_id} → {item.locator}: {tail}"
     else:
         tail = (f"re-verify it still holds, then `link {item.task_id} {item.locator}` to re-anchor."

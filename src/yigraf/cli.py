@@ -437,11 +437,11 @@ def link(
 
 @app.command()
 def unlink(
-    task_id: str = typer.Argument(..., help="Task locator, e.g. task:<plan>/1."),
-    target: str = typer.Argument(..., help="The symbol/file/intent to stop declaring, as it appears on the task."),
+    source: str = typer.Argument(..., help="Task locator (task:<plan>/<n>) or memory id (mem:<id> → retire an evidence ref)."),
+    target: str = typer.Argument(..., help="The edge to retire, exactly as it appears on the node: a symbol/file/intent on a task, or a grounded_by ref on a memory."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
-    """Retire a task's declared edge — the way out of drift on work that moved or was dropped.
+    """Retire a declared edge — the way out of drift on a declaration that is simply no longer true.
 
     ``link`` keys ``implements`` by the exact locator, so a symbol that MOVES is a new string and
     re-linking appends instead of replacing. A pure move needs nothing (``resolve_renames`` re-anchors
@@ -453,8 +453,16 @@ def unlink(
     "this task never implemented that, or no longer does", which is exactly what a wrong or stale
     declaration deserves. Use ``link`` (not ``unlink`` + ``link``) when the work merely moved and you
     want the edge re-anchored to the new locus.
+
+    ``mem:<id>`` dispatches to the same operation on a memory's ``grounded_by`` refs — prefix dispatch
+    over the locator idiom, as ``reaffirm`` already does (mem:039), because it is the identical
+    assertion about a different family: this observation does not ground that belief.
     """
     workspace = _require_workspace(repo)
+    if source.startswith("mem:"):
+        _unlink_evidence(repo, source, target)
+        return
+    task_id = source
     match = _TASK_ID.match(task_id)
     if match is None:
         _guidance(f"{task_id} isn't a task locator (expected task:<plan>/<n>, e.g. task:auth/1). "
@@ -480,6 +488,47 @@ def unlink(
                      else "It declares no edges at all."))
     _rebuild(repo)
     typer.echo(f"Unlinked {task_id} —{removed}→ {target}")
+
+
+def _unlink_evidence(repo: Path, mem_id: str, target: str) -> None:
+    """Retire a dead ``grounded_by`` ref from a memory (int:memory-grounding) — the gap ``reaffirm
+    --evidence`` leaves.
+
+    ``--evidence`` *upserts*: it re-anchors a ref whose target changed, or appends a new one. Neither
+    reaches a ref whose target was DELETED. Both verbs the grounds-drift line offers leave the corpse
+    behind — naming fresh evidence adds beside it, downgrading the tier doesn't touch it — so the ref
+    drifts forever and the belief carries a citation to something that no longer exists.
+
+    Removing it is a graph edit, not a mind-change: the claim is untouched, only the assertion that
+    *this* observation grounds it. That is exactly ``unlink``'s existing shape.
+
+    ``concerns`` is deliberately NOT retirable this way. A memory's concerns are what the belief is
+    ABOUT, so dropping one changes its subject — a ``supersede``, which is what the gone-locus branch
+    of ``reaffirm`` already sends you to. Evidence is only what earned the belief's *tier*.
+    """
+    path = memory.find_memory(repo, mem_id)
+    if path is None:
+        _guidance(f"No memory node with id {mem_id}. "
+                  f'Find the decision you mean with `yigraf context "<topic>"`.')
+    node = memory.read_memory(path)
+    if target not in {e.ref for e in node.evidence}:
+        # Name what actually grounds it: as with the task path, the usual cause is a ref that reads
+        # right but isn't the string on disk, and the fix is to copy one of these.
+        refs = ", ".join(e.ref for e in node.evidence)
+        _guidance(f"{mem_id} isn't grounded by {target}, so there's nothing to retire. "
+                  + (f"It's grounded by: {refs}." if refs else "It names no evidence at all."))
+    if node.grounding == "empirical" and len(node.evidence) == 1:
+        # Never let a retirement silently strand an ·empirical claim with nothing behind it — that is
+        # the loophole the capture/reaffirm gate closes, and reopening it here would make `unlink` the
+        # quiet way to keep a tier you can no longer justify.
+        _guidance(f"Retiring {target} would leave {mem_id} ·empirical with nothing grounding it. Name "
+                  f"what replaces it first — `yigraf reaffirm {mem_id} --grounding empirical --evidence "
+                  f"<fresh>` — or downgrade honestly, `yigraf reaffirm {mem_id} --grounding inferred`, "
+                  f"and then retire this ref.")
+    node.evidence = [e for e in node.evidence if e.ref != target]
+    path.write_text(memory.render_memory(node), encoding="utf-8")
+    _rebuild(repo)
+    typer.echo(f"Unlinked {mem_id} —grounded_by→ {target}")
 
 
 def _resolve_concerns(repo: Path, config: dict, graph, syms: list[str]) -> tuple[list[memory.Concern], list[str]]:
