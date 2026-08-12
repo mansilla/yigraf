@@ -263,24 +263,64 @@ class ContextResult:
     rendered: list[str] = field(default_factory=list)
 
 
+#: The verb fork, stated once per injection under the ⚠ Drift block (see :func:`_drift_block`).
+#: Carried at the *action moment* because that is when the choice is made — the skill teaches this
+#: too, but a skill is read on demand and drift arrives unbidden, so prose alone leaves the agent
+#: reconstructing the distinction on every event. Worded as what each verb ASSERTS, never as a way to
+#: clear the ⚠: the reflexive-relink dishonesty mem:031/mem:039/mem:056 guard against would only get
+#: cheaper if this read like a menu of remedies.
+#: Unindented so every drift surface can indent it to taste (the ⚠ Drift block adds two spaces, the
+#: `yigraf drift` report prints it flush) while the wording itself stays in exactly one place.
+VERB_FORK = ("↳ Which verb: `reaffirm` = the belief is UNCHANGED (re-anchor only) · `supersede` = you "
+             "CHANGED YOUR MIND (old stays visible, correction attached) · re-verify first, neither "
+             "verb clears the ⚠ on its own · never re-`remember` (it duplicates).")
+
+
 def _drift_line(item) -> str:
-    """A reconcile line for one drift item, worded for the relation that drifted.
+    """A reconcile line for one drift item, worded for the relation *and kind* that drifted.
 
     ``concerns`` (the code a decision governs changed → re-check the decision), ``grounded_by`` (the
     *evidence* that earned a belief's ``empirical`` tier changed → that certainty is now unearned; a
     demotion trigger for int:memory-maturity), or ``implements`` (a task's symbol drifted).
+
+    Kind matters as much as relation, because it changes which verbs are even *available*: on hard
+    drift the locus is gone, and ``reaffirm`` cannot re-anchor to something that no longer exists
+    (``cli.reaffirm`` refuses it), so offering it there would send the agent down a dead end. Each line
+    carries the ids already filled in — the agent should not have to retype what yigraf just told it.
     """
     verb = "changed since anchored" if item.kind == "soft" else "no longer found"
     if item.relation == "concerns":
-        tail = "re-verify this decision still holds, then re-`remember` or `supersede` it."
+        tail = (f"re-verify this decision, then `reaffirm {item.task_id}` or "
+                f'`supersede {item.task_id} "<restated>"`.' if item.kind == "soft" else
+                f"the locus is gone, so `reaffirm` can't re-anchor it — if the decision moved, "
+                f'`supersede {item.task_id} "<restated>" --concerns <new locus>`.')
     elif item.relation == "grounded_by":
         tail = (f"the evidence grounding this ·empirical belief {verb} — re-verify the observation "
                 f"still holds, then `reaffirm {item.task_id} --grounding empirical --evidence <fresh>`, "
                 f"or honestly downgrade: `reaffirm {item.task_id} --grounding inferred`.")
         return f"  ⚠ {item.task_id} → {item.locator}: {tail}"
     else:
-        tail = "re-verify or relink."
+        tail = (f"re-verify it still holds, then `link {item.task_id} {item.locator}` to re-anchor."
+                if item.kind == "soft" else
+                f"the symbol is gone — `link {item.task_id} <new locus>` if it moved, "
+                f"`unlink {item.task_id} {item.locator}` if the task no longer implements it, "
+                f"or reopen {item.task_id} if the work was undone.")
     return f"  ⚠ {item.task_id} → {item.locator} {verb} — {tail}"
+
+
+def _drift_block(items: list) -> list[str]:
+    """The ⚠ Drift body: one sorted line per item, plus the verb fork once when it applies.
+
+    The fork is appended (never sorted in) so it reads as a footer, and only when a ``concerns`` item
+    is present — that is the relation whose two verbs assert *different things about the belief* and
+    whose wrong choice is expensive in both directions (a needless ``supersede`` fabricates a
+    mind-change; a ``reaffirm`` of a belief that did change is rubber-stamping). ``grounded_by`` and
+    ``implements`` lines already carry their whole recipe, so a fork note over them would be noise.
+    """
+    lines = sorted(_drift_line(i) for i in items)
+    if any(i.relation == "concerns" for i in items):
+        lines.append(f"  {VERB_FORK}")
+    return lines
 
 
 def _stale_line(item) -> str:
@@ -814,7 +854,7 @@ def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict,
         for s in seeds for _, _, a in graph.in_edges(s, data=True)
     )
 
-    drift_lines: list[str] = []
+    drift_items: list = []
     drifted_edges: set[tuple[str, str]] = set()
     has_drift = False
     for item in compute_drift(graph):
@@ -825,7 +865,7 @@ def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict,
             continue
         if item.task_id in hops or item.locator in seedset or item.locator in hops:
             has_drift = True
-            drift_lines.append(_drift_line(item))
+            drift_items.append(item)
 
     if not governing and not has_drift:
         return None  # silent: no governing intent/task and no drift → nothing worth interrupting for
@@ -833,7 +873,7 @@ def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict,
     ranked = _rank(graph, hops, {}, config)  # action-driven: no NL match
     reconcile = _verified_reconcile(graph, drifted_edges)
     obligations = _proof_obligations(graph, seeds)  # what this edit must keep true (int:proof-obligations)
-    return _render(graph, ranked, f"editing {file_relpath}", sorted(drift_lines), reconcile, budget,
+    return _render(graph, ranked, f"editing {file_relpath}", _drift_block(drift_items), reconcile, budget,
                    root=root, config=config, obligation_lines=obligations, parent=parent)
 
 
@@ -883,7 +923,7 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
     ranked = [n for n in ranked
               if not (graph.nodes[n].get("kind") == "task" and graph.nodes[n].get("state") == "done")]
 
-    drift_lines: list[str] = []
+    drift_items: list = []
     stale_lines: list[str] = []
     drifted_edges: set[tuple[str, str]] = set()
     in_scope = set(hops)
@@ -897,13 +937,13 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
                 stale_lines.append(_stale_line(item))
             continue
         if in_view:
-            drift_lines.append(_drift_line(item))
+            drift_items.append(item)
 
     reconcile = _verified_reconcile(graph, drifted_edges)
     capture = _capture_gaps(graph)  # global: SessionStart is the orientation dashboard for graph health
     task_reconcile = _implemented_open_tasks(graph, drifted_edges)
     conflicts = _pending_conflicts(graph)
-    return _render(graph, ranked, "active plan & governing intents", sorted(drift_lines), reconcile,
+    return _render(graph, ranked, "active plan & governing intents", _drift_block(drift_items), reconcile,
                    budget, root=root, config=config, capture_lines=capture,
                    task_reconcile_lines=task_reconcile, conflict_lines=conflicts,
                    stale_lines=sorted(stale_lines), parent=parent)
@@ -977,7 +1017,7 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
 
     drift_items = compute_drift(graph)
     in_scope = set(hops)
-    drift_lines: list[str] = []
+    surfaced: list = []
     stale_lines: list[str] = []
     drifted_edges: set[tuple[str, str]] = set()
     for item in drift_items:
@@ -990,14 +1030,14 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
                 stale_lines.append(_stale_line(item))
             continue
         if in_view:
-            drift_lines.append(_drift_line(item))
+            surfaced.append(item)
 
     reconcile_lines = _verified_reconcile(graph, drifted_edges)
     capture_lines = _capture_gaps(graph, scope=in_scope)  # scoped to the query's neighborhood, like drift
     task_reconcile = _implemented_open_tasks(graph, drifted_edges, scope=in_scope)
     conflicts = _pending_conflicts(graph, scope=in_scope)
     scores = {n: sem_match[n] for n in hops if n in sem_match} if show_scores else None
-    return _render(graph, ranked, query, sorted(drift_lines), reconcile_lines, budget,
+    return _render(graph, ranked, query, _drift_block(surfaced), reconcile_lines, budget,
                    root=root, config=config, capture_lines=capture_lines,
                    relevance_note=_relevance_note(sem_match, query, config), scores=scores,
                    task_reconcile_lines=task_reconcile, conflict_lines=conflicts,

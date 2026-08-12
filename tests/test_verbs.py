@@ -78,6 +78,69 @@ def test_link_tracks_an_intent(tmp_path: Path):
     assert _graph(root).edges["task:auth/1", "int:session-expiry"]["relation"] == "tracks"
 
 
+def test_unlink_retires_an_implements_edge(tmp_path: Path):
+    root = _repo(tmp_path)
+    _run(["plan", "auth", "--repo", str(root), "-t", "Auth", "--task", "do it"])
+    _run(["link", "task:auth/1", SYM, "--repo", str(root)])
+    assert ("task:auth/1", SYM) in _graph(root).edges
+
+    out = _run(["unlink", "task:auth/1", SYM, "--repo", str(root)])
+    assert "Unlinked task:auth/1 —implements→" in out.output
+    assert ("task:auth/1", SYM) not in _graph(root).edges
+
+
+def test_unlink_retires_a_tracks_edge(tmp_path: Path):
+    root = _repo(tmp_path)
+    _run(["intent", "session-expiry", "--repo", str(root), "-s", "SHALL expire.",
+          "--scenario", "Given a, When b, Then c."])
+    _run(["plan", "auth", "--repo", str(root), "-t", "Auth", "--task", "do it"])
+    _run(["link", "task:auth/1", "int:session-expiry", "--repo", str(root)])
+    _run(["unlink", "task:auth/1", "int:session-expiry", "--repo", str(root)])
+    assert ("task:auth/1", "int:session-expiry") not in _graph(root).edges
+
+
+def test_unlink_clears_hard_drift_a_file_move_left_behind(tmp_path: Path):
+    """The reported trap (feedback #2): `link` keys `implements` by the exact locator, so re-linking
+    after a move APPENDS and the old entry becomes drift no verb could clear — `reaffirm` re-anchors a
+    *memory*, and `supersede` restates a *belief*, and a stale declaration is neither."""
+    root = _repo(tmp_path)
+    _run(["plan", "auth", "--repo", str(root), "-t", "Auth", "--task", "do it"])
+    _run(["link", "task:auth/1", SYM, "--repo", str(root)])
+
+    # Move the symbol AND change its body — a pure move would auto-re-anchor by content hash.
+    (root / "auth" / "session.py").unlink()
+    moved = root / "auth" / "tokens.py"
+    moved.write_text("def refresh(token):\n    return token + 1\n")
+    new_sym = "sym:auth/tokens.py#refresh"
+    _run(["build", str(root)])
+    _run(["link", "task:auth/1", new_sym, "--repo", str(root)])
+
+    both = runner.invoke(app, ["drift", str(root)])
+    assert both.exit_code == 1 and SYM in both.output  # the stale edge outlives the re-link
+
+    _run(["unlink", "task:auth/1", SYM, "--repo", str(root)])
+    after = runner.invoke(app, ["drift", str(root)])
+    assert after.exit_code == 0 and "No drift" in after.output
+    assert ("task:auth/1", new_sym) in _graph(root).edges  # the live link is untouched
+
+
+def test_unlink_names_what_the_task_actually_declares(tmp_path: Path):
+    """Guidance, not a stack trace (design law #1): the usual cause is a locator that reads right but
+    isn't the string on disk, so the fix is to copy one of the ones it prints."""
+    root = _repo(tmp_path)
+    _run(["plan", "auth", "--repo", str(root), "-t", "Auth", "--task", "do it"])
+    _run(["link", "task:auth/1", SYM, "--repo", str(root)])
+    out = _run(["unlink", "task:auth/1", "sym:auth/session.py#nope", "--repo", str(root)])
+    assert "doesn't declare" in out.output and SYM in out.output  # exit 0, names the real edge
+
+
+def test_unlink_rejects_an_unknown_task(tmp_path: Path):
+    root = _repo(tmp_path)
+    _run(["plan", "auth", "--repo", str(root), "-t", "Auth", "--task", "do it"])
+    out = _run(["unlink", "task:auth/9", SYM, "--repo", str(root)])
+    assert "not a task" in out.output
+
+
 def test_editing_a_linked_symbol_makes_the_anchor_drift(tmp_path: Path):
     root = _repo(tmp_path)
     _run(["plan", "auth", "--repo", str(root), "-t", "Auth", "--task", "do it"])

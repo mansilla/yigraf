@@ -133,7 +133,13 @@ using the wrong one either rubber-stamps a belief you didn't check or destroys a
 **Drift** — a live link's anchor no longer matches: soft (the symbol's body changed) or hard (it's
 gone), on `implements` (task→code), `concerns` (decision→code), or `grounded_by` (decision→evidence).
 A pure rename auto-re-anchors and never surfaces. Re-verify the code still satisfies the thing, then:
-- a task's `implements` → `yigraf link task:<id> sym:…` (re-anchors)
+- a task's `implements` → `yigraf link task:<id> sym:…` (re-anchors; use this for a symbol that moved
+  *and* changed — `link` on the new locus, never unlink-then-link)
+- a task's `implements` whose symbol is gone for good, or that was declared wrongly →
+  `yigraf unlink task:<id> <target>`. `link` keys by the exact locator, so a re-link after a move
+  *appends* rather than replaces; without `unlink` the old entry is drift no verb can clear. This is a
+  graph edit, not a mind-change — it leaves no supersedes trail, because the declaration was simply
+  never (or is no longer) true.
 - a decision's `concerns` that still holds → `yigraf reaffirm mem:<id>` (never re-`remember` — that
   duplicates; never `supersede` unless your mind actually changed)
 - `grounded_by` → `yigraf reaffirm mem:<id> --grounding empirical` if you re-observed the evidence,

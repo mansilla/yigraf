@@ -58,11 +58,13 @@ def _c(text: str, code: str) -> str:
 def _fmt_tokens(n: int) -> str:
     """A raw token count as a compact, glanceable magnitude: ``1280 → 1.3k``, ``128000 → 128k``,
     ``1_200_000 → 1.2M``. Sub-1k stays exact. One significant fractional digit only under 10 of a
-    unit (``1.3k``/``9.4M``), whole above (``128k``/``42M``) — enough to read the trend, no noise."""
+    unit (``1.3k``/``9.4M``), whole above (``128k``/``42M``) — enough to read the trend, no noise.
+    A trailing ``.0`` is dropped (``1M``, not ``1.0M``): it carries no information, and the round
+    values are exactly the common ones — a window ceiling is 200k or 1M far more often than not."""
     if n < 1_000:
         return str(n)
     unit, scaled = ("M", n / 1_000_000) if n >= 1_000_000 else ("k", n / 1_000)
-    return (f"{scaled:.1f}{unit}" if scaled < 10 else f"{scaled:.0f}{unit}")
+    return (f"{scaled:.1f}".removesuffix(".0") if scaled < 10 else f"{scaled:.0f}") + unit
 
 
 @dataclass
@@ -120,6 +122,23 @@ class StatusSummary:
             return min(100, round(100 * self.ctx_used / eff))
         return None
 
+    @property
+    def ctx_fill(self) -> str:
+        """The *physical* occupancy as ``used/window`` (``236k/1M``) — the percent's missing denominator.
+
+        The percent is knee-relative (see :attr:`ctx_pct`), so on a 1M host it reads 94% at 236k. Alone
+        that collides with the host's own context readout ("24%") and has been acted on as *nearly out
+        of room* — a wrong next action, which is the one thing the status surface must not cause
+        (design law #2). Naming the window costs four characters and makes the two reconcilable on
+        sight. It also carries the only signal left above the knee: ``ctx_pct`` saturates at 100 from
+        ``ctx_soft_limit`` all the way to the ceiling, so past 250k the raw pair is the sole moving
+        part. Empty when the host supplied no usage.
+        """
+        if not self.ctx_used:
+            return ""
+        used = _fmt_tokens(self.ctx_used)
+        return f"{used}/{_fmt_tokens(self.ctx_limit)}" if self.ctx_limit else used
+
     def render_line(self, *, color: bool = False, icon: str | None = None) -> str:
         """One scannable line for an ambient surface (statusline). No trailing newline.
 
@@ -150,8 +169,7 @@ class StatusSummary:
         if self.semantic:
             parts.append(f"sem {self.embedded}")
         if self.ctx_pct is not None:
-            parts.append(f"ctx {self.ctx_pct}%"
-                         + (f" {_fmt_tokens(self.ctx_used)}" if self.ctx_used else ""))
+            parts.append(f"ctx {self.ctx_pct}%" + (f" {self.ctx_fill}" if self.ctx_fill else ""))
         if self.update:
             parts.append(f"⬆ {self.update}")
         return " · ".join(parts)
@@ -187,15 +205,35 @@ class StatusSummary:
         return _c(" · ", "2").join(segs)
 
     def _ctx_gauge(self) -> str:
-        """A tiny 4-cell bar + percent, colored green→yellow→red as the window fills, trailed by the
-        raw token magnitude (``128k``) dim, so the human reads both the fill and the absolute cost."""
+        """A tiny 4-cell bar + percent, colored green→yellow→red as the budget fills, trailed by the
+        physical occupancy (``236k/1M``) dim, so the reader gets both the fill and what it is a fill *of*.
+
+        Bar, digit, and color all read :attr:`ctx_pct` (knee-relative); only the dim trailer is
+        window-relative. Carrying the denominator is what keeps a knee-relative 94% from being read as
+        a window-relative one — see :attr:`ctx_fill`."""
         pct = self.ctx_pct or 0
         code = "32" if pct < 50 else "33" if pct < 80 else "31"
         fill = max(0, min(4, round(pct / 25)))
         gauge = _c("ctx ", "2") + _c("▰" * fill + "▱" * (4 - fill) + f" {pct}%", code)
-        if self.ctx_used:
-            gauge += _c(f" {_fmt_tokens(self.ctx_used)}", "2")
+        if self.ctx_fill:
+            gauge += _c(f" {self.ctx_fill}", "2")
         return gauge
+
+    def ctx_note(self) -> str | None:
+        """The knee, spelled out — or ``None`` when there is nothing to explain (design law #4).
+
+        The ambient line can only afford the percent and the raw pair; the *reason* the two differ
+        belongs somewhere with room, so ``yigraf status`` at a real terminal carries it. Silent unless
+        the knee actually clamps (``_ctx_effective < ctx_limit``): on a ~200k host the budget IS the
+        window, and explaining a distinction that isn't there would be pure noise.
+        """
+        eff = self._ctx_effective
+        if self.ctx_pct is None or eff is None or eff >= self.ctx_limit:
+            return None
+        return (f"  ctx {self.ctx_pct}% is of the {_fmt_tokens(eff)} usable budget, not the "
+                f"{_fmt_tokens(self.ctx_limit)} window ({self.ctx_fill} in use) — attention degrades "
+                f"well before a long window is physically full, so the gauge tracks that knee. "
+                f"Set status.ctx_soft_limit: 0 to gauge the raw window instead.")
 
     def as_dict(self) -> dict:
         """The full summary as JSON-ready data — for a host adapter that wants to render it itself."""

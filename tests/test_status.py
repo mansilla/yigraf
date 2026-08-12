@@ -119,7 +119,7 @@ def test_context_is_injected_not_read(tmp_path: Path):
     assert "ctx" not in _summary(root).render_line()
     s = _summary(root, ctx_used=40_000, ctx_limit=200_000)
     assert s.ctx_used == 40_000
-    assert "ctx 20% 40k" in s.render_line()  # percent + the absolute token magnitude
+    assert "ctx 20% 40k/200k" in s.render_line()  # percent + the physical occupancy it is a fill of
 
 
 def test_ctx_token_magnitude_is_compact(tmp_path: Path):
@@ -128,9 +128,41 @@ def test_ctx_token_magnitude_is_compact(tmp_path: Path):
     assert status._fmt_tokens(1_280) == "1.3k"
     assert status._fmt_tokens(128_000) == "128k"
     assert status._fmt_tokens(1_200_000) == "1.2M"
+    assert status._fmt_tokens(1_000_000) == "1M"  # no informationless trailing .0
     s = _summary(_repo(tmp_path), ctx_used=128_000, ctx_limit=1_000_000)
     assert "128k" in s.render_line()
     assert "128k" in s.render_line(color=True)
+
+
+def test_ctx_names_the_window_the_percent_is_not_of(tmp_path: Path):
+    """The knee-relative percent must never travel without its denominator (int:status-surface).
+
+    A 1M host at 236k reads 94% of the 250k budget — which a reader (or an agent) acted on as "nearly
+    out of room" when 764k was free. The raw pair is what makes that reconcilable with the host's own
+    readout, so it appears in BOTH renders, and the percent stays knee-relative as designed."""
+    s = _summary(_repo(tmp_path), ctx_used=236_000, ctx_limit=1_000_000)
+    assert s.ctx_pct == 94 and s.ctx_fill == "236k/1M"
+    assert "ctx 94% 236k/1M" in s.render_line()
+    assert "236k/1M" in s.render_line(color=True)
+
+
+def test_ctx_pct_saturates_but_the_raw_pair_keeps_moving(tmp_path: Path):
+    """Above the knee ctx_pct pins at 100 all the way to the ceiling — there the pair is the only signal."""
+    root = _repo(tmp_path)
+    lo = _summary(root, ctx_used=300_000, ctx_limit=1_000_000)
+    hi = _summary(root, ctx_used=900_000, ctx_limit=1_000_000)
+    assert lo.ctx_pct == hi.ctx_pct == 100
+    assert lo.ctx_fill == "300k/1M" and hi.ctx_fill == "900k/1M"
+
+
+def test_ctx_note_explains_the_knee_only_when_it_clamps(tmp_path: Path):
+    """`yigraf status` carries the full sentence; it self-silences when budget == window (design law #4)."""
+    root = _repo(tmp_path)
+    note = _summary(root, ctx_used=236_000, ctx_limit=1_000_000).ctx_note()
+    assert note is not None and "250k usable budget" in note and "1M window" in note
+    assert "236k/1M" in note and "ctx_soft_limit" in note  # the opt-out is named
+    assert _summary(root, ctx_used=40_000, ctx_limit=200_000).ctx_note() is None  # knee is a no-op
+    assert _summary(root).ctx_note() is None  # no host datum at all
 
 
 def test_render_line_is_a_single_compact_line(tmp_path: Path):

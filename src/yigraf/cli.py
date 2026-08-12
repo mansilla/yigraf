@@ -435,6 +435,53 @@ def link(
     _rebuild(repo)
 
 
+@app.command()
+def unlink(
+    task_id: str = typer.Argument(..., help="Task locator, e.g. task:<plan>/1."),
+    target: str = typer.Argument(..., help="The symbol/file/intent to stop declaring, as it appears on the task."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Retire a task's declared edge — the way out of drift on work that moved or was dropped.
+
+    ``link`` keys ``implements`` by the exact locator, so a symbol that MOVES is a new string and
+    re-linking appends instead of replacing. A pure move needs nothing (``resolve_renames`` re-anchors
+    it by content hash), but a move *plus* an edit is hard drift on a locator that will never resolve
+    again — previously unclearable by any verb, because ``reaffirm`` re-anchors and ``supersede``
+    restates a *belief*, and this is neither: the declaration is simply no longer true.
+
+    This is a graph edit, not a mind-change, so it leaves no supersedes trail — retiring a link asserts
+    "this task never implemented that, or no longer does", which is exactly what a wrong or stale
+    declaration deserves. Use ``link`` (not ``unlink`` + ``link``) when the work merely moved and you
+    want the edge re-anchored to the new locus.
+    """
+    workspace = _require_workspace(repo)
+    match = _TASK_ID.match(task_id)
+    if match is None:
+        _guidance(f"{task_id} isn't a task locator (expected task:<plan>/<n>, e.g. task:auth/1). "
+                  f'Find tasks with `yigraf context "<plan>"`.')
+    plan_file = _find_plan_file(workspace, match.group(1).casefold())
+    if plan_file is None:
+        known = _known_plans(workspace)
+        _guidance(f"No plan found for {task_id}." +
+                  (f" Known plans: {', '.join(known)}." if known else " Create one with `yigraf plan`."))
+
+    removed = artifacts.remove_edge_from_plan(plan_file, task_id, target)
+    if removed is None:
+        # Name what the task actually declares: the usual cause is a locator that reads right but isn't
+        # the string on disk (a moved path, a guessed symbol name), and the fix is to copy one of these.
+        tasks = artifacts.read_plan(plan_file).tasks
+        task = next((t for t in tasks if t.id == task_id), None)
+        if task is None:
+            ids = ", ".join(t.id for t in tasks) or "(none)"
+            _guidance(f"{task_id} is not a task in {plan_file.name}. Tasks there: {ids}.")
+        declared = ([task.tracks] if task.tracks else []) + [i.sym for i in task.implements]
+        _guidance(f"{task_id} doesn't declare {target}, so there's nothing to retire. "
+                  + (f"It declares: {', '.join(declared)}." if declared
+                     else "It declares no edges at all."))
+    _rebuild(repo)
+    typer.echo(f"Unlinked {task_id} —{removed}→ {target}")
+
+
 def _resolve_concerns(repo: Path, config: dict, graph, syms: list[str]) -> tuple[list[memory.Concern], list[str]]:
     """Resolve each ``--concerns`` locator to a :class:`Concern`, soft-warning on a forward-reference.
 
@@ -1185,6 +1232,12 @@ def status_cmd(
     icon = status.SPIN[int(time.time()) % len(status.SPIN)] if use_color else None
     # color= keeps click from stripping ANSI on a non-TTY pipe — exactly the statusline's case.
     typer.echo(summary.render_line(color=use_color, icon=icon), color=use_color)
+    # The knee note: the one-liner stays terse (percent + raw pair), and the full "what that percent is
+    # of" sentence lands here — a human at a real terminal, never a piped statusline. Self-silencing
+    # when the knee doesn't clamp (see ctx_note).
+    note = summary.ctx_note()
+    if note and sys.stdout.isatty():
+        typer.echo(note)
     # A one-line "how to update" notice, only for a human at a real terminal (never a piped statusline).
     if summary.update and sys.stdout.isatty():
         typer.echo(f"⬆ yigraf {summary.update} is available — update with: "
@@ -1346,6 +1399,13 @@ def drift(
         typer.echo("also affected (verify these too):")
         for line in ripple:
             typer.echo(line)
+
+    # The same verb fork the edit hook carries (retrieval.VERB_FORK — one wording, both surfaces): this
+    # report is a drift moment too, and until now it named no verb at all. Only when a decision drifted;
+    # an implements-only report needs re-`link`, not this fork.
+    if any(item.relation == "concerns" for item in items):
+        typer.echo("")
+        typer.echo(retrieval.VERB_FORK)
 
     if any(item.kind in ("soft", "hard") for item in items):
         raise typer.Exit(code=1)
