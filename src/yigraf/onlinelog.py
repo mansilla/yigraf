@@ -312,6 +312,44 @@ class OnlineLog:
         so ``fold`` produces the same graph as the local substrate for the same content (mem:059)."""
         return causal_order(self._collapsed().values())
 
+    def superseded_revisions(self, live_ids: set[str] | frozenset[str]) -> set[str]:
+        """Ids this log holds that **the same actor** later replaced with a ``live_ids`` revision.
+
+        Divergence asks "does someone else's copy of this locator survive nowhere?" — and for the
+        revisioned families a locator's id *is* its revision (``filelog`` §"the id carries the
+        revision"), so every edit to an already-pushed plan/intent leaves the previous revision in the
+        log looking exactly like a disagreement. It isn't: it is your own superseded history. Without
+        this, the divergence count ratchets upward on ordinary solo work, one entry per re-``link``.
+
+        Two guards make the classification honest rather than merely quiet:
+
+        * **Same actor only.** A revision by a *different* principal is never filtered, whatever the
+          order — their machine may still hold it, so it stays the open question divergence exists to
+          raise. Only a principal's own replaced revisions are recognized as history.
+        * **Strictly earlier arrival.** ``seq`` here is the replica's arrival order, not the authority's
+          chain order (see :func:`yigraf.sync.replica_log`), so it is a heuristic — but a conservative
+          one: a revision that arrives *after* the live one fails the test and is still surfaced. The
+          error direction is "reports history as divergence", never "hides a live disagreement".
+        """
+        events = self.store.iter_events(self.project)
+        live_seq: dict[tuple[str, str], int] = {}  # (locator, actor) → arrival of their live revision
+        for event in events:
+            locator, actor = (event.body or {}).get("locator"), (event.provenance or {}).get("actor")
+            if locator and actor and event.id in live_ids:
+                live_seq[(locator, actor)] = max(live_seq.get((locator, actor), -1), event.seq)
+
+        # One id can have several physical events (mem:060) and, across actors, several claimants. It is
+        # history only if EVERY claim on it was later replaced by that same actor's live revision — if any
+        # actor's newest word on the locator is still this revision, their machine may hold it, so it
+        # stays a divergence.
+        claims: dict[str, list[tuple[tuple[str, str], int]]] = {}
+        for event in events:
+            locator, actor = (event.body or {}).get("locator"), (event.provenance or {}).get("actor")
+            if locator and actor and event.id not in live_ids:
+                claims.setdefault(event.id, []).append(((locator, actor), event.seq))
+        return {aid for aid, cs in claims.items()
+                if all(seq < live_seq.get(key, -1) for key, seq in cs)}
+
     # -- integrity (task #8) -----------------------------------------------------------------------
 
     def verify_chain(self) -> bool:

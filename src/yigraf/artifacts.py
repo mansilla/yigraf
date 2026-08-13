@@ -276,6 +276,46 @@ def add_edge_to_plan(path: Path, task_id: str, relation: str, target: str,
     path.write_text(_compose(meta, body), encoding="utf-8")
 
 
+def remove_edge_from_plan(path: Path, task_id: str, target: str) -> str | None:
+    """Retire one declared edge from ``task_id``; returns the relation removed, or ``None`` if absent.
+
+    The counterpart :func:`add_edge_to_plan` lacked. ``link`` keys ``implements`` entries by their
+    exact ``sym`` string, so a symbol that MOVES is a different string: re-linking appends rather than
+    replaces, and the old entry keeps pointing at a locator that no longer resolves. ``resolve_renames``
+    rescues that automatically while the body is untouched (a moved symbol keeps its content hash), but
+    a move *plus* an edit is honest hard drift — and until now no verb could retire it, so a file move
+    left permanent, unclearable drift that had to be fixed by hand-editing this frontmatter.
+
+    Deliberately NOT folded into ``link`` as an auto-replace: a task may legitimately implement several
+    symbols, so yigraf cannot tell "this one moved" from "this is a second implementer" — guessing would
+    silently delete a real edge. Retirement is an explicit act.
+    """
+    path = Path(path)
+    meta, body = _split_frontmatter(path.read_text(encoding="utf-8"))
+    spec = (meta.get("edges") or {}).get(task_id) or {}
+    removed: str | None = None
+
+    if spec.get("tracks") == target:
+        del spec["tracks"]
+        removed = "tracks"
+    else:
+        impls = spec.get("implements") or []
+        kept = [e for e in impls if e.get("sym") != target]
+        if len(kept) != len(impls):
+            removed = "implements"
+            if kept:
+                spec["implements"] = kept
+            else:
+                spec.pop("implements", None)
+
+    if removed is None:
+        return None
+    if not spec:  # a task with no edges left carries no empty husk in the frontmatter
+        del meta["edges"][task_id]
+    path.write_text(_compose(meta, body), encoding="utf-8")
+    return removed
+
+
 # --------------------------------------------------------------------------------------------------
 # Projection into the graph
 # --------------------------------------------------------------------------------------------------

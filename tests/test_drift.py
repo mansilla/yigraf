@@ -91,6 +91,22 @@ def test_drift_cli_soft_exits_nonzero(tmp_path: Path):
     assert result.exit_code == 1 and "soft drift" in result.output
 
 
+def test_drift_cli_carries_the_verb_fork_only_for_a_drifted_decision(tmp_path: Path):
+    """`yigraf drift` is a drift moment too, and named no verb at all before this. Same wording as the
+    edit hook (one `retrieval.VERB_FORK`), and silent when only an implements edge drifted — that one
+    wants re-`link`, so the reaffirm/supersede fork would be misdirection."""
+    root = _linked_repo(tmp_path)
+    (root / SRC).write_text("def refresh(token):\n    return token + 9\n")
+    implements_only = runner.invoke(app, ["drift", str(root)])
+    assert "soft drift" in implements_only.output and "Which verb" not in implements_only.output
+
+    assert runner.invoke(app, ["remember", "refresh must stay pure", "--repo", str(root),
+                               "--new", "--concerns", SYM]).exit_code == 0
+    (root / SRC).write_text("def refresh(token):\n    return token + 10\n")
+    result = runner.invoke(app, ["drift", str(root)])
+    assert result.exit_code == 1 and retrieval.VERB_FORK in result.output
+
+
 def test_drift_cli_rename_is_surfaced_but_not_a_failure(tmp_path: Path):
     root = _linked_repo(tmp_path)
     (root / SRC).write_text("def renew(token):\n    return token\n")

@@ -177,10 +177,15 @@ def _fold_replica(graph: nx.DiGraph, root: Path, config: dict,
     place every other conflict in the repo is resolved. A workspace that *gitignores* its artifacts —
     which yigraf's own repo does, and any repo may — has no such merge point, so declining the replica's
     revision silently discards the only other copy, permanently, with each machine convinced it is
-    current. So the declined set is inspected rather than dropped: an assertion whose id this workspace
-    also authored is a harmless echo, and one whose id is unknown is a locator two workspaces genuinely
-    disagree about. The locators land on ``graph.graph["diverged"]`` for ``status`` and ``sync`` to
-    surface (never a node attr — it is a property of the pair of logs, not of the belief).
+    current. So the declined set is inspected rather than dropped, and triaged three ways: an assertion
+    whose id this workspace also authored is a harmless echo; one the *same actor* has since replaced
+    with the live revision is that actor's own superseded history
+    (:meth:`~yigraf.onlinelog.OnlineLog.superseded_revisions`); and only what survives both is a locator
+    two principals genuinely disagree about. Without that middle case the count ratcheted upward on
+    ordinary solo work — for a revisioned family the id IS the revision, so every re-``link`` of an
+    already-pushed task left its previous revision behind looking like a disagreement with nobody. The
+    locators land on ``graph.graph["diverged"]`` for ``status`` and ``sync`` to surface (never a node
+    attr — it is a property of the pair of logs, not of the belief).
 
     This can only fire for the revisioned families. Memory and resolution key their node on the content
     hash itself, so a differing body is a different NODE and never reaches the deferral at all — their
@@ -206,9 +211,15 @@ def _fold_replica(graph: nx.DiGraph, root: Path, config: dict,
         declined: list = []
         folded = fold_assertions(log.iter_assertions_in_causal_order(), base=graph,
                                  defer_families=FILE_TRUTH_FAMILIES, declined=declined)
+        # Two kinds of declined assertion are NOT divergence: one whose id this workspace also authored
+        # (a plain echo of the live revision), and one the same actor has since replaced with the live
+        # revision (:meth:`OnlineLog.superseded_revisions`) — for a revisioned family the id *is* the
+        # revision, so without the second test every edit to an already-pushed plan left its previous
+        # revision behind looking like a disagreement, and the count only ever grew.
+        history = log.superseded_revisions(set(local_ids))
         graph.graph["diverged"] = sorted({
             a.body["locator"] for a in declined
-            if a.id not in local_ids and a.body.get("locator")})
+            if a.id not in local_ids and a.id not in history and a.body.get("locator")})
         return len(folded)
     except Exception:  # noqa: BLE001 - a broken replica must degrade to local, never break the build
         return 0

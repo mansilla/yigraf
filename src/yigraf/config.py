@@ -61,6 +61,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # packet so a flood of code symbols can't starve the "why" families (intent/memory). Floors,
         # not partitions — a family that doesn't use its share yields it to the others (design law #2).
         "family_shares": {"intent": 0.25, "plan": 0.15, "structure": 0.30, "memory": 0.30},
+        # Share of the budget the ✔ proof-obligation block may take (of what the ⚠ warnings leave).
+        # The block scales with how *governed* a locus is, so without a bound it lands unbounded ahead
+        # of every node: measured 3833 tokens against an 800 budget, 0 of 86 nodes, on yigraf's own
+        # cli.py. Whole governing intents are admitted in density order until the share is spent.
+        "obligation_share": 0.35,
+        # Max ⚠ drift lines in an injected packet (hard drift first; the rest become a count + the
+        # verb to see them). `yigraf drift` renders from its own path and is never capped.
+        "max_drift_lines": 4,
     },
     # Relevance prior weights (a node's standing weight, scored at read time).
     #   w1·log(1+refs_in) + w2·recency(last_seen) + w3·maturity − w4·[superseded_in>0] − w5·[proposed]
@@ -95,6 +103,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # before 100%. The gauge denominator is min(host window, ctx_soft_limit) — a 1M window clamps to
     # the knee, a genuine ~200k window is unaffected (the min is the window itself). 0 opts out (gauge
     # against the raw window). ~200k is where Opus-class quality degrades and per-turn cost climbs.
+    # The percent is therefore knee-relative and by design disagrees with the host's own readout, so
+    # the render always carries the physical pair beside it (StatusSummary.ctx_fill) and `yigraf status`
+    # explains the gap (ctx_note) — a bare knee-relative percent has been misread as "nearly out".
     "status": {
         "ctx_soft_limit": 250_000,
         # The principal's turn-boundary notice (int:obligation-notice). Edge-triggered: it announces an
@@ -200,6 +211,14 @@ retrieval:
     plan: 0.15
     structure: 0.30
     memory: 0.30
+  # Share of the budget (after ⚠ warnings) the ✔ proof-obligation block may take. It grows with how
+  # governed a locus is, not with anything being wrong, so it is the block that floods — whole
+  # governing intents are admitted in density order until this is spent, then the rest is counted.
+  obligation_share: 0.35
+  # Max ⚠ drift lines in an injected packet — drift scales with how much anchored belief a locus
+  # carries, so it floods the same way. Hard drift (symbol gone) sorts ahead of soft (body changed),
+  # and the rest become a count. `yigraf drift` is the full report and is never capped.
+  max_drift_lines: 4
 
 # --- Relevance prior (how a node's standing weight is scored at read time) ---
 relevance:                     # w1·log(1+refs_in) + w2·recency + w3·maturity − w4·[superseded] − w5·[proposed]
@@ -231,6 +250,9 @@ embeddings:
 # *absolute* occupancy, so a 1M window reads ~"full" long before 100%. Denominator is
 # min(host window, ctx_soft_limit): a 1M window clamps to the knee, a genuine ~200k window is
 # unaffected. ~200k is where Opus-class quality degrades and cost climbs. Set 0 to use the raw window.
+# Because that percent is knee-relative it will NOT match your host's own context readout — so the
+# line always names the physical occupancy next to it (`ctx 94% 236k/1M`), and `yigraf status` at a
+# terminal spells the difference out. Read the percent as "of the usable budget", not "of the window".
 status:
   ctx_soft_limit: 250000        # tokens of usable budget the ctx gauge scales to (0 = raw window)
   # The turn-boundary obligation notice: tells YOU (not the agent) when a conflict, stale completion,

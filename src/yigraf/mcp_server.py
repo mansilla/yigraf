@@ -115,6 +115,10 @@ def run_link(repo: str | None, task: str, target: str) -> str:
     return _run_cli("link", [task, target], repo)
 
 
+def run_unlink(repo: str | None, task: str, target: str) -> str:
+    return _run_cli("unlink", [task, target], repo)
+
+
 def _rejection_premise_args(valid_when: list[str] | None,
                             invalidated_when: list[str] | None) -> list[str]:
     """CLI args for a rejection's applicability premises (task 3), shared by every --rejected verb."""
@@ -271,6 +275,20 @@ def build_server(default_repo: str | None = None):
                 or an intent "int:<slug>" (tracks). Use file: for infra/glue with no code symbol.
         """
         return run_link(repo or default_repo, task, target)
+
+    @server.tool()
+    def unlink(task: str, target: str, repo: str | None = None) -> str:
+        """Retire a task's declared edge — the way out of hard drift on a link that will never resolve.
+
+        Call this when a task's implementing symbol is gone for good, or the declaration was wrong.
+        A symbol that merely MOVED needs no unlink (yigraf re-anchors a move by content hash), and one
+        that moved *and* changed wants `link` to the new locus — not unlink-then-link.
+
+        Args:
+            task: the task id, e.g. "task:auth/1".
+            target: the edge to retire, exactly as the task declares it.
+        """
+        return run_unlink(repo or default_repo, task, target)
 
     @server.tool()
     def remember(statement: str, why: str = "", serves: list[str] | None = None,

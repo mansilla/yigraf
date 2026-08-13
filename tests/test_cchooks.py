@@ -54,9 +54,28 @@ def test_post_tool_use_is_silent_on_unrelated_code(tmp_path: Path):
 
 
 def test_post_tool_use_is_silent_on_non_python(tmp_path: Path):
+    """Silent because the suffix isn't indexed AND nothing is anchored to it — the second clause now
+    carries the weight (see the anchored-doc test below), so this stays the un-anchored control."""
     root = _governed_repo(tmp_path, drift=True)
     (root / "README.md").write_text("hello")
     assert _post(root, root / "README.md").output.strip() == ""
+
+
+def test_post_tool_use_speaks_for_a_doc_a_decision_is_anchored_to(tmp_path: Path):
+    """A `file:` anchor was write-only at the moment of action. `remember --concerns file:docs/x.md` is
+    accepted, stored, and answered by `yigraf context` — and `context_for_locus` returns the decision for
+    that doc — but the hook discarded it unasked, because .md is not an extracted language. An anchor a
+    principal placed by hand is the strongest signal a locus is governed; the suffix gate outranked it."""
+    root = _governed_repo(tmp_path)
+    (root / "docs").mkdir()
+    (root / "docs" / "guide.md").write_text("# Guide\n\nHow the refresh flow works.\n")
+    runner.invoke(app, ["remember", "the guide is the contract for refresh", "--repo", str(root),
+                        "--new", "--concerns", "file:docs/guide.md"])
+    ctx = _post(root, root / "docs" / "guide.md").output
+    assert "the guide is the contract for refresh" in ctx
+    # And the un-anchored sibling in the same repo stays silent — the gate narrowed, it didn't open.
+    (root / "docs" / "scratch.md").write_text("# Scratch\n\nnotes.\n")
+    assert _post(root, root / "docs" / "scratch.md").output.strip() == ""
 
 
 def test_post_tool_use_is_silent_without_a_workspace(tmp_path: Path):

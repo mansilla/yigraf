@@ -435,6 +435,102 @@ def link(
     _rebuild(repo)
 
 
+@app.command()
+def unlink(
+    source: str = typer.Argument(..., help="Task locator (task:<plan>/<n>) or memory id (mem:<id> → retire an evidence ref)."),
+    target: str = typer.Argument(..., help="The edge to retire, exactly as it appears on the node: a symbol/file/intent on a task, or a grounded_by ref on a memory."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Retire a declared edge — the way out of drift on a declaration that is simply no longer true.
+
+    ``link`` keys ``implements`` by the exact locator, so a symbol that MOVES is a new string and
+    re-linking appends instead of replacing. A pure move needs nothing (``resolve_renames`` re-anchors
+    it by content hash), but a move *plus* an edit is hard drift on a locator that will never resolve
+    again — previously unclearable by any verb, because ``reaffirm`` re-anchors and ``supersede``
+    restates a *belief*, and this is neither: the declaration is simply no longer true.
+
+    This is a graph edit, not a mind-change, so it leaves no supersedes trail — retiring a link asserts
+    "this task never implemented that, or no longer does", which is exactly what a wrong or stale
+    declaration deserves. Use ``link`` (not ``unlink`` + ``link``) when the work merely moved and you
+    want the edge re-anchored to the new locus.
+
+    ``mem:<id>`` dispatches to the same operation on a memory's ``grounded_by`` refs — prefix dispatch
+    over the locator idiom, as ``reaffirm`` already does (mem:039), because it is the identical
+    assertion about a different family: this observation does not ground that belief.
+    """
+    workspace = _require_workspace(repo)
+    if source.startswith("mem:"):
+        _unlink_evidence(repo, source, target)
+        return
+    task_id = source
+    match = _TASK_ID.match(task_id)
+    if match is None:
+        _guidance(f"{task_id} isn't a task locator (expected task:<plan>/<n>, e.g. task:auth/1). "
+                  f'Find tasks with `yigraf context "<plan>"`.')
+    plan_file = _find_plan_file(workspace, match.group(1).casefold())
+    if plan_file is None:
+        known = _known_plans(workspace)
+        _guidance(f"No plan found for {task_id}." +
+                  (f" Known plans: {', '.join(known)}." if known else " Create one with `yigraf plan`."))
+
+    removed = artifacts.remove_edge_from_plan(plan_file, task_id, target)
+    if removed is None:
+        # Name what the task actually declares: the usual cause is a locator that reads right but isn't
+        # the string on disk (a moved path, a guessed symbol name), and the fix is to copy one of these.
+        tasks = artifacts.read_plan(plan_file).tasks
+        task = next((t for t in tasks if t.id == task_id), None)
+        if task is None:
+            ids = ", ".join(t.id for t in tasks) or "(none)"
+            _guidance(f"{task_id} is not a task in {plan_file.name}. Tasks there: {ids}.")
+        declared = ([task.tracks] if task.tracks else []) + [i.sym for i in task.implements]
+        _guidance(f"{task_id} doesn't declare {target}, so there's nothing to retire. "
+                  + (f"It declares: {', '.join(declared)}." if declared
+                     else "It declares no edges at all."))
+    _rebuild(repo)
+    typer.echo(f"Unlinked {task_id} —{removed}→ {target}")
+
+
+def _unlink_evidence(repo: Path, mem_id: str, target: str) -> None:
+    """Retire a dead ``grounded_by`` ref from a memory (int:memory-grounding) — the gap ``reaffirm
+    --evidence`` leaves.
+
+    ``--evidence`` *upserts*: it re-anchors a ref whose target changed, or appends a new one. Neither
+    reaches a ref whose target was DELETED. Both verbs the grounds-drift line offers leave the corpse
+    behind — naming fresh evidence adds beside it, downgrading the tier doesn't touch it — so the ref
+    drifts forever and the belief carries a citation to something that no longer exists.
+
+    Removing it is a graph edit, not a mind-change: the claim is untouched, only the assertion that
+    *this* observation grounds it. That is exactly ``unlink``'s existing shape.
+
+    ``concerns`` is deliberately NOT retirable this way. A memory's concerns are what the belief is
+    ABOUT, so dropping one changes its subject — a ``supersede``, which is what the gone-locus branch
+    of ``reaffirm`` already sends you to. Evidence is only what earned the belief's *tier*.
+    """
+    path = memory.find_memory(repo, mem_id)
+    if path is None:
+        _guidance(f"No memory node with id {mem_id}. "
+                  f'Find the decision you mean with `yigraf context "<topic>"`.')
+    node = memory.read_memory(path)
+    if target not in {e.ref for e in node.evidence}:
+        # Name what actually grounds it: as with the task path, the usual cause is a ref that reads
+        # right but isn't the string on disk, and the fix is to copy one of these.
+        refs = ", ".join(e.ref for e in node.evidence)
+        _guidance(f"{mem_id} isn't grounded by {target}, so there's nothing to retire. "
+                  + (f"It's grounded by: {refs}." if refs else "It names no evidence at all."))
+    if node.grounding == "empirical" and len(node.evidence) == 1:
+        # Never let a retirement silently strand an ·empirical claim with nothing behind it — that is
+        # the loophole the capture/reaffirm gate closes, and reopening it here would make `unlink` the
+        # quiet way to keep a tier you can no longer justify.
+        _guidance(f"Retiring {target} would leave {mem_id} ·empirical with nothing grounding it. Name "
+                  f"what replaces it first — `yigraf reaffirm {mem_id} --grounding empirical --evidence "
+                  f"<fresh>` — or downgrade honestly, `yigraf reaffirm {mem_id} --grounding inferred`, "
+                  f"and then retire this ref.")
+    node.evidence = [e for e in node.evidence if e.ref != target]
+    path.write_text(memory.render_memory(node), encoding="utf-8")
+    _rebuild(repo)
+    typer.echo(f"Unlinked {mem_id} —grounded_by→ {target}")
+
+
 def _resolve_concerns(repo: Path, config: dict, graph, syms: list[str]) -> tuple[list[memory.Concern], list[str]]:
     """Resolve each ``--concerns`` locator to a :class:`Concern`, soft-warning on a forward-reference.
 
@@ -1185,6 +1281,12 @@ def status_cmd(
     icon = status.SPIN[int(time.time()) % len(status.SPIN)] if use_color else None
     # color= keeps click from stripping ANSI on a non-TTY pipe — exactly the statusline's case.
     typer.echo(summary.render_line(color=use_color, icon=icon), color=use_color)
+    # The knee note: the one-liner stays terse (percent + raw pair), and the full "what that percent is
+    # of" sentence lands here — a human at a real terminal, never a piped statusline. Self-silencing
+    # when the knee doesn't clamp (see ctx_note).
+    note = summary.ctx_note()
+    if note and sys.stdout.isatty():
+        typer.echo(note)
     # A one-line "how to update" notice, only for a human at a real terminal (never a piped statusline).
     if summary.update and sys.stdout.isatty():
         typer.echo(f"⬆ yigraf {summary.update} is available — update with: "
@@ -1346,6 +1448,13 @@ def drift(
         typer.echo("also affected (verify these too):")
         for line in ripple:
             typer.echo(line)
+
+    # The same verb fork the edit hook carries (retrieval.VERB_FORK — one wording, both surfaces): this
+    # report is a drift moment too, and until now it named no verb at all. Only when a decision drifted;
+    # an implements-only report needs re-`link`, not this fork.
+    if any(item.relation == "concerns" for item in items):
+        typer.echo("")
+        typer.echo(retrieval.VERB_FORK)
 
     if any(item.kind in ("soft", "hard") for item in items):
         raise typer.Exit(code=1)
@@ -1789,11 +1898,23 @@ def _report_divergence(repo: Path, graph) -> None:
     if not diverged:
         return
     shown = diverged[:10]
-    typer.echo(f"\n⚠ {len(diverged)} locator(s) diverged — the shared log holds a different revision of:")
+    # Deliberately NOT "another principal": superseded_revisions can only recognize a replaced revision
+    # once the replacement has actually reached the log, so an edit you have not pushed yet lands here
+    # too — the log's newest word on that locator really is the older revision. Both cases are honestly
+    # "the log disagrees with your file and you have not replaced it there"; the push hint separates them
+    # without yigraf having to know, offline, which actor is "you".
+    typer.echo(f"\n⚠ {len(diverged)} locator(s) diverged — the shared log holds a revision of these that "
+               f"differs from your file and that you have not replaced there:")
     for locator in shown:
         typer.echo(f"    {locator}")
     if len(diverged) > len(shown):
         typer.echo(f"    … and {len(diverged) - len(shown)} more")
+    # First the cheap explanation, because it covers the common case and costs nothing to check: an edit
+    # you have not pushed looks identical to a disagreement from here, and one `sync` tells them apart —
+    # the replaced revision then classifies as your own history and these lines stop appearing.
+    typer.echo("  If you have local edits to these that you haven't pushed, `yigraf sync` is the whole "
+               "fix — the log simply hasn't heard your revision yet. What follows applies to whatever "
+               "survives a sync.")
     if _artifacts_are_committed(repo):
         typer.echo("  Your working tree won locally (design law #6). These artifacts are committed, so "
                    "the other side is in git — reconcile them the way you would any other merge.")
@@ -2330,8 +2451,17 @@ def _post_tool_use(data: dict) -> dict | None:
     except ValueError:
         return None  # edited file is outside the repo
     graph, config = built
-    if rel.suffix not in extension_map(available_extractors(config)):
-        return None  # not a language yigraf indexes in this repo
+    # Indexed language OR a file something is explicitly anchored to. The suffix gate alone made a
+    # `file:` anchor write-only at the moment of action: `remember --concerns file:docs/guide.md` is
+    # accepted, stored, and answered by `yigraf context` — and `context_for_locus` returns that decision
+    # for the doc — but the hook discarded it unasked, because .md is not an extracted language. An
+    # anchor the principal placed by hand is the strongest possible signal that this locus is governed;
+    # dropping it is design law #4 inverted (silence where there IS something worth saying). The graph
+    # is already loaded here, so the extra test is a dict lookup, and an un-anchored .md still returns
+    # None at the gate below — the hook stays silent on ordinary prose edits.
+    if (rel.suffix not in extension_map(available_extractors(config))
+            and f"file:{rel.as_posix().casefold()}" not in graph):  # casefold: context_for_locus's key
+        return None  # neither indexed nor anchored → nothing this hook could say
     _ranked_with_telemetry(root, graph, config)  # recency/popularity + maturity verdict (R1)
     result = retrieval.context_for_locus(graph, rel.as_posix(), config, root=root)
     if result is None:

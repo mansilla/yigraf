@@ -50,7 +50,13 @@ using the wrong one either rubber-stamps a belief you didn't check or destroys a
 **Drift** — a live link's anchor no longer matches: soft (the symbol's body changed) or hard (it's
 gone), on `implements` (task→code), `concerns` (decision→code), or `grounded_by` (decision→evidence).
 A pure rename auto-re-anchors and never surfaces. Re-verify the code still satisfies the thing, then:
-- a task's `implements` → `yigraf link task:<id> sym:…` (re-anchors)
+- a task's `implements` → `yigraf link task:<id> sym:…` (re-anchors; use this for a symbol that moved
+  *and* changed — `link` on the new locus, never unlink-then-link)
+- a task's `implements` whose symbol is gone for good, or that was declared wrongly →
+  `yigraf unlink task:<id> <target>`. `link` keys by the exact locator, so a re-link after a move
+  *appends* rather than replaces; without `unlink` the old entry is drift no verb can clear. This is a
+  graph edit, not a mind-change — it leaves no supersedes trail, because the declaration was simply
+  never (or is no longer) true.
 - a decision's `concerns` that still holds → `yigraf reaffirm mem:<id>` (never re-`remember` — that
   duplicates; never `supersede` unless your mind actually changed)
 - `grounded_by` → `yigraf reaffirm mem:<id> --grounding empirical` if you re-observed the evidence,
@@ -65,14 +71,18 @@ to re-anchor — or reopen the task if the change actually regressed it. Never f
 automatically. You won't see these at the edit hook (a closed task must not nag mid-edit); they surface
 in `yigraf context`, at SessionStart, and to your principal at the turn boundary.
 
-**Conflict** — two live decisions anchored to the same code saying nearly the same thing, never
-reconciled. Read both, then:
+**Conflict** — two live beliefs saying nearly the same thing about the same code, never reconciled.
+Either the cosine sweep found them, or a principal *nominated* them with `dispute`. Read both, then:
 - they're compatible / one refines the other → `yigraf reconcile mem:<a> mem:<b>`
 - one genuinely wins → `yigraf supersede mem:<loser> "<the surviving claim>" --why "…"`
+- you can see they conflict but the call isn't yours → `yigraf dispute mem:<a> mem:<b> --why "…"`.
+  This *nominates* the pair: it blocks nothing, both stay live, but the open question is now durable
+  and actor-stamped so it rides the log to everyone — unlike a swept finding, which is index-derived
+  and invisible to anyone without an index. Use it instead of silently moving on.
 - **pending** conflict (an agent supersede of a human-attested decision is held, never applied) → you
   cannot clear this one. It needs `yigraf attest` from a human. Surface it and move on.
 - same provenance tier with no preferred side → that is not a bug. Two equal-authority beliefs stay an
-  open question for the principal rather than being tie-broken. Ask.
+  open question for the principal rather than being tie-broken. Ask, or `dispute` it.
 
 (`yigraf drift` exits non-zero on drift — that's the commit/CI gate, not something you poll.)
 

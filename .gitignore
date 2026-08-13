@@ -45,6 +45,15 @@ internal/
 # not in this repo's history. Anchored to root so it never matches the src/yigraf/ package. ---
 /yigraf/
 
+# --- Stray root-level runtime caches ---
+# The real ones live under /yigraf/ (ignored above): the update stamp at yigraf/.local/ and the
+# per-file structure cache at yigraf/cache/. Root-level twins appear when a command resolves its root
+# one level off — easy here, because this repo sits at <parent>/yigraf/yigraf, so `root/"yigraf"/…`
+# lands on the repo root itself. Both are rebuildable and hold nothing worth history (a PyPI
+# update timestamp; a content-hash cache). Anchored so a legitimate cache/ elsewhere is unaffected.
+/.local/
+/cache/
+
 # --- Claude Code per-machine hook wiring ---
 # `yigraf install-claude-hooks` writes the absolute interpreter path into .claude/settings.local.json
 # (per-machine), which .claude/.gitignore keeps out of git. The shareable SKILL.md + AGENTS.md block

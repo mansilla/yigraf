@@ -60,6 +60,15 @@ def test_link_writes_and_anchors(tmp_path: Path):
     assert "Linked task:demo/1" in out and "implements" in out
 
 
+def test_unlink_retires_the_edge_through_mcp(tmp_path: Path):
+    """A pull-only host (no edit hook) must be able to clear a stale link too, not just create one."""
+    root = _linked_repo(tmp_path)
+    sym = "sym:auth/session.py#refresh"
+    mcp_server.run_link(str(root), "task:demo/1", sym)
+    out = mcp_server.run_unlink(str(root), "task:demo/1", sym)
+    assert "Unlinked task:demo/1" in out and "implements" in out
+
+
 def test_bad_locator_returns_guidance_not_error(tmp_path: Path):
     """A write verb reuses the CLI's exit-0 'did you mean' guidance through MCP (errors teach abandonment)."""
     out = mcp_server.run_link(str(_linked_repo(tmp_path)), "task:demo/1",
@@ -124,5 +133,5 @@ def test_build_server_registers_all_tools(tmp_path: Path):
     pytest.importorskip("mcp")  # core dep; this guards only a deps-not-synced editable checkout
     server = mcp_server.build_server(str(_repo(tmp_path)))
     names = {t.name for t in asyncio.run(server.list_tools())}
-    assert {"context", "status", "link", "remember", "note_constraint", "propose", "supersede",
-            "reaffirm", "supersede_intent"} <= names
+    assert {"context", "status", "link", "unlink", "remember", "note_constraint", "propose",
+            "supersede", "reaffirm", "supersede_intent"} <= names

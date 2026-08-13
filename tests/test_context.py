@@ -92,7 +92,10 @@ def test_editing_a_linked_symbol_surfaces_drift_in_context(tmp_path: Path):
     root = _repo(tmp_path)
     (root / SRC).write_text("def refresh(token):\n    return token + 1\n")
     text = _ctx(root, "session expiry").text
-    assert "Drift" in text and SYM in text and "re-verify or relink" in text
+    # The line names the resolving verb with its ids already filled in — the agent should never have to
+    # retype what yigraf just told it, nor go back to the skill prose to find which verb applies.
+    assert "Drift" in text and SYM in text
+    assert f"re-verify it still holds, then `link task:auth/1 {SYM}` to re-anchor." in text
 
 
 def test_satisfied_but_drifted_intent_emits_reconcile(tmp_path: Path):
@@ -275,6 +278,88 @@ def test_proof_obligations_exclude_the_concerns_serves_path(tmp_path: Path):
     text = _locus(root, SRC).text
     assert "✔ int:session-expiry:" in text     # implements→tracks path still yields its obligation
     assert "audit row exists" not in text       # concerns→serves scenario must NOT leak as an obligation
+
+
+def test_obligations_lead_with_the_intent_governing_most_of_the_locus(tmp_path: Path):
+    """Density order, not alphabetical. The block is truncatable now, so *which* obligations lead is
+    load-bearing: the contract anchored to the most of this file's symbols is the one the edit is most
+    likely to break. The narrow intent is named to sort FIRST alphabetically — the ordering this
+    replaced would have led with it despite it governing a single symbol."""
+    root = _repo(tmp_path)
+    (root / "auth" / "session.py").write_text(
+        "def refresh(token):\n    return token\n\ndef issue(u):\n    return u\n\ndef revoke(t):\n    return t\n")
+    assert runner.invoke(app, ["build", str(root)]).exit_code == 0
+    for slug, statement in (("aaa-narrow", "Narrow SHALL hold."), ("zzz-broad", "Broad SHALL hold.")):
+        assert runner.invoke(app, ["intent", slug, "--repo", str(root), "-s", statement]).exit_code == 0
+    assert runner.invoke(app, ["plan", "cov", "--repo", str(root), "-t", "Cov",
+                               "--task", "narrow work", "--task", "broad work"]).exit_code == 0
+    assert runner.invoke(app, ["link", "task:cov/1", "int:aaa-narrow", "--repo", str(root)]).exit_code == 0
+    assert runner.invoke(app, ["link", "task:cov/2", "int:zzz-broad", "--repo", str(root)]).exit_code == 0
+    assert runner.invoke(app, ["link", "task:cov/1", SYM, "--repo", str(root)]).exit_code == 0
+    for sym in (SYM, "sym:auth/session.py#issue", "sym:auth/session.py#revoke"):
+        assert runner.invoke(app, ["link", "task:cov/2", sym, "--repo", str(root)]).exit_code == 0
+
+    graph, _ = build_graph(root, default_config())
+    groups = retrieval._proof_obligations(graph, retrieval._file_structure_nodes(graph, SRC))
+    leading = [g[0] for g in groups if "int:aaa-narrow" in g[0] or "int:zzz-broad" in g[0]]
+    assert "int:zzz-broad" in leading[0]   # governs 3 symbols
+    assert "int:aaa-narrow" in leading[1]  # governs 1, and would lead under an alphabetical sort
+
+
+def _memory_concerning(root: Path, statement: str = "refresh must stay idempotent") -> str:
+    """Land a decision anchored to SYM and return its id."""
+    out = runner.invoke(app, ["remember", statement, "--repo", str(root), "--new", "--concerns", SYM])
+    assert out.exit_code == 0
+    return out.output.split()[1]  # "Captured mem:xxxx (…)"
+
+
+def test_concerns_drift_names_both_verbs_and_what_each_asserts(tmp_path: Path):
+    """The verb fork travels WITH the drift, at the action moment.
+
+    The wrong-verb cost is asymmetric and the decision recurs on every drift event, so the skill's
+    prose — read on demand, while drift arrives unbidden — leaves the agent re-deriving the
+    distinction each time. `reaffirm` is the resolving verb for an unchanged belief and must be named:
+    the old line offered re-`remember`, which the skill forbids and the dedup guard refuses."""
+    root = _repo(tmp_path)
+    mem_id = _memory_concerning(root)
+    (root / SRC).write_text("def refresh(token):\n    return token + 1\n")
+    text = _locus(root, SRC).text
+    assert f"`reaffirm {mem_id}`" in text and f'`supersede {mem_id} "<restated>"`' in text
+    assert "re-`remember`" not in text.split("↳ Which verb:")[0]  # never offered as a resolving verb
+    fork = text.split("↳ Which verb:")[1]
+    assert "UNCHANGED" in fork and "CHANGED YOUR MIND" in fork  # what each choice ASSERTS
+    assert "neither verb clears the ⚠ on its own" in fork  # never a menu of remedies (mem:031/mem:039)
+
+
+def test_the_verb_fork_is_stated_once_not_per_item(tmp_path: Path):
+    """Token thrift (design law #2): N drifted decisions cost N lines + ONE explanation, not 2N."""
+    root = _repo(tmp_path)
+    for n in range(3):
+        _memory_concerning(root, f"refresh invariant number {n}")
+    (root / SRC).write_text("def refresh(token):\n    return token + 1\n")
+    text = _locus(root, SRC).text
+    assert text.count("↳ Which verb:") == 1
+    assert text.count("changed since anchored") >= 3  # every drifted decision still gets its own line
+
+
+def test_hard_drift_does_not_offer_reaffirm(tmp_path: Path):
+    """Kind-awareness: `reaffirm` cannot re-anchor a locus that is gone (cli.reaffirm refuses it), so
+    offering it on hard drift would send the agent down a dead end — the friend's #4 failure exactly."""
+    root = _repo(tmp_path)
+    mem_id = _memory_concerning(root)
+    (root / SRC).write_text("def unrelated():\n    return 0\n")  # `refresh` no longer exists
+    text = _ctx(root, "refresh idempotent").text
+    assert "no longer found" in text
+    assert f"`reaffirm {mem_id}`" not in text
+    assert f'`supersede {mem_id} "<restated>" --concerns <new locus>`' in text
+
+
+def test_no_verb_fork_when_no_decision_drifted(tmp_path: Path):
+    """Silence is a feature: an implements-only drift carries its own recipe, so the fork would be noise."""
+    root = _repo(tmp_path)
+    (root / SRC).write_text("def refresh(token):\n    return token + 1\n")
+    text = _ctx(root, "session expiry").text
+    assert "changed since anchored" in text and "↳ Which verb:" not in text
 
 
 def _done_and_drifted(root: Path) -> None:
