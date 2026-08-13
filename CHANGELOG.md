@@ -4,6 +4,60 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.3.1] — 2026-08-13
+
+Six fixes from the first field report on the 1.3.0 shared-log line (one developer, one repo, a day of
+heavy use) — every one a case where a surface reached the agent unbidden and made its next action
+worse. No new capability; local, unlinked workspaces are unaffected.
+
+### Fixed
+- **`status`'s `⚠ n diverged` count no longer ratchets upward on ordinary solo work.** Divergence's
+  test was "declined, and its id is not in the current files" — but for a revisioned family
+  (`int:`/`task:`) the id *is* the revision, so every edit to an already-pushed plan or intent left
+  its previous revision in the log matching that test exactly: a disagreement with nobody. Re-linking
+  8 stale completions on yigraf's own single-actor log produced 8 phantom, unclearable divergences.
+  `OnlineLog.superseded_revisions` now triages the declined set: an id the same actor has since
+  replaced with the live revision is that actor's own history, not a second principal's copy — keyed
+  on `(locator, actor)` and strictly-earlier arrival, so a genuine disagreement from another principal
+  is never filtered.
+- **The ✔ proof-obligation block was emitted in full, outside the render budget.** `_render` counted
+  it into `used` but never bounded it, so on a heavily-governed locus `used` began past `char_budget`
+  and every node's fit-test failed before a single symbol was placed — measured before: `cli.py`
+  injected 3833 tokens against an 800 budget, 0 of 86 nodes rendered. Obligations now take a share of
+  what the ⚠ warnings leave, admitting whole governing intents in governance-density order; the drift
+  block caps the same way (hard drift first, tailing to the uncapped `yigraf drift`); the render frame
+  itself is now charged. Repo-wide after: every packet ≤ 796/800, nodes rendering everywhere.
+- **`reaffirm --evidence` could upsert a `grounded_by` ref but never retire one.** A ref whose target
+  was deleted had no verb that could clear it, so an `·empirical` belief went on citing evidence that
+  no longer existed. `unlink mem:<id> <ref>` retires it — refusing to strand the belief by declining
+  to retire its last remaining ref.
+- **A `file:` anchor was write-only at the moment of action.** `remember --concerns file:docs/x.md`
+  was accepted, stored, and answered by `yigraf context` — but the PostToolUse hook discarded the
+  answer before asking, because `.md` isn't an extracted language. The gate now admits a file with a
+  hand-placed `file:` anchor node even when its suffix isn't indexed; an un-anchored `.md` still stays
+  silent.
+- **`status`'s context percent traveled without its denominator**, so `ctx 94%` on a 1M-token host
+  read as "nearly out of room" while the host's own readout said 24%, 764k free. Both renders now
+  trail the percent with the physical pair (`ctx 94% 236k/1M`); the TTY status line adds a
+  self-silencing note spelling out what the percent is of.
+- **A moved symbol's stale `implements` entry had no verb that could clear it.** `link` keys by exact
+  locator, so re-linking after a move appended a new entry and left the old one as hard drift
+  `reaffirm`/`supersede` couldn't touch. `unlink` now retires it — exposed over MCP too, so a
+  pull-only host can clear a stale link.
+
+### Changed
+- Drift/reconcile lines now carry the resolving verb with ids pre-filled and are kind-aware
+  (`reaffirm` is never offered for hard drift, which it cannot re-anchor) — the one surface that
+  reaches the agent unbidden had been suggesting "re-`remember` or `supersede`", which `SKILL.md`
+  forbids and the write-time dedup guard refuses.
+- `.gitignore` now covers the root-level twins of yigraf's own runtime caches (`/.local/`, `/cache/`),
+  which appear when a command resolves its workspace root one level off.
+
+### Upgrading
+- Nothing to do. No wire change, no node-id change — a rebuild produces an identical graph. A
+  workspace already showing phantom `diverged` entries from its own re-links will show 0 after its
+  next `status`/`sync`.
+
 ## [1.3.0] — 2026-08-06
 
 1.2.0 made a shared log *possible*; this release makes the three seams it exposed actually hold. Two
@@ -452,6 +506,7 @@ Three orthogonal axes on a memory node, all overlaid at read time (never stored)
   resolution UI (consuming the derived `accepted`/`dominant` fields), and a native
   TaskList host-adapter (blocked until a host exposes a writable task API).
 
+[1.3.1]: https://github.com/mansilla/yigraf/releases/tag/v1.3.1
 [1.3.0]: https://github.com/mansilla/yigraf/releases/tag/v1.3.0
 [1.2.0]: https://github.com/mansilla/yigraf/releases/tag/v1.2.0
 [1.1.1]: https://github.com/mansilla/yigraf/releases/tag/v1.1.1
