@@ -181,8 +181,8 @@ def materialize(graph: nx.DiGraph, path: Path, fingerprint: str) -> None:
     id, say) is a real bug and must still surface as itself rather than be dressed up as bad permissions.
     """
     path = Path(path)
-    data = to_node_link(graph)
-    data.get("graph", {}).pop(_UNWRITABLE_KEY, None)  # a per-run signal never enters the view (law #6)
+    data = to_node_link(graph)  # detached from ``graph`` — stripping below can't edit the live graph
+    data["graph"].pop(_UNWRITABLE_KEY, None)  # a per-run signal never enters the view (law #6)
     tmp = path.with_name(path.name + ".tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -286,9 +286,16 @@ def _materialize_or_flag(graph: nx.DiGraph, root: Path, config: dict) -> bool:
     calling the tool (design law #1) over a stale cache entry. What differs is who speaks: a write seam's
     caller surfaces the flag as guidance, a read seam's stays silent — never nag the hot edit path
     (design law #4).
+
+    The flag is owned here, both ways: set on failure, cleared on success. Clearing it is stated rather
+    than inherited — it used to happen only because :func:`~yigraf.graph.to_node_link` handed back
+    ``graph.graph`` itself and ``materialize`` popped the key out of it, so a serializer's aliasing was
+    load-bearing for this function's state. That serializer is pure now, so the write that fixes the
+    condition is the one that retracts the guidance.
     """
     try:
         materialize(graph, db_path(root), source_fingerprint(root, config))
+        graph.graph.pop(_UNWRITABLE_KEY, None)  # the view is current again ⇒ earlier guidance is stale
         return True
     except ViewUnwritable as exc:
         graph.graph[_UNWRITABLE_KEY] = exc.guidance

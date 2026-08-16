@@ -50,8 +50,16 @@ def to_node_link(g: nx.DiGraph) -> dict:
     form depend on traversal order. Sorting nodes by ``id`` and edges by ``(source, target, relation)``
     makes a no-change rebuild byte-identical (M1 done-test, docs/m1-notes.md §6); ``json.dumps`` then
     sorts the keys *within* each object.
+
+    Pure: ``g`` is never mutated. ``node_link_data`` copies each node's attrs but hands back
+    ``g.graph`` *itself*, so the two halves of the returned dict aliased their source differently — a
+    caller stripping a graph attr (as :func:`yigraf.graphdb.materialize` does for its per-run
+    ``view_unwritable`` signal) silently edited the live graph, while the same edit to a node attr did
+    not. Copying it here makes the whole result detached, so "strip before persisting" can never become
+    "strip from the graph the caller is still holding".
     """
     data = nx.node_link_data(g, edges=_EDGES_KEY)
+    data["graph"] = dict(data.get("graph") or {})  # detach: node_link_data returns g.graph by reference
     for node in data["nodes"]:  # R1: the committed projection carries no volatile/read-time state
         for attr in _VOLATILE_NODE_ATTRS:
             node.pop(attr, None)

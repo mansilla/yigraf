@@ -206,6 +206,21 @@ def test_the_unwritable_flag_never_enters_the_persisted_view(tmp_path: Path):
     graphdb.materialize(graph, graphdb.db_path(root), "fp")
     loaded = graphdb.load(graphdb.db_path(root))
     assert "view_unwritable" not in loaded.graph
+    # …and stripping it for the view did NOT strip it from the caller's graph: materialize serializes,
+    # it does not edit. Retracting the guidance is _materialize_or_flag's job (see below).
+    assert graph.graph["view_unwritable"] == "stale guidance from an earlier failure"
+
+
+def test_a_successful_materialize_retracts_an_earlier_failures_guidance(tmp_path: Path):
+    """The flag is owned by ``_materialize_or_flag``, both ways — set on failure, cleared once the view
+    is current again. Previously this only worked by accident, via ``to_node_link`` aliasing g.graph."""
+    root = _repo(tmp_path)
+    cfg = default_config()
+    graph, _ = build_graph(root, cfg)
+    graph.graph["view_unwritable"] = "guidance from an earlier failed write"
+
+    assert graphdb._materialize_or_flag(graph, root, cfg) is True
+    assert "view_unwritable" not in graph.graph          # the condition is fixed ⇒ the fix is retracted
 
 
 def test_a_programming_error_is_not_disguised_as_an_unwritable_view(tmp_path: Path, monkeypatch):
