@@ -858,14 +858,14 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
         return line, used_source
 
     def _place(node_id: str, cap: int | None) -> None:
-        """Render ``node_id`` if it fits the global budget and (unless it's a pinned explanation) its
-        family's reserved cap. ``cap=None`` bypasses the family cap (pinned pass + leftover pass).
+        """Render ``node_id`` if it fits the global budget and (unless it's a required explanation) its
+        family's reserved cap. ``cap=None`` bypasses the family cap (explanation pass + leftover pass).
 
-        Pinning is **priority, not exemption**: a pin jumps the queue but still has to fit the global
-        budget. Exempting it was tried and measured — because every ⚠ drift line names a memory, an
-        exemption pins every drifted belief and renders each in full, which took yigraf's own
-        retrieval.py from 864 to 2063 tokens against an 800 budget: the same unbounded-block flood the
-        obligation cap above exists to stop, re-entered through the pin. At any budget that clears the
+        Going first is **priority, not exemption**: a required explanation jumps the queue but still has
+        to fit the global budget. Exempting it was tried and measured — because every ⚠ drift line names
+        a memory, an exemption promotes every drifted belief and renders each in full, which took
+        yigraf's own retrieval.py from 864 to 2063 tokens against an 800 budget: the same unbounded-block
+        flood the obligation cap above exists to stop, re-entered this way. At any budget that clears the
         frame, first-in-line already *is* never-dropped; below that no packet is coherent anyway.
         """
         nonlocal used, src_emitted
@@ -888,11 +888,18 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
         if used_source:
             src_emitted += 1
 
-    # Task-7 invariant: pin the nodes a surfaced signal line names — the *explanation* of a shown
-    # conflict/drift/obligation — and place them first, so budget reduction can never drop them.
-    pinned = _explanation_ids(signal_lines) & set(renderable)
+    # Task-7 invariant: the nodes a surfaced signal line names — the *explanation* of a shown
+    # conflict/drift/obligation — go first, so budget reduction can never drop them.
+    #
+    # Named `must_show`, not `pinned`, and that is not fussiness: `pinned` is now an AUTHORED node attr
+    # on the memory family (:func:`_pinned_block`), and this is a render-order set computed per packet.
+    # Two unrelated meanings of one word in one module is a trap a careful reader already fell into once
+    # — a field report had to explicitly note that the "pinned" in a 1.3.1 diff was *this* local and not
+    # a pin tier, back when the pin tier did not yet exist. Now that both do, the word belongs to the
+    # attribute alone.
+    must_show = _explanation_ids(signal_lines) & set(renderable)
     for node_id in renderable:
-        if node_id in pinned:
+        if node_id in must_show:
             _place(node_id, cap=None)
 
     # Reserved per-family shares (task 4): split the budget left after signals + pins so a code-symbol

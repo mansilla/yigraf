@@ -155,6 +155,20 @@ reasons it works: **once**, **before any action is chosen**, and **as instructio
   edit elsewhere doesn't drift it", which doesn't obviously cover an append-only log — where a
   whole-file anchor drifts on every append and costs five reaffirms of a claim nothing falsified.
 
+### For anything that consumes the fold
+- **`pinned` is now a reserved node attribute on the memory family**, and it rides the assertion log —
+  so it reaches every client that folds it, not just this CLI. Worth stating because `pinned` is a
+  plausible name for a *local* flag: a viewer that spreads fold attrs onto its own per-node objects can
+  shadow it, or be shadowed by it. (Caught in exactly that way downstream — a force-directed graph
+  console had used `node.pinned` for "don't integrate this node during layout" since well before this
+  release, so a pinned memory would arrive pre-frozen and sit at its seed position looking like a
+  layout bug.) It never affects identity: pinning is deliberately outside the content-addressed memory
+  id, so a node's id is unchanged by being pinned and a server that stores assertion bodies verbatim
+  passes it through untouched.
+- **Inside yigraf, the word now means only that.** `_render`'s per-packet "place this first because a
+  warning names it" set was also called `pinned`; it is `must_show` now. A field report had already had
+  to disambiguate the two by hand once, back when only the local existed.
+
 ### Still open from the report, deliberately
 `reaffirm <locus>` matches only `concerns`, never `grounded_by` (`show` now at least makes the split
 visible); nothing reports a dangling `grounded_by` ref on a live belief, so `unlink` still has no
