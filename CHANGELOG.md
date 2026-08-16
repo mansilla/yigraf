@@ -6,10 +6,28 @@ All notable changes to yigraf are recorded here. The format loosely follows
 
 ## [Unreleased]
 
-A workspace yigraf cannot write to is now a condition it survives and explains, rather than one it
-crashes on. Both caches under `yigraf/` — the SQLite materialized view and the tree-sitter parse cache
-— are *derived* (design law #6), so neither losing a write can cost an answer; until now either one
-ended the command in a raw storage traceback. No behaviour changes on a writable workspace.
+Three unrelated lines of work. A workspace yigraf cannot write to is now a condition it survives and
+explains rather than one it crashes on — both caches under `yigraf/` are *derived* (design law #6), so
+losing either write can never cost an answer, yet either one ended the command in a raw storage
+traceback. Three more hosts reach Tier A, two of them through a shared context file yigraf may only
+fence a section of. And the eval harness can finally produce an honest number, which it could not do
+before — including one about yigraf that is unflattering.
+
+No behaviour changes on a writable workspace, and none at all for a host already wired.
+
+### Added — Kiro, Gemini CLI, and GitHub Copilot (Tier A)
+- **`install-kiro`, `install-gemini`, `install-copilot`** — three more ambient-rule hosts, each still a
+  thin wrapper over the host's own seam, each at the tier that seam allows (`int:host-push-adapters`).
+  Kiro has a rules dir (`.kiro/steering/`) and takes the existing shape unchanged.
+- **A shared context file is fenced, never clobbered.** Gemini CLI and Copilot have no rules dir: their
+  always-on context is a single document the user also writes in (`GEMINI.md`,
+  `.github/copilot-instructions.md`). Overwriting one the way a dedicated rule file is overwritten
+  would eat the user's own instructions, so `AmbientRuleHost.shared` routes them through the same
+  `yigraf:start`/`yigraf:end` non-clobbering writer `AGENTS.md` has always used. Re-installing refreshes
+  the block in place; everything outside the fence survives.
+- **Copilot is explicit-only.** `.github/` exists in nearly every repository and Copilot's extension dir
+  is version-globbed, so no marker exists that would not false-positive almost everywhere. It is never
+  auto-detected — reach it with `install-copilot` or `--host copilot`.
 
 ### Fixed
 - **An unwritable `yigraf/.local/` no longer takes down `build` — or, worse, `context`.** A read-only
@@ -31,6 +49,43 @@ ended the command in a raw storage traceback. No behaviour changes on a writable
   refuses this write refuses the view in the same workspace, and that surface already names the path
   and the fix, so the operator hears about it once (design law #4). A fully read-only `yigraf/` now
   builds and queries cleanly, emitting exactly one line of guidance.
+- **`yigraf install` gave every Gemini CLI user an `.agents/rules/` dir their host never reads.**
+  Antigravity claimed the broad `~/.gemini` as a home marker, but Antigravity ships *under* that
+  directory — its MCP config lives at `~/.gemini/antigravity/` — so the marker matched every Gemini CLI
+  install and wired the wrong host's rule file. Antigravity's home marker narrows to
+  `.gemini/antigravity` (or its own `~/.antigravity`), and the broad `~/.gemini` now belongs to Gemini
+  CLI. The reverse overlap stands and is deliberate: an Antigravity user *does* have `~/.gemini`, so
+  both get wired — which is exactly the documented wire-all-detected behaviour.
+
+### Changed
+- **The eval harness reports what an agent actually spent.** Tokens were summed per assistant turn
+  "for robustness across Claude Code versions"; measured against a live run, that is wrong in *both*
+  directions. A streaming turn carries a **partial** `output_tokens` (observed `3, 3, 3, 1` → "10" for
+  an answer whose real total was **814**, ~80× under), and every turn repeats the same
+  `cache_read_input_tokens`, so the prompt prefix is counted once per turn (162,973 reported against
+  64,354 actual, ~2.5× over). The count now comes from the final `result.usage`, with the per-turn sum
+  kept only as a fallback for a transcript that has no result object. A robust reading of the wrong
+  quantity is still the wrong quantity.
+- **The harness runs three arms, on a repo that is not yigraf's own.** yigraf's `CLAUDE.md` and
+  `AGENTS.md` instruct any agent to run `yigraf context`, so even a hookless arm reached for the tool
+  and the delta collapsed to ~0 by construction — the benchmark could not produce an honest number
+  about its own subject. Cases now run against an external repo (`encode/httpx` @ 0.28.1, rebuilt from
+  scratch by `scripts/eval/external/setup-httpx.sh`), and the two arms become three: full install,
+  docs-only, and no yigraf at all. The middle arm is what makes the result falsifiable.
+
+### Documentation
+- **README states what was measured, including the part that did not work.** Over 10 popular
+  open-source repos, 960 runs on the floor model: asking why code is shaped the way it is costs 0 tool
+  calls / 38k tokens / 11s with yigraf, against 12.5 / 266k / 63s without. But a single line in
+  `CLAUDE.md` — "run `yigraf context` before changing code" — scored the *same* 6/8 on edit-time
+  re-verification as the hook did, so yigraf's most distinctive mechanism bought nothing measurable
+  over simply telling the agent to ask. One case, one model, n = 8: an open question now, not a claim.
+
+### Upgrading
+- Nothing to do. No wire change, no node-id change, no change to any graph a rebuild produces. A host
+  already wired keeps its existing rule file untouched; the antigravity marker fix only affects what a
+  *future* `yigraf install` auto-detects, and an `.agents/rules/` dir a previous run left in a Gemini
+  CLI repo is inert and safe to delete.
 
 ## [1.3.1] — 2026-08-13
 
