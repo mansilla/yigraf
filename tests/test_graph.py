@@ -40,3 +40,19 @@ def test_serialization_strips_volatile_but_leaves_the_in_memory_graph(tmp_path: 
     p = tmp_path / "graph.json"
     write_graph(g, p)
     assert '"survival"' not in p.read_text()       # the churn source is gone from the committed file
+
+
+def test_serialization_detaches_graph_attrs_so_stripping_cannot_edit_the_live_graph():
+    """``node_link_data`` copies node attrs but returns ``g.graph`` BY REFERENCE, so the two halves of
+    the result aliased their source differently: a caller stripping a graph attr before persisting
+    (``graphdb.materialize`` does, for its per-run ``view_unwritable`` signal) silently edited the graph
+    it was handed, while the identical strip on a node attr did not. Both halves are detached now."""
+    g = empty_graph()
+    g.graph["view_unwritable"] = "guidance from a failed write"
+
+    data = to_node_link(g)
+    assert data["graph"] is not g.graph                      # detached, not aliased
+    data["graph"].pop("view_unwritable")                     # exactly what materialize does
+
+    assert g.graph["view_unwritable"] == "guidance from a failed write"  # caller's graph is untouched
+    assert g.graph["schema_version"] == SCHEMA_VERSION
