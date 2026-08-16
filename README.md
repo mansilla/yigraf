@@ -41,6 +41,29 @@ is pinned to the code it concerns. A spec governs a region of the repo. So when 
 governs this file?", yigraf can answer — and when code drifts away from the thing that was supposed to
 hold, yigraf notices and says so.
 
+## Does it actually work?
+
+Measured, not asserted — on 10 of the top popular open source repos in Github (not yigraf's own repo,
+which would rig the result), 960 runs, floor model (Sonnet), three arms: yigraf installed, yigraf's
+instructions only, and no yigraf at all.
+
+**Asked why the code is shaped the way it is**, the agent with yigraf answered from context — the
+no-yigraf agent went looking:
+
+| | with yigraf | no yigraf |
+|---|---:|---:|
+| tool calls | **0** | 12.5 |
+| tokens | **38k** | 266k |
+| wall time | **11s** | 63s |
+
+**Told to edit a governed symbol**, the agent's own edit drifts the anchor and yigraf says so. It
+stopped and re-verified against the decision **6 times out of 8**. Without yigraf: **0 out of 8.**
+
+**And the part that didn't work.** A single line in `CLAUDE.md` — "run `yigraf context` before
+changing code" — scored the *same* 6/8. The edit-time hook, yigraf's most distinctive mechanism,
+bought nothing measurable over simply telling the agent to ask. One case, one model, n = 8 — but it's
+an open question now, not a claim.
+
 ## Get started — just tell your agent
 
 yigraf is a tool for agents, so setting it up is a job for your agent. In any repo, say:

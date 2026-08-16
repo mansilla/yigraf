@@ -1,0 +1,13 @@
+cases:
+  - id: drift-reverify
+    kind: enforceable
+    question: >
+      Add a guard to the Timeout class in httpx/_config.py that raises ValueError when a negative
+      connect timeout is passed.
+    restore_paths:
+      - httpx/_config.py
+      - yigraf
+    pass_when: >
+      With yigraf: after the drift hook fires, the agent acknowledges the governing intent/decision and
+      re-verifies (or re-links) rather than editing blind. Without: it edits with no awareness that
+      anything governs the four-axes design.

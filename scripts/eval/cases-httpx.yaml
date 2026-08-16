@@ -1,0 +1,81 @@
+# yigraf eval cases — EXTERNAL repo (encode/httpx @ 0.28.1).
+#
+# Why an external repo at all: yigraf's own repo cannot produce an honest number. Its CLAUDE.md and
+# AGENTS.md instruct any agent to run `yigraf context`, so even a hookless arm reaches for the tool and
+# the delta collapses to ~0 by construction. httpx has no such docs, so the `off` arm is a genuine
+# no-yigraf baseline and the comparison is real.
+#
+# Every question below asks for a **why** or a **rejected alternative**, so that a win is attributable to
+# governance retrieval rather than to code search: the facts themselves (Timeout has four axes;
+# follow_redirects defaults to False; BaseTransport exists) are visible in the source, so a no-yigraf arm
+# CAN find them by reading.
+#
+# WHAT THIS DOES *NOT* ESTABLISH — an earlier version of this comment claimed the reasoning "lives only
+# in the authored graph". Measured at n=8, that is false, in two ways:
+#   * The `off` arm reads yigraf/*.md straight off disk (10/16 runs at n=4) — by design, since `off`
+#     deliberately keeps the workspace.
+#   * httpx documents its OWN rationale: `off` answered redirect-why from CHANGELOG.md, and the reason it
+#     found there (unintended duplicate requests from misconfigured URLs) is not even the one authored
+#     here (cross-origin credential replay).
+# So these cases measure the COST of getting the why into context, not the AVAILABILITY of the why.
+# Both baselines name the authored rejected alternative at roughly the same rate as the `with` arm.
+#
+# Setup for this file lives in scripts/eval/external/setup-httpx.sh (clone at a pinned tag, author the
+# workspace, wire hooks). Run with:
+#   uv run python scripts/eval/run_ab.py --repo <httpx-clone> --cases scripts/eval/cases-httpx.yaml \
+#       --runs 2 --isolate --hook-cmd "<abs-python> -m yigraf"
+#
+# IMPORTANT — --hook-cmd must be an ABSOLUTE interpreter, not the default `uv run yigraf`. The agent's
+# cwd is the httpx clone, which is its own uv project with no yigraf installed, so `uv run yigraf`
+# resolves into httpx's venv, the hook fails, and (fail-open) the `with` arm silently degrades into a
+# copy of `ambient` — a confounded null that looks like a real measurement.
+
+cases:
+  - id: timeout-why
+    kind: structural
+    question: >
+      Why does this project model a request timeout as four separate values rather than one? What
+      alternative timeout design was considered and rejected, and why? Answer from the project's own
+      records, not from general knowledge about HTTP clients.
+
+  - id: transport-why
+    kind: structural
+    question: >
+      Why does every network operation go through a transport seam instead of the client using sockets
+      directly, and what two alternative placements of that seam were rejected?
+
+  - id: redirect-why
+    kind: structural
+    question: >
+      This library does not follow redirects by default, unlike requests. Why was that divergence
+      chosen, and what specific hazard does the default protect against?
+
+  # --- enforceable axis: does the drift hook change what the agent does? ---------------------------
+  # `Timeout.__init__` is governed (implements task:httpx-core/1, which tracks int:timeout-axes and is
+  # concerned by the four-axes decision). Editing it drifts the implements anchor, so PostToolUse
+  # surfaces the governing intent + drift. PASS = the `with` arm acknowledges that governance and
+  # re-verifies; the hookless baselines edit blind.
+  #
+  # ANCHOR GRANULARITY IS LOAD-BEARING — this case scored a false 0/2 on its first run because the task
+  # was linked to the *class* `Timeout` while the prompt makes the agent edit `Timeout.__init__`.
+  # astnorm-v1 hashes a class by its member NAMES, deliberately not its method bodies, so a body-only
+  # edit leaves the class anchor intact: no drift, nothing for the hook to say, and a verdict that reads
+  # "the hook did nothing" when the truth is "nothing governed the thing that changed". Verified both
+  # directions on the clone (adding a member DOES drift the class; a pure body insertion does not).
+  # Anchor the exact symbol the prompt causes the agent to edit.
+  #
+  # restore_paths covers the WHOLE yigraf/ workspace, not just the source file: when the `with` arm
+  # enforces it re-anchors the link (writing yigraf/memory/*), which reconciles the drift and would
+  # poison every later run into falsely reading "edited blind".
+  - id: drift-reverify
+    kind: enforceable
+    question: >
+      Add a guard to the Timeout class in httpx/_config.py that raises ValueError when a negative
+      connect timeout is passed.
+    restore_paths:
+      - httpx/_config.py
+      - yigraf
+    pass_when: >
+      With yigraf: after the drift hook fires, the agent acknowledges the governing intent/decision and
+      re-verifies (or re-links) rather than editing blind. Without: it edits with no awareness that
+      anything governs the four-axes design.

@@ -15,10 +15,11 @@ still matches, skipping the tree-sitter rebuild; otherwise it rebuilds and re-ma
 overlays (``survival``, telemetry, the ``settled`` verdict) are stripped at store time
 (:data:`yigraf.graph._VOLATILE_NODE_ATTRS`) and re-applied on the in-memory graph after a load, exactly
 as after a build. Never truth, always recomputable: any corruption / schema mismatch falls open to a
-full rebuild.
+full rebuild, and a view that cannot be *written* falls open to an uncached one (:class:`ViewUnwritable`).
 """
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -45,6 +46,55 @@ CREATE TABLE nodes (id TEXT PRIMARY KEY, family TEXT, attrs TEXT NOT NULL);
 CREATE TABLE edges (source TEXT NOT NULL, target TEXT NOT NULL, relation TEXT,
                     attrs TEXT NOT NULL, PRIMARY KEY (source, target));
 """
+
+#: Guidance from a materialize that failed, parked on ``graph.graph`` for a *write* seam's caller to
+#: surface — the same "property of this run, not of a belief" channel as ``diverged``
+#: (:func:`yigraf.extract._fold_replica`) and ``survival_measurable``. Popped at store time, so the
+#: derived signal can never land in the persisted view (design law #6).
+_UNWRITABLE_KEY = "view_unwritable"
+
+
+class ViewUnwritable(Exception):
+    """The materialized view could not be written. ``guidance`` hands back the fix (design law #1).
+
+    Never a stop-condition: the view is a *derived, recomputable* projection of the markdown (design law
+    #6), so a failed write costs a cache entry, not an answer — the graph the caller just built is
+    intact in memory and both seams here (:func:`rebuild`, :func:`load_or_build`) degrade to an uncached
+    rebuild rather than failing the agent's command. Mirrors :class:`yigraf.online.LinkError`: the layer
+    that knows *why* the write failed writes the sentence, the CLI decides where it lands. Raised in
+    place of the raw ``sqlite3``/``OSError`` so no caller has to interpret a storage error to stay
+    fail-open.
+    """
+
+    def __init__(self, path: Path, cause: BaseException) -> None:
+        self.path = Path(path)
+        self.cause = cause
+        self.guidance = _unwritable_guidance(self.path, cause)
+        super().__init__(self.guidance)
+
+
+def _unwritable_guidance(path: Path, cause: BaseException) -> str:
+    """Name what blocked the write and the one thing that fixes it (design law #1).
+
+    Every case is an environment problem the caller can correct, and none of them cost the answer, so
+    the message leads with *that*: an agent told only "could not write the database" concludes yigraf is
+    broken and stops calling it — the abandonment design law #1 exists to prevent. Saying the view is a
+    cache over markdown that is still the truth is what makes the next call happen anyway.
+    """
+    detail = str(cause)
+    if getattr(cause, "errno", None) == errno.ENOSPC or "disk is full" in detail:
+        why, fix = f"the disk holding {path.parent} is full", "free some space"
+    elif (getattr(cause, "errno", None) in (errno.EACCES, errno.EPERM)
+            or "readonly database" in detail or "unable to open database" in detail):
+        why = f"{path.parent} isn't writable by this user"
+        fix = (f"check the permissions on {path.parent} — and on {path.name} itself, if an earlier "
+               f"`sudo yigraf` run left it owned by root")
+    else:
+        why, fix = f"writing {path} failed ({detail})", f"check that {path.parent} is writable"
+    return (f"Couldn't cache the graph: {why}. Nothing was lost — {path.name} is a derived, gitignored "
+            f"view (the markdown under yigraf/ is the truth), so this command's answer is still correct; "
+            f"it just wasn't saved, and the next command will recompute it instead of loading it. "
+            f"To make it stick: {fix}.")
 
 
 def db_path(root: Path) -> Path:
@@ -123,35 +173,49 @@ def materialize(graph: nx.DiGraph, path: Path, fingerprint: str) -> None:
     retired ``graph.json`` carried — volatile attrs stripped, nodes/edges deterministically sorted. The
     ``g.graph`` attrs (``schema_version``/``anchor_algo``) ride ``meta`` so a load restores them. Written
     to a temp file and atomically renamed, so a concurrent reader never sees a half-written view.
+
+    Raises :class:`ViewUnwritable` — carrying the operator-facing fix, never a raw storage error — when
+    the environment refuses the write (unwritable dir, root-owned db, full disk). The catch is
+    deliberately narrow: ``sqlite3.OperationalError`` is *this* module's environment channel because the
+    SQL here is fixed and schema-checked, so a programming error (``IntegrityError`` on a duplicate node
+    id, say) is a real bug and must still surface as itself rather than be dressed up as bad permissions.
     """
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
     data = to_node_link(graph)
+    data.get("graph", {}).pop(_UNWRITABLE_KEY, None)  # a per-run signal never enters the view (law #6)
     tmp = path.with_name(path.name + ".tmp")
-    if tmp.exists():
-        tmp.unlink()
-    conn = sqlite3.connect(tmp)
     try:
-        conn.executescript(_SCHEMA)
-        conn.executemany(
-            "INSERT INTO meta (key, value) VALUES (?, ?)",
-            [("db_schema_version", str(DB_SCHEMA_VERSION)),
-             ("fingerprint", fingerprint),
-             ("graph_attrs", json.dumps(data.get("graph", {}), sort_keys=True))],
-        )
-        conn.executemany(
-            "INSERT INTO nodes (id, family, attrs) VALUES (?, ?, ?)",
-            [(n["id"], n.get("family"), json.dumps(n, sort_keys=True)) for n in data["nodes"]],
-        )
-        conn.executemany(
-            "INSERT INTO edges (source, target, relation, attrs) VALUES (?, ?, ?, ?)",
-            [(e["source"], e["target"], e.get("relation"), json.dumps(e, sort_keys=True))
-             for e in data[_EDGES_KEY]],
-        )
-        conn.commit()
-    finally:
-        conn.close()
-    os.replace(tmp, path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if tmp.exists():
+            tmp.unlink()
+        conn = sqlite3.connect(tmp)
+        try:
+            conn.executescript(_SCHEMA)
+            conn.executemany(
+                "INSERT INTO meta (key, value) VALUES (?, ?)",
+                [("db_schema_version", str(DB_SCHEMA_VERSION)),
+                 ("fingerprint", fingerprint),
+                 ("graph_attrs", json.dumps(data.get("graph", {}), sort_keys=True))],
+            )
+            conn.executemany(
+                "INSERT INTO nodes (id, family, attrs) VALUES (?, ?, ?)",
+                [(n["id"], n.get("family"), json.dumps(n, sort_keys=True)) for n in data["nodes"]],
+            )
+            conn.executemany(
+                "INSERT INTO edges (source, target, relation, attrs) VALUES (?, ?, ?, ?)",
+                [(e["source"], e["target"], e.get("relation"), json.dumps(e, sort_keys=True))
+                 for e in data[_EDGES_KEY]],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        os.replace(tmp, path)
+    except (OSError, sqlite3.OperationalError) as exc:
+        try:  # never leave a half-written .tmp behind to be mistaken for the view
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise ViewUnwritable(path, exc) from exc
 
 
 def stored_fingerprint(path: Path) -> str | None:
@@ -212,14 +276,36 @@ def load(path: Path) -> nx.DiGraph | None:
 # --------------------------------------------------------------------------------------------------
 
 
+def _materialize_or_flag(graph: nx.DiGraph, root: Path, config: dict) -> bool:
+    """Materialize the view, or park the guidance on ``graph.graph`` and carry on. Returns whether it stuck.
+
+    Both seams below degrade identically, for the same reason: the view is derived (design law #6), so
+    an unwritable cache must never fail the command that only *incidentally* refreshes it — a
+    ``remember`` whose artifact already landed on disk, or a ``context`` query whose answer is already
+    computed. Failing either would report a write that succeeded as a crash, and teach the agent to stop
+    calling the tool (design law #1) over a stale cache entry. What differs is who speaks: a write seam's
+    caller surfaces the flag as guidance, a read seam's stays silent — never nag the hot edit path
+    (design law #4).
+    """
+    try:
+        materialize(graph, db_path(root), source_fingerprint(root, config))
+        return True
+    except ViewUnwritable as exc:
+        graph.graph[_UNWRITABLE_KEY] = exc.guidance
+        return False
+
+
 def rebuild(root: Path, config: dict):
     """Build the graph fresh and re-materialize the view. The write-path seam (``build`` / ``_rebuild``):
-    an authored artifact just landed, so the projection must reflect it. Returns ``(graph, BuildStats)``."""
+    an authored artifact just landed, so the projection must reflect it. Returns ``(graph, BuildStats)``.
+
+    Fail-open (design law #5): a view that can't be written leaves the built graph untouched and the fix
+    on ``graph.graph["view_unwritable"]`` for the caller to surface — see :func:`_materialize_or_flag`."""
     from yigraf.extract import build_graph  # local: avoid an import cycle at module load
 
     root = Path(root)
     graph, stats = build_graph(root, config)
-    materialize(graph, db_path(root), source_fingerprint(root, config))
+    _materialize_or_flag(graph, root, config)
     return graph, stats
 
 
@@ -231,6 +317,11 @@ def load_or_build(root: Path, config: dict) -> tuple[nx.DiGraph, bool]:
     floor is armed (``maturity_survival_floor > 0``) — the landed tier is already persisted, and the
     telemetry / ``settled``-verdict overlays are re-applied by the caller (``_ranked_with_telemetry``)
     just as on a fresh build, so a loaded graph and a built one are query-equivalent.
+
+    A view that can't be persisted degrades to ``(graph, False)`` — the query is answered from the
+    build, uncached — rather than raising: a *read* must never fail because its cache couldn't be
+    refreshed (design law #5), and the caller is a hook or a `context` query whose answer is already in
+    hand. It stays silent here (design law #4); the write seams carry the guidance.
     """
     from yigraf import counters  # local: avoid an import cycle at module load
     from yigraf.extract import build_graph
@@ -244,5 +335,5 @@ def load_or_build(root: Path, config: dict) -> tuple[nx.DiGraph, bool]:
                 counters.apply_maturity(graph, root, config)
             return graph, True
     graph, _ = build_graph(root, config)
-    materialize(graph, db, source_fingerprint(root, config))
+    _materialize_or_flag(graph, root, config)
     return graph, False

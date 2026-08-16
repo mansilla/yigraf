@@ -6,9 +6,13 @@ round-trip is byte-canonical with the in-memory graph, the fingerprint is a fait
 the graph's inputs, ``load_or_build`` skips the rebuild only while inputs are unchanged, and any
 corruption falls open to ``None`` (⇒ a caller rebuilds) rather than raising.
 """
+import errno
 import json
+import shutil
 import sqlite3
 from pathlib import Path
+
+import pytest
 
 from yigraf import graphdb
 from yigraf.config import default_config
@@ -134,3 +138,88 @@ def test_load_or_build_matches_a_fresh_build(tmp_path: Path):
     fresh, _ = build_graph(root, cfg)
     assert was_cached is True
     assert _canon(cached) == _canon(fresh)
+
+
+# -- an unwritable view: guidance, never a traceback (design law #1), and never a failed command (#5) --
+
+
+def _unwritable_repo(tmp_path: Path) -> Path:
+    """A repo whose ``.local/`` is a regular FILE, so every write to the view fails.
+
+    Chosen over ``chmod`` deliberately: it reproduces the same condition on any platform and under any
+    uid (a root-run CI would sail straight through a 0o555 directory), and it fails at the same seam a
+    read-only mount does.
+    """
+    root = _repo(tmp_path)
+    local = root / "yigraf" / ".local"
+    shutil.rmtree(local, ignore_errors=True)
+    local.write_text("not a directory")
+    return root
+
+
+def test_an_unwritable_view_raises_guidance_not_a_storage_error(tmp_path: Path):
+    """Design law #1: the caller gets the fix, not a ``sqlite3``/``OSError`` to interpret."""
+    root = _unwritable_repo(tmp_path)
+    graph, _ = build_graph(root, default_config())
+    with pytest.raises(graphdb.ViewUnwritable) as caught:
+        graphdb.materialize(graph, graphdb.db_path(root), "fp")
+    guidance = caught.value.guidance
+    assert "graph.db" in guidance and "Nothing was lost" in guidance   # names the file + what it costs
+    assert "yigraf/" in guidance                                        # and where the truth still lives
+    assert isinstance(caught.value.cause, OSError)                      # the real error is kept, not lost
+
+
+def test_unwritable_guidance_names_the_fix_for_each_cause():
+    """Each branch hands back the ONE correction that clears it — not a description of the failure."""
+    path = Path("/repo/yigraf/.local/graph.db")
+    denied = graphdb._unwritable_guidance(path, PermissionError(errno.EACCES, "Permission denied"))
+    assert "permissions" in denied and "root" in denied      # incl. the sudo-left-it-root-owned case
+    full = graphdb._unwritable_guidance(path, OSError(errno.ENOSPC, "No space left on device"))
+    assert "full" in full and "free some space" in full
+
+
+def test_a_read_never_fails_because_the_cache_cannot_be_written(tmp_path: Path):
+    """Design law #5: `context`/hooks answer from the build when the view can't be refreshed."""
+    root = _unwritable_repo(tmp_path)
+    cfg = default_config()
+    graph, was_cached = graphdb.load_or_build(root, cfg)     # must not raise
+    fresh, _ = build_graph(root, cfg)
+    assert was_cached is False
+    assert graph.graph.pop("view_unwritable")                # the only difference is the parked guidance
+    assert _canon(graph) == _canon(fresh)                    # the answer is the full, correct graph
+    assert graphdb.load_or_build(root, cfg)[1] is False      # and every later read rebuilds, uncached
+
+
+def test_rebuild_hands_the_caller_the_guidance_to_surface(tmp_path: Path):
+    """The write seam keeps building — the CLI reads the flag and speaks (`build`, `_rebuild`)."""
+    root = _unwritable_repo(tmp_path)
+    graph, stats = graphdb.rebuild(root, default_config())   # must not raise
+    assert stats.files >= 1 and graph.number_of_nodes() > 0  # the work itself succeeded
+    assert "Couldn't cache the graph" in graph.graph["view_unwritable"]
+
+
+def test_the_unwritable_flag_never_enters_the_persisted_view(tmp_path: Path):
+    """Design law #6: a per-run signal is stripped at store time, like every other volatile attr."""
+    root = _repo(tmp_path)
+    graph, _ = build_graph(root, default_config())
+    graph.graph["view_unwritable"] = "stale guidance from an earlier failure"
+    graphdb.materialize(graph, graphdb.db_path(root), "fp")
+    loaded = graphdb.load(graphdb.db_path(root))
+    assert "view_unwritable" not in loaded.graph
+
+
+def test_a_programming_error_is_not_disguised_as_an_unwritable_view(tmp_path: Path, monkeypatch):
+    """The catch is narrow on purpose: a real bug must surface as itself, not as bad permissions."""
+    root = _repo(tmp_path)
+    graph, _ = build_graph(root, default_config())
+
+    class _BuggyConn:
+        def executescript(self, *_a):
+            raise sqlite3.IntegrityError("UNIQUE constraint failed: nodes.id")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(graphdb.sqlite3, "connect", lambda *_a, **_k: _BuggyConn())
+    with pytest.raises(sqlite3.IntegrityError):
+        graphdb.materialize(graph, graphdb.db_path(root), "fp")

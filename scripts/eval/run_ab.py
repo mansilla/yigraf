@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -28,7 +29,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from parse_run import RunMetrics, parse_file, summarize  # noqa: E402
 import judge  # noqa: E402
 
-ARMS = ("with", "without")
+#: The three arms. Two arms could not separate two different claims that were being conflated:
+#:   * ``with``    — hooks wired + every yigraf instruction file present (the full install).
+#:   * ``ambient`` — instruction files present, hooks OFF. Baseline for **Q1: does the HOOK change
+#:                   behaviour?** (``with`` vs ``ambient`` isolates event-scoped push specifically.)
+#:   * ``off``     — hooks OFF *and* AGENTS.md / CLAUDE.md / .claude/skills moved aside, so the agent has
+#:                   no yigraf affordance at all. Baseline for **Q2: does INSTALLING yigraf change
+#:                   behaviour?** (``with`` vs ``off``.)
+#: ``off`` deliberately KEEPS the ``yigraf/`` workspace on disk: the knowledge (intents, decisions) is
+#: still there as plain markdown the agent may grep/Read. Removing it would make the question
+#: unanswerable and turn the comparison into a trivial win; the honest question is whether yigraf's
+#: retrieval beats grepping the same facts, not whether facts beat no facts.
+ARMS = ("with", "ambient", "off")
 
 
 def _with_settings(hook_cmd: str) -> dict:
@@ -70,14 +82,37 @@ def _arm_command(arm: str, question: str, settings_path: Path, mcp_path: Path,
     return cmd
 
 
+def _pull_shim(out: Path, hook_cmd: str) -> Path:
+    """Write a ``yigraf`` shim and return its dir, to be PREPENDED to the agent's PATH.
+
+    ``AGENTS.md`` tells the agent to run bare ``yigraf context``, so the *pull* path resolves to
+    whatever ``yigraf`` happens to be on the developer's PATH — which is **not** the build ``--hook-cmd``
+    points the *push* path at. On this machine that was a released 1.3.0 uv tool vs the working tree's
+    1.3.1: ``ambient`` would have been pulling from one version of yigraf while ``with`` pushed from
+    another, and the Q1 delta would have quietly absorbed the diff between them. The shim pins every
+    arm's pull to the same interpreter as the hook, so the arms differ in the ONE thing they claim to.
+    """
+    d = out / "bin"
+    d.mkdir(parents=True, exist_ok=True)
+    shim = d / "yigraf"
+    shim.write_text(f'#!/bin/sh\nexec {hook_cmd} "$@"\n', encoding="utf-8")
+    shim.chmod(0o755)
+    return d
+
+
 def _run_one(arm: str, question: str, repo: Path, settings_path: Path, mcp_path: Path,
              model: str, effort: str, transcript: Path, timeout: int,
-             permission_mode: str) -> RunMetrics | None:
+             permission_mode: str, shim_dir: Path | None = None) -> RunMetrics | None:
     """Run one arm once; capture the stream-json transcript; return parsed metrics (None on failure)."""
     cmd = _arm_command(arm, question, settings_path, mcp_path, model, effort, permission_mode)
+    env = dict(os.environ)
+    if shim_dir is not None:
+        # Every arm, not just `ambient`: `off` has no instruction to use yigraf, but if it discovers the
+        # CLI on its own it must still hit the same build, or the baseline stops being comparable.
+        env["PATH"] = f"{shim_dir}{os.pathsep}{env.get('PATH', '')}"
     try:
         # Close stdin — headless claude otherwise waits ~3s for piped input before proceeding.
-        proc = subprocess.run(cmd, cwd=repo, stdin=subprocess.DEVNULL,
+        proc = subprocess.run(cmd, cwd=repo, stdin=subprocess.DEVNULL, env=env,
                               capture_output=True, text=True, timeout=timeout)
     except FileNotFoundError:
         print("  ! `claude` not on PATH — install Claude Code or adjust the harness.", file=sys.stderr)
@@ -92,24 +127,28 @@ def _run_one(arm: str, question: str, repo: Path, settings_path: Path, mcp_path:
     return parse_file(transcript)
 
 
-def _isolate(repo: Path):
-    """Move aside ambient yigraf affordances during a run so the arms differ in *only* the hooks.
+#: Always moved aside for EVERY arm: ``--settings`` *merges* over these, so a committed ``hooks`` block
+#: would wire the hook into the hookless arms too and erase the very difference being measured.
+_SETTINGS_CHANNELS = (".claude/settings.json", ".claude/settings.local.json")
 
-    Two channels would otherwise leak the governance affordance into *both* arms and confound the A/B:
+#: Moved aside for the ``off`` arm only — the channels that tell an agent to pull ``yigraf context``
+#: *without any hook*. ``.claude/skills/`` was already known (yigraf's own SKILL.md says "run context
+#: first"). The instruction files were NOT, and they are the bigger leak: on a live run the hookless arm
+#: said "per the project's workflow" and ran ``yigraf context`` straight from AGENTS.md / CLAUDE.md, so
+#: both arms converged and the measured delta was ~0 **by construction** on any yigraf-governed repo.
+_AFFORDANCE_CHANNELS = (".claude/skills", "AGENTS.md", "CLAUDE.md")
 
-    - ``.claude/settings{,.local}.json`` — ``--settings`` *merges* over these, so a committed ``hooks``
-      block could wire the hook into the WITHOUT arm too.
-    - ``.claude/skills/`` — a project Skill (yigraf's own ``SKILL.md`` is the canonical case) tells the
-      agent to run ``yigraf context``/``link`` *regardless* of the hooks. The enforceable judge scores
-      that as a verification action, so a Skill present in the WITHOUT arm makes it "re-verify" through
-      a channel that isn't the hook — and the hook delta vanishes. The Skill must be absent from **both**
-      arms for any re-verification in the WITH arm to be attributable to the hook. (The live run that
-      first found this: both arms ran ``yigraf context`` straight from the Skill → confounded null.)
 
-    Returns a restore() callable; use in try/finally.
+def _isolate(repo: Path, channels: tuple[str, ...]):
+    """Move ``channels`` aside for the duration of a run; returns a restore() for try/finally.
+
+    Isolation is **per-arm**, not global: ``with``/``ambient`` hide only the settings, while ``off``
+    also hides the instruction files and the Skill. A global isolation cannot express that difference —
+    which is why the two-arm version could only ever measure one of the two claims, and silently
+    measured neither on a repo whose own docs preach the tool.
     """
     moved: list[tuple[Path, Path]] = []
-    for rel in (".claude/settings.json", ".claude/settings.local.json", ".claude/skills"):
+    for rel in channels:
         p = repo / rel
         if p.exists():
             bak = p.with_name(p.name + ".eval-bak")  # works for files and the skills/ dir alike
@@ -123,21 +162,37 @@ def _isolate(repo: Path):
     return restore
 
 
-def _fmt(label: str, w: dict, wo: dict) -> str:
+def _arm_channels(arm: str, isolate: bool) -> tuple[str, ...]:
+    """Which channels this arm hides. ``off`` hides the affordance too; the rest hide only settings."""
+    if not isolate:
+        return ()
+    return _SETTINGS_CHANNELS + (_AFFORDANCE_CHANNELS if arm == "off" else ())
+
+
+def _fmt(label: str, w: dict, base: dict, baseline: str, question: str) -> str:
+    """One comparison block: the ``with`` arm against one baseline, named by the claim it tests."""
     def delta(field: str, lower_better: bool = True) -> str:
-        a, b = w.get(field, 0), wo.get(field, 0)
+        a, b = w.get(field, 0), base.get(field, 0)
         if not b:
             return f"{a} vs {b}"
         pct = (a - b) / b * 100
         arrow = "▼" if (pct < 0) == lower_better else "▲"
         return f"{a:g} vs {b:g} ({arrow}{abs(pct):.0f}%)"
 
-    return (f"  {label:<14} with vs without\n"
+    return (f"  {label:<14} with vs {baseline}   — {question}\n"
             f"    tool calls : {delta('tool_calls')}\n"
             f"    Read       : {delta('reads')}\n"
             f"    Grep       : {delta('greps')}\n"
-            f"    time (s)   : {delta('duration_ms')}\n"
+            f"    time (ms)  : {delta('duration_ms')}\n"
             f"    tokens     : {delta('input_tokens')}  (input; +output {delta('output_tokens')})")
+
+
+def _report_structural(label: str, arm_summary: dict[str, dict]) -> None:
+    """Report both claims the three arms separate: the hook's effect, and the whole install's effect."""
+    for baseline, question in (("ambient", "Q1: does the HOOK change behaviour?"),
+                               ("off", "Q2: does INSTALLING yigraf change behaviour?")):
+        if arm_summary.get("with") and arm_summary.get(baseline):
+            print(_fmt(label, arm_summary["with"], arm_summary[baseline], baseline, question))
 
 
 def _load_cases(args) -> list[dict]:
@@ -198,18 +253,22 @@ def _report_enforceable(arm_transcripts: dict[str, list[Path]]) -> None:
     is the robust signal the README asks for; judging only run-0 would leave the enforceable verdict at
     n=1 no matter how many runs were paid for (the bug this replaces). Pairs by index; arms are
     independent, so any pairing is equivalent.
+    Judged against BOTH baselines, because "enforced" means something different against each: vs
+    ``ambient`` it is the hook's own effect (the moat), vs ``off`` it is the whole install's effect.
     """
-    withs, withouts = arm_transcripts.get("with", []), arm_transcripts.get("without", [])
-    n = min(len(withs), len(withouts))
-    if n == 0:
-        print("  ENFORCED: n/a — a run failed in one or both arms (no paired transcripts to judge).")
-        return
-    verdicts = [judge.verdict(judge.score_transcript(withs[i]), judge.score_transcript(withouts[i]))
-                for i in range(n)]
-    enforced = sum(1 for v in verdicts if v["enforced"])
-    print(f"  ENFORCED: {enforced}/{n} run(s)")
-    for i, v in enumerate(verdicts):
-        print(f"    run {i}: {v['enforced']} — {v['summary']}")
+    withs = arm_transcripts.get("with", [])
+    for baseline in ("ambient", "off"):
+        others = arm_transcripts.get(baseline, [])
+        n = min(len(withs), len(others))
+        if n == 0:
+            print(f"  ENFORCED vs {baseline}: n/a — a run failed in one or both arms.")
+            continue
+        verdicts = [judge.verdict(judge.score_transcript(withs[i]), judge.score_transcript(others[i]))
+                    for i in range(n)]
+        enforced = sum(1 for v in verdicts if v["enforced"])
+        print(f"  ENFORCED vs {baseline}: {enforced}/{n} run(s)")
+        for i, v in enumerate(verdicts):
+            print(f"    run {i}: {v['enforced']} — {v['summary']}")
 
 
 def main() -> None:
@@ -228,9 +287,11 @@ def main() -> None:
                          "sandbox; applied identically to both arms). Use acceptEdits to restrict to "
                          "file edits only.")
     ap.add_argument("--isolate", action="store_true",
-                    help="Move aside the repo's ambient yigraf affordances (.claude/settings*.json AND "
-                         ".claude/skills/) for the run, so the arms differ in only the hooks. Required "
-                         "for the enforceable case on a yigraf-skilled repo (recommended otherwise).")
+                    help="Isolate the arms PER-ARM: every arm hides .claude/settings*.json (which would "
+                         "otherwise merge committed hooks into the hookless arms), and the `off` arm "
+                         "additionally hides .claude/skills/, AGENTS.md and CLAUDE.md so it has no "
+                         "yigraf affordance at all. Effectively required — without it every arm can "
+                         "read 'run yigraf context' from the repo's own docs and all deltas read ~0.")
     ap.add_argument("--out", type=Path, default=None, help="Transcript dir (default: scripts/eval/runs/<ts>).")
     args = ap.parse_args()
 
@@ -244,11 +305,14 @@ def main() -> None:
     with_settings.write_text(json.dumps(_with_settings(args.hook_cmd), indent=2))
     without_settings.write_text(json.dumps({"hooks": {}}, indent=2))
     empty_mcp.write_text(json.dumps({"mcpServers": {}}))
+    shim_dir = _pull_shim(out, args.hook_cmd)
 
     cases = _load_cases(args)
     print(f"A/B over {len(cases)} case(s) × {args.runs} run(s)/arm · model={args.model} · repo={repo}\n")
 
-    restore = _isolate(repo) if args.isolate else (lambda: None)
+    if not args.isolate:
+        print("  ! --isolate is OFF: committed hooks/skills/AGENTS.md leak into the hookless arms and\n"
+              "    the deltas will read ~0 regardless of what yigraf does. Use --isolate.\n")
     try:
         for case in cases:
             label, question, kind = case["id"], case["question"], case.get("kind", "structural")
@@ -265,32 +329,46 @@ def main() -> None:
                 settings = with_settings if arm == "with" else without_settings
                 runs: list[RunMetrics] = []
                 transcripts: list[Path] = []
-                for i in range(args.runs):
-                    t = out / f"{label}__{arm}__{i}.jsonl"
-                    # Enforceable cases introduce drift before each agent run, and restore after.
-                    if kind == "enforceable":
-                        _shell(case.get("setup"), repo, "setup")
-                    print(f"    {arm} run {i + 1}/{args.runs} …", flush=True)
-                    m = _run_one(arm, question, repo, settings, empty_mcp,
-                                 args.model, args.effort, t, args.timeout, args.permission_mode)
-                    if snap_restore is not None:
-                        print("    [restore] working-tree snapshot", flush=True)
-                        snap_restore()
-                    elif kind == "enforceable":
-                        _shell(case.get("teardown"), repo, "teardown")
-                    if m is not None:
-                        runs.append(m)
-                        transcripts.append(t)
+                # Per-arm isolation: `off` also hides AGENTS.md/CLAUDE.md/skills, so it is the only arm
+                # with no yigraf affordance at all. Restored before the next arm starts.
+                arm_restore = _isolate(repo, _arm_channels(arm, args.isolate))
+                try:
+                    for i in range(args.runs):
+                        t = out / f"{label}__{arm}__{i}.jsonl"
+                        # Enforceable cases introduce drift before each agent run, and restore after.
+                        if kind == "enforceable":
+                            _shell(case.get("setup"), repo, "setup")
+                        print(f"    {arm} run {i + 1}/{args.runs} …", flush=True)
+                        m = _run_one(arm, question, repo, settings, empty_mcp,
+                                     args.model, args.effort, t, args.timeout, args.permission_mode,
+                                     shim_dir)
+                        if snap_restore is not None:
+                            print("    [restore] working-tree snapshot", flush=True)
+                            snap_restore()
+                        elif kind == "enforceable":
+                            _shell(case.get("teardown"), repo, "teardown")
+                        if m is not None:
+                            runs.append(m)
+                            transcripts.append(t)
+                finally:
+                    arm_restore()
                 arm_summary[arm] = summarize(runs)
                 arm_transcripts[arm] = transcripts
 
             if kind == "enforceable":
                 _report_enforceable(arm_transcripts)
-            elif arm_summary["with"] and arm_summary["without"]:
-                print(_fmt(label, arm_summary["with"], arm_summary["without"]))
+            else:
+                _report_structural(label, arm_summary)
             print()
     finally:
-        restore()
+        # Safety net: per-arm isolation already restores in its own finally, but a hard crash (or a
+        # SIGKILL between the move and the restore) would otherwise leave the repo's real
+        # settings/skills/AGENTS.md parked at `.eval-bak` — a silently broken working tree.
+        for rel in _SETTINGS_CHANNELS + _AFFORDANCE_CHANNELS:
+            bak = (repo / rel).with_name(Path(rel).name + ".eval-bak")
+            if bak.exists() and not (repo / rel).exists():
+                print(f"  [recover] restoring stray {rel}", file=sys.stderr)
+                shutil.move(str(bak), str(repo / rel))
 
     print(f"transcripts + per-arm settings in {out}")
 
