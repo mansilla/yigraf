@@ -12,6 +12,35 @@ from typing import Any
 
 import yaml
 
+#: The house rules injected verbatim at SessionStart, ahead of the relevance-ranked slice
+#: (``session_start.preamble``). This is the one channel in yigraf that does **not** rank, and it
+#: exists because ranking structurally cannot reach this content: a rule about *using yigraf* has no
+#: lexical or semantic affinity with a domain intent, so it never survives the cut no matter how it
+#: is worded or how mature it gets (measured in the field — `attest` doesn't promote into injection
+#: and `settled` is earned, not settable). It is modelled on CLAUDE.md, which works because it is
+#: (a) once, (b) before any action is chosen, and (c) delivered as instruction rather than as
+#: reference about a file. Per-edit injection is none of those three, which is why the same words
+#: there became wallpaper within three edits.
+#:
+#: Kept short on purpose: it is charged to the same budget as the ranked slice, so every line here
+#: costs the agent a line of its actual context. Override it in ``yigraf/config.yaml`` (committed, so
+#: a team's conventions live with the repo instead of in each agent's private memory); set it empty
+#: to silence the channel entirely.
+DEFAULT_SESSION_PREAMBLE = """\
+[yigraf] Standing rules for this session — instructions, not reference:
+- Read yigraf's own guidance before driving the CLI: the `yigraf` skill if your host loads skills,
+  otherwise the yigraf block in AGENTS.md. `yigraf cheatsheet` lists every verb and flag. Knowing
+  the verbs is not the same as knowing which one resolves which signal.
+- Capture as the work lands, not as a closing ritual. `--why` and `--rejected` are worth most at the
+  moment of the decision; by the end of a session the reasoning that made the choice is gone.
+- Before you report done, run `yigraf status`. "Up to date" means no drift AND no stale — open tasks
+  are a third, separate thing, and a quiet context packet is evidence of neither.
+- One verb per signal, and the wrong one costs you: code a decision governs changed → `reaffirm`
+  (the belief is unchanged) or `supersede` (your mind changed), never re-`remember`. A done task's
+  symbol changed → re-`link`, or reopen it. Two live beliefs collide → `reconcile`, `supersede`, or
+  `dispute`.
+"""
+
 DEFAULT_CONFIG: dict[str, Any] = {
     "schema_version": 0,
     # Structure extraction (M1). Languages with a shipped extractor; grammars for the rest of the
@@ -69,6 +98,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # Max ⚠ drift lines in an injected packet (hard drift first; the rest become a count + the
         # verb to see them). `yigraf drift` renders from its own path and is never capped.
         "max_drift_lines": 4,
+        # Same bound for ⚠ STALE completion lines. Stale went global at SessionStart (it is the
+        # orientation dashboard, not a topical query), so a repo carrying many closed-then-edited
+        # tasks would flood the packet exactly as drift did; the tail names `yigraf drift --stale`.
+        "max_stale_lines": 4,
     },
     # Relevance prior weights (a node's standing weight, scored at read time).
     #   w1·log(1+refs_in) + w2·recency(last_seen) + w3·maturity − w4·[superseded_in>0] − w5·[proposed]
@@ -115,6 +148,27 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "obligation_notice": True,
         "obligation_notice_max": 5,
     },
+    # SessionStart (int:session-orientation) — the three UNRANKED channels of the orientation packet.
+    # Everything else yigraf injects is relevance-ranked against a topic, which is the right default
+    # and the reason these three have to exist: a rule about *using* the tool, a constraint that is
+    # load-bearing on every task, and the mere existence of a belief the agent has not thought to ask
+    # about are all content no ranker will ever surface, because nothing in the query resembles them.
+    # A store's value is bounded by what the agent can be made aware of WITHOUT already knowing it.
+    "session_start": {
+        # Verbatim house rules, before the ranked slice. "" / null ⇒ the channel is silent.
+        "preamble": DEFAULT_SESSION_PREAMBLE,
+        # End the packet's head with the one-line `yigraf status` summary, so the rules arrive with
+        # the live counts attached instead of as abstract advice.
+        "append_status": True,
+        # Token budget for `pinned` memories, rendered IN FULL. Whole nodes in or out, in relevance
+        # order, with the elision stated — a pin tier only works if the budget BINDS (if everything
+        # is pinned, session start is the new wallpaper). Most repos pin nothing and pay nothing.
+        "pinned_budget": 800,
+        # Titles-only manifest of memories the packet did not otherwise show — the cheapest possible
+        # conversion of unknown-unknowns into known-unknowns, which is the whole precondition for the
+        # agent choosing to run `context` at all. 0 ⇒ off.
+        "manifest_titles": 15,
+    },
     # Online (int:yigraf-online-v1) — the shared log this workspace participates in. `project` is the
     # key the hosted log is scoped by; `replica` is the local SQLite mirror `yigraf sync` maintains,
     # relative to the workspace dir. With either unset, or the replica absent, the build is purely
@@ -138,8 +192,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
 TOKEN_ENV = "YIGRAF_TOKEN"
 
 # Commented YAML written by ``yigraf init``. A test asserts this parses to DEFAULT_CONFIG, so the
-# friendly file and the in-code defaults can never silently drift apart.
-DEFAULT_CONFIG_YAML = """\
+# friendly file and the in-code defaults can never silently drift apart. The session-start preamble is
+# spliced in from the one constant above rather than retyped — it is prose a user edits, so a second
+# copy here would be the one that goes stale.
+_CONFIG_YAML_TEMPLATE = """\
 # yigraf config — committed. Governs structure extraction, drift, and retrieval.
 # Written by `yigraf init`; safe to edit. What each knob does: https://github.com/mansilla/yigraf/blob/main/docs/guide.md
 schema_version: 0
@@ -219,6 +275,27 @@ retrieval:
   # carries, so it floods the same way. Hard drift (symbol gone) sorts ahead of soft (body changed),
   # and the rest become a count. `yigraf drift` is the full report and is never capped.
   max_drift_lines: 4
+  # Same bound for ⚠ STALE completion lines (a done task whose implementing symbol drifted). These
+  # are global at SessionStart — a repo between milestones is exactly when a forgotten stale item
+  # goes unnoticed longest — so they need the same cap. The tail names `yigraf drift --stale`.
+  max_stale_lines: 4
+
+# --- SessionStart (int:session-orientation) — the three UNRANKED channels ---
+# Everything else yigraf injects is ranked against a topic. These three exist because ranking cannot
+# reach their content: a rule about *using* yigraf has no affinity with a domain intent, a constraint
+# that is load-bearing on every task matches no particular one, and a belief the agent has never
+# heard of is a query it cannot formulate. Retrievable and reachable are different properties, and
+# only the second one has value.
+session_start:
+  # Verbatim house rules, injected before the ranked slice — once per session, as instruction, in the
+  # position CLAUDE.md occupies. Yours to rewrite: this file is committed, so a team's yigraf
+  # conventions live with the repo instead of in each agent's private memory. Set to "" to silence.
+  # It is charged to the same budget as the slice, so each line here costs a line of real context.
+  preamble: |
+__PREAMBLE__
+  append_status: true   # end the head with the one-line `yigraf status` summary (rules + live counts)
+  pinned_budget: 800    # tokens for `pinned` memories, rendered IN FULL, whole nodes only
+  manifest_titles: 15   # titles-only of that many memories the packet didn't show (0 = off)
 
 # --- Relevance prior (how a node's standing weight is scored at read time) ---
 relevance:                     # w1·log(1+refs_in) + w2·recency + w3·maturity − w4·[superseded] − w5·[proposed]
@@ -278,6 +355,13 @@ online:
   replica: cache/replica.db     # local SQLite mirror, relative to the yigraf/ workspace dir
   repo_fingerprint:             # root-commit SHA this binding is for; checked before every push
 """
+
+#: The written file, with the preamble spliced in as a YAML block scalar (4-space body indent, so it
+#: nests under ``session_start.preamble:``). One source for the prose; the template only frames it.
+DEFAULT_CONFIG_YAML = _CONFIG_YAML_TEMPLATE.replace(
+    "__PREAMBLE__",
+    "\n".join(f"    {line}".rstrip() for line in DEFAULT_SESSION_PREAMBLE.rstrip("\n").splitlines()),
+)
 
 
 def default_config() -> dict[str, Any]:

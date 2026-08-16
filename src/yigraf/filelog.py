@@ -240,6 +240,11 @@ def _memory_assertion(mem) -> Assertion:
         "why": mem.why,
         "alternatives": mem.alternatives,
         "promotable": mem.promotable,
+        # Pinning rides the assertion because it is authored state on the artifact, like `promotable`
+        # — a teammate who pins a house rule should have it pinned for everyone who folds the log.
+        # It is outside the memory *id* (mem:063's semantic payload) for the same reason: it changes
+        # nothing about what the belief says, so it must not fork the node from an identical capture.
+        "pinned": mem.pinned,
         "source_file": mem.source_file or f"memory/{mem.seq:03d}-{mem.slug}.md",
     }
     if mem.rejected_valid_when:
@@ -348,6 +353,11 @@ _TYPED_DANGLING = {
     "tracks": ("dangling_tracks", False),
     "requires": ("dangling_requires", False),
     "implements": ("dangling_implements", True),
+    #: project_into never stashed one of these — a plan and its tasks are read out of the same file, so
+    #: locally a ``contains`` target is always there. The FOLD can see one: a plan assertion may arrive
+    #: without the task assertions it names (a partial replica, or a since-cursor pull that starts after
+    #: them), and then the plan's own edges are what dangle.
+    "contains": ("dangling_contains", False),
 }
 
 
@@ -365,13 +375,20 @@ def inject_base_anchors(graph, root: Path) -> None:
 def denormalize_danglings(graph) -> None:
     """Rewrite each node's family-agnostic ``dangling_edges`` into project_into's per-relation
     ``dangling_*`` keys, so :mod:`yigraf.drift` (rename re-anchoring, hard-drift) and retrieval read them
-    unchanged. Pure shape-bridging over the fold's output; leaves the resolved graph identical."""
+    unchanged. Pure shape-bridging over the fold's output; leaves the resolved graph identical.
+
+    Fail-open on a relation the map has not heard of, rather than ``KeyError``. This runs over every
+    fold of a log, and the whole point of stashing an unresolved edge is that a partial replica still
+    materializes (R5) — so a relation nobody wrote a bridge for must cost an unread attribute, not the
+    graph. It is stashed under the same ``dangling_<relation>`` name it would have had, unanchored:
+    every reader asks for a key by name, so an unclaimed one is inert."""
     for _, attrs in graph.nodes(data=True):
         dangling = attrs.pop("dangling_edges", None)
         if not dangling:
             continue
         for edge in dangling:
-            attr, anchored = _TYPED_DANGLING[edge["relation"]]
+            relation = edge["relation"]
+            attr, anchored = _TYPED_DANGLING.get(relation, (f"dangling_{relation}", False))
             if anchored:
                 ea = edge.get("attrs") or {}
                 entry = {"sym": edge["target"], "anchor": ea.get("anchor"),

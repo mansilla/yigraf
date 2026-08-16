@@ -281,29 +281,37 @@ VERB_FORK = ("↳ Which verb: `reaffirm` = the belief is UNCHANGED (re-anchor on
              "verb clears the ⚠ on its own · never re-`remember` (it duplicates).")
 
 
-def _drift_line(item) -> str:
-    """A reconcile line for one drift item, worded for the relation *and kind* that drifted.
+def drift_tail(item) -> str:
+    """What drifted and which verb resolves it, for one drift item — unframed, ids pre-filled.
 
-    ``concerns`` (the code a decision governs changed → re-check the decision), ``grounded_by`` (the
-    *evidence* that earned a belief's ``empirical`` tier changed → that certainty is now unearned; a
-    demotion trigger for int:memory-maturity), or ``implements`` (a task's symbol drifted).
+    Worded for the relation *and kind*: ``concerns`` (the code a decision governs changed → re-check
+    the decision), ``grounded_by`` (the *evidence* that earned a belief's ``empirical`` tier changed →
+    that certainty is now unearned; a demotion trigger for int:memory-maturity), or ``implements`` (a
+    task's symbol drifted).
 
     Kind matters as much as relation, because it changes which verbs are even *available*: on hard
     drift the locus is gone, and ``reaffirm`` cannot re-anchor to something that no longer exists
     (``cli.reaffirm`` refuses it), so offering it there would send the agent down a dead end. Each line
     carries the ids already filled in — the agent should not have to retype what yigraf just told it.
+
+    Returned **unframed** so the two drift surfaces can present it their own way from one wording. They
+    disagreed until this split: the injected ⚠ block named the relation and both verbs while ``yigraf
+    drift`` printed a bare ``soft drift: mem:X → sym:Y (body changed since anchored)`` that named
+    neither — so the CLI, which is what an agent reaches for once it knows the verbs, was the surface
+    with no advice on it. The relation label is the load-bearing half: a memory can carry the *same*
+    symbol under both ``concerns`` and ``evidence``, and each list is cleared by a different call.
     """
     verb = "changed since anchored" if item.kind == "soft" else "no longer found"
     if item.relation == "concerns":
-        tail = (f"re-verify this decision, then `reaffirm {item.task_id}` or "
+        return (f"{verb} — re-verify this decision, then `reaffirm {item.task_id}` or "
                 f'`supersede {item.task_id} "<restated>"`.' if item.kind == "soft" else
-                f"the locus is gone, so `reaffirm` can't re-anchor it — if the decision moved, "
-                f'`supersede {item.task_id} "<restated>" --concerns <new locus>`.')
-    elif item.relation == "grounded_by":
+                f"{verb} — the locus is gone, so `reaffirm` can't re-anchor it — if the decision "
+                f'moved, `supersede {item.task_id} "<restated>" --concerns <new locus>`.')
+    if item.relation == "grounded_by":
         # Kind-aware for the same reason the concerns fork is (mem:05f50ec0daf05115): on hard drift the
         # observation is GONE, so "re-verify it still holds" names something unreadable and `--evidence`
         # can only upsert *beside* the dead ref, never remove it. `unlink` is the verb that reaches it.
-        tail = (f"the evidence grounding this ·empirical belief {verb} — re-verify the observation "
+        return (f"the evidence grounding this ·empirical belief {verb} — re-verify the observation "
                 f"still holds, then `reaffirm {item.task_id} --grounding empirical --evidence <fresh>`, "
                 f"or honestly downgrade: `reaffirm {item.task_id} --grounding inferred`."
                 if item.kind == "soft" else
@@ -311,14 +319,16 @@ def _drift_line(item) -> str:
                 f"re-verify — name what replaces it, `reaffirm {item.task_id} --grounding empirical "
                 f"--evidence <fresh>`, or downgrade, `reaffirm {item.task_id} --grounding inferred`, "
                 f"then retire the dead ref: `unlink {item.task_id} {item.locator}`.")
-        return f"  ⚠ {item.task_id} → {item.locator}: {tail}"
-    else:
-        tail = (f"re-verify it still holds, then `link {item.task_id} {item.locator}` to re-anchor."
-                if item.kind == "soft" else
-                f"the symbol is gone — `link {item.task_id} <new locus>` if it moved, "
-                f"`unlink {item.task_id} {item.locator}` if the task no longer implements it, "
-                f"or reopen {item.task_id} if the work was undone.")
-    return f"  ⚠ {item.task_id} → {item.locator} {verb} — {tail}"
+    return (f"{verb} — re-verify it still holds, then `link {item.task_id} {item.locator}` to re-anchor."
+            if item.kind == "soft" else
+            f"{verb} — the symbol is gone — `link {item.task_id} <new locus>` if it moved, "
+            f"`unlink {item.task_id} {item.locator}` if the task no longer implements it, "
+            f"or reopen {item.task_id} if the work was undone.")
+
+
+def _drift_line(item) -> str:
+    """One ⚠ line for the injected drift block: the two ids plus :func:`drift_tail`'s advice."""
+    return f"  ⚠ {item.task_id} → {item.locator}: {drift_tail(item)}"
 
 
 def _drift_block(items: list, config: dict | None = None) -> list[str]:
@@ -359,6 +369,148 @@ def _stale_line(item) -> str:
     what = "changed since it was checked off" if item.kind == "soft" else "is gone"
     return (f"  ⚠ {item.task_id}: completion STALE — {item.locator} {what}; re-verify it still holds, "
             f"then re-`link` {item.task_id} to re-anchor, or reopen the task if the change undid it.")
+
+
+def _stale_block(items: list, config: dict | None = None) -> list[str]:
+    """The ⚠ Stale body: one line per stale completion up to ``retrieval.max_stale_lines``, then a count.
+
+    The sibling of :func:`_drift_block`, and it became necessary for the same reason at the same
+    moment: stale went *global* at SessionStart (see :func:`session_context`), so it stopped being
+    bounded by whatever the traversal happened to reach and started scaling with how many closed tasks
+    the repo has ever had a symbol edited under. The tail names ``yigraf drift --stale``, which renders
+    from its own path and is never capped — so the count is a handle, not a dead end.
+    """
+    cap = ((config or {}).get("retrieval", {}) or {}).get("max_stale_lines", 4)
+    ordered = sorted(items, key=lambda i: (i.kind != "hard", i.task_id, i.locator))
+    shown = ordered[:cap] if cap and len(ordered) > cap else ordered
+    lines = [_stale_line(i) for i in shown]
+    if len(shown) < len(ordered):
+        lines.append(f"  … +{len(ordered) - len(shown)} more stale completion(s) — "
+                     f"`yigraf drift --stale` for the full list.")
+    return lines
+
+
+# --------------------------------------------------------------------------------------------------
+# The unranked SessionStart channels (int:session-orientation): pinned beliefs and the title manifest.
+#
+# Everything above this line ranks against a topic, and for a topical query that is exactly right. It
+# is also why these two exist. A constraint that is load-bearing on *every* task ("never write this
+# vendor's APIs from memory") matches no particular task, so it never wins a cut; and a belief the
+# agent has never heard of is, by construction, a query it cannot formulate — "if I ask the right
+# question it comes back" is not the same property as "something causes me to ask". A store's value is
+# bounded by what the agent can be made aware of without already knowing it, and per-edit symbol
+# matching only ever answers "what is relevant to this line?", never "what would I regret not knowing
+# before I start?" — which cannot be derived from a symbol, because no symbol has been touched yet.
+# --------------------------------------------------------------------------------------------------
+
+
+def _live_memories(graph: nx.DiGraph) -> list[str]:
+    """Memory nodes that still assert something: active, not superseded, not an unconfirmed candidate.
+
+    A superseded belief is history (it stays readable as a rejected alternative on its successor) and a
+    ``proposed`` one is a mined candidate no encounter has confirmed — neither is something to hand an
+    agent as standing context at the top of a session.
+    """
+    return [n for n, a in graph.nodes(data=True)
+            if a.get("family") == "memory" and a.get("status", "active") == "active"
+            and not a.get("superseded_in", 0) and a.get("maturity") != "proposed"]
+
+
+def _by_standing(graph: nx.DiGraph, ids: list[str], config: dict) -> list[str]:
+    """``ids`` ordered by the same read-time relevance prior everything else ranks on, id-tiebroken.
+
+    Deliberately the *existing* prior (refs_in · recency · maturity − superseded/proposed) rather than a
+    second notion of importance: a pin that the budget has to drop, and a manifest that has to choose 15
+    of 90, should agree with how the rest of yigraf already weighs a belief.
+    """
+    now = time.time()
+    return sorted(ids, key=lambda n: (-_relevance(graph, n, config, now), n))
+
+
+def _pinned_block(graph: nx.DiGraph, config: dict, budget_tokens: int) -> tuple[list[str], set[str]]:
+    """Memories flagged ``pinned`` — rendered IN FULL at session start — and the ids that made it in.
+
+    The pin tier answers the one thing relevance cannot: *this holds no matter what you are working
+    on*. It is deliberately narrow — a memory the principal marked, injected once per session, in the
+    position CLAUDE.md occupies — because the failure mode of the per-edit channel was never that it
+    said the wrong thing, it was that saying it on every edit turned it into wallpaper within three.
+
+    **The budget binds, and it drops whole nodes.** If everything is pinned, session start becomes the
+    new wallpaper, so a pin has to be able to *lose*: lowest standing goes first and the elision is
+    stated loudly rather than swallowed. Whole nodes only — half a constraint is worse than an honest
+    count, the same rule :func:`_fit_obligations` follows for a governing intent's criteria.
+    """
+    pinned = [n for n in _live_memories(graph) if graph.nodes[n].get("pinned")]
+    if not pinned:
+        return [], set()  # design law #4: a repo that pins nothing pays nothing and hears nothing
+    lines, kept, spent, cap = [], set(), 0, max(0, budget_tokens) * 3
+    for node_id in _by_standing(graph, pinned, config):
+        line = _memory_line(graph, node_id, graph.nodes[node_id])
+        if kept and spent + len(line) + 1 > cap:
+            continue
+        lines.append(line)
+        kept.add(node_id)
+        spent += len(line) + 1
+    if len(kept) < len(pinned):
+        lines.append(f"  … +{len(pinned) - len(kept)} pinned memory(s) elided by "
+                     f"session_start.pinned_budget — raise it, or `yigraf pin <id> --off` some.")
+    return ["Pinned — these hold regardless of what you are working on:", *lines, ""], kept
+
+
+#: How much of a manifest entry's statement survives — enough to recognize a belief, never enough to
+#: substitute for reading it. The manifest's whole job is to make the agent *aware*, not informed.
+_MANIFEST_STATEMENT_CHARS = 96
+
+#: Worst-case chars for one manifest line (``  `` + a 20-char id + a bracketed kind + the statement).
+#: Used only to *reserve* room ahead of the render; the block is then trimmed to what is actually left,
+#: so this being wrong costs a few tokens of slice, never an overrun.
+_MANIFEST_LINE_CHARS = 145
+
+
+def _manifest(graph: nx.DiGraph, config: dict, exclude: set[str], cap: int,
+              char_cap: int | None = None) -> list[str]:
+    """Titles-only index of live memories the packet did NOT otherwise show (``manifest_titles``).
+
+    The cheapest thing in yigraf per token of value, and the answer to the sharpest objection the field
+    put to the whole design: *you will not query memories you can't recall, because you don't know they
+    are there*. Retrieval quality is necessary and nowhere near sufficient — an agent cannot formulate
+    a query for knowledge whose existence it is unaware of, and a fresh session is by construction
+    unaware of everything. Twenty-odd ids and truncated statements (~30 tokens each) convert the whole
+    store from invisible-but-present into a set of known-unknowns, which is the entire precondition for
+    the agent choosing to spend a `context` call. The ids are live handles: `yigraf show <id>` reads one.
+
+    ``exclude`` is what already rendered (pins + the ranked slice), so this never spends budget saying
+    a second time what the packet just said in full. ``char_cap`` is what the packet has ACTUALLY left
+    after the render — the manifest is built last and trimmed to fit, rather than reserved for at a
+    guessed worst case, so the packet cannot overrun by however wrong the guess was.
+    """
+    if cap <= 0:
+        return []
+    rest = [n for n in _live_memories(graph) if n not in exclude]
+    if not rest:
+        return []
+    ordered = _by_standing(graph, rest, config)
+    header = ("Also known — titles only, so you know what there is to ask for "
+              "(`yigraf show <id>` reads one in full):")
+    budget = None if char_cap is None else char_cap - len(header) - 100  # 100 ≈ the elision tail
+    lines, spent = [], 0
+    for node_id in ordered[:cap]:
+        attrs = graph.nodes[node_id]
+        title = (attrs.get("statement") or attrs.get("label") or "").strip().replace("\n", " ")
+        if len(title) > _MANIFEST_STATEMENT_CHARS:
+            title = title[:_MANIFEST_STATEMENT_CHARS - 1].rstrip() + "…"
+        line = f"  {node_id} [{attrs.get('kind', 'memory')}] {title}"
+        if budget is not None and lines and spent + len(line) + 1 > budget:
+            break
+        lines.append(line)
+        spent += len(line) + 1
+    if not lines:
+        return []
+    out = [header, *lines]
+    if len(ordered) > len(lines):
+        out.append(f"  … +{len(ordered) - len(lines)} more not listed — "
+                   f"`yigraf context \"<topic>\"` to search.")
+    return [*out, ""]
 
 
 def _verified_reconcile(graph: nx.DiGraph, drifted_edges: set[tuple[str, str]]) -> list[str]:
@@ -983,28 +1135,42 @@ def _plan_has_open_work(graph: nx.DiGraph, plan_id: str) -> bool:
 
 
 def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None = None,
-                    root: Path | None = None) -> ContextResult | None:
-    """SessionStart re-injection (R8): the active plan + governing intents + any drift.
+                    root: Path | None = None, status_line: str | None = None) -> ContextResult | None:
+    """SessionStart re-injection (R8): the house rules, what is pinned, the active plan + governing
+    intents, every outstanding obligation, and an index of what else the graph knows.
 
     Seeds from every intent and **active** plan node, traverses to the implementing code, and renders
-    so a flow interrupted by ``/clear`` resumes instead of restarting. ``None`` (silent) if there are
-    no intents or active plans yet. "Active" is a plan not in the ``completed/`` phase **and** still
-    holding open work (:func:`_plan_has_open_work`); a plan whose boxes are all checked drops out of the
-    seed set so a finished milestone stops costing the agent context on every reset. Its tasks are not
-    seeded directly — an active plan reaches them over its ``contains`` edges during traversal.
+    so a flow interrupted by ``/clear`` resumes instead of restarting. "Active" is a plan not in the
+    ``completed/`` phase **and** still holding open work (:func:`_plan_has_open_work`); a plan whose
+    boxes are all checked drops out of the seed set so a finished milestone stops costing the agent
+    context on every reset. Its tasks are not seeded directly — an active plan reaches them over its
+    ``contains`` edges during traversal.
+
+    **Obligations are global here, and the packet no longer depends on the traversal reaching them.**
+    Both were scoped to ``in_view`` — whatever the seed traversal happened to touch — which combined
+    with the seed rule above into a silent coverage hole: a repo that has just closed every task seeds
+    no plan, so a stale completion or a drifted belief had nothing to hang off and SessionStart read as
+    a clean dashboard while ``yigraf status`` said ``⚠ 2 stale``. That is exactly backwards — a repo
+    between milestones is when a forgotten obligation goes unnoticed longest. They are now global like
+    :func:`_capture_gaps`, which had always been right for the same stated reason, and bounded by
+    :func:`_drift_block` / :func:`_stale_block` so going global cannot flood.
+
+    Three of the channels do not rank at all — the preamble, the pins, and the manifest (see the
+    section header above :func:`_pinned_block`). They are charged against the same budget as the slice,
+    so a bloated preamble visibly costs the ranked content it displaces, which is the feedback whoever
+    wrote it needs. ``None`` (silent) only when there is genuinely nothing to say.
     """
     budget = budget_tokens or config.get("retrieval", {}).get("query_token_budget", 4000)
+    scfg = config.get("session_start", {}) or {}
     seeds = sorted(
         n for n, a in graph.nodes(data=True)
         if a.get("family") == "intent"
         or (a.get("family") == "plan" and a.get("kind") == "plan"
             and a.get("phase") != "completed" and _plan_has_open_work(graph, n))
     )
-    if not seeds:
-        return None
 
-    hops, parent = _traverse(graph, seeds, config)
-    ranked = _rank(graph, hops, {}, config)
+    hops, parent = _traverse(graph, seeds, config) if seeds else ({}, {})
+    ranked = _rank(graph, hops, {}, config) if hops else []
     # Orient on what's *left*, not a ledger of shipped work: drop done tasks from the render so a
     # part-done plan shows only its open steps, and a done task pulled in via its (still-governing)
     # intent's `tracks` edge doesn't re-cost context (design law #4). Drift/capture-gap lines are
@@ -1013,29 +1179,67 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
               if not (graph.nodes[n].get("kind") == "task" and graph.nodes[n].get("state") == "done")]
 
     drift_items: list = []
-    stale_lines: list[str] = []
+    stale_items: list = []
     drifted_edges: set[tuple[str, str]] = set()
-    in_scope = set(hops)
     for item in compute_drift(graph):
         if item.kind == "renamed":
             continue
         drifted_edges.add((item.task_id, item.locator))  # full set — _verified_reconcile needs it
-        in_view = item.task_id in in_scope or item.locator in in_scope
         if not is_surfaced(graph, item):  # done-task implements drift → STALE completion (int:drift-as-stale)
-            if in_view:  # SessionStart orientation is a principal-facing dashboard, not the edit hook
-                stale_lines.append(_stale_line(item))
-            continue
-        if in_view:
+            stale_items.append(item)  # principal-facing dashboard, never the edit hook (mem:056)
+        else:
             drift_items.append(item)
 
     reconcile = _verified_reconcile(graph, drifted_edges)
     capture = _capture_gaps(graph)  # global: SessionStart is the orientation dashboard for graph health
     task_reconcile = _implemented_open_tasks(graph, drifted_edges)
     conflicts = _pending_conflicts(graph)
-    return _render(graph, ranked, "active plan & governing intents", _drift_block(drift_items, config), reconcile,
-                   budget, root=root, config=config, capture_lines=capture,
-                   task_reconcile_lines=task_reconcile, conflict_lines=conflicts,
-                   stale_lines=sorted(stale_lines), parent=parent)
+
+    # The head: verbatim house rules + the live counts, ahead of everything ranked. Unconditional by
+    # design — its content is identical every session and is precisely what no ranker reaches — so it
+    # is also what keeps the packet from going silent in the seedless case below.
+    head: list[str] = []
+    preamble = (scfg.get("preamble") or "").strip()
+    if preamble:
+        head.extend([preamble, ""])
+    if status_line:
+        head.extend([status_line.rstrip(), ""])
+
+    pinned_lines, pinned_ids = _pinned_block(graph, config, int(scfg.get("pinned_budget", 800) or 0))
+    ranked = [n for n in ranked if n not in pinned_ids]  # a pin renders in full above; never twice
+
+    # Charge the unranked channels to the same budget the slice draws on — a bloated preamble should
+    # visibly cost the ranked content it displaces, which is the feedback whoever wrote it needs. The
+    # manifest is *reserved* here at a worst case, then built LAST and trimmed to what the render
+    # actually left, so a wrong guess costs a few tokens of slice and can never overrun the packet.
+    manifest_cap = int(scfg.get("manifest_titles", 15) or 0)
+    head_chars = sum(len(ln) + 1 for ln in head + pinned_lines)
+    reserved = head_chars + manifest_cap * _MANIFEST_LINE_CHARS
+    drift_lines, stale_lines = _drift_block(drift_items, config), _stale_block(stale_items, config)
+    result = _render(graph, ranked, "active plan & governing intents", drift_lines,
+                     reconcile, max(0, budget - reserved // 3), root=root, config=config,
+                     capture_lines=capture, task_reconcile_lines=task_reconcile,
+                     conflict_lines=conflicts, stale_lines=stale_lines, parent=parent)
+
+    # Emit the slice for anything it actually has to say — nodes OR a warning. Gating this on `seeds`
+    # alone would have re-created the very hole the global obligations above close, one level down: a
+    # repo with no intents and every box checked seeds nothing, so its outstanding drift would have
+    # been computed correctly and then thrown away with the empty frame that held it.
+    has_body = bool(ranked or drift_lines or stale_lines or reconcile or capture
+                    or task_reconcile or conflicts)
+    body = [result.text.rstrip()] if has_body else []
+    spent = head_chars + sum(len(p) + 2 for p in body)  # +2: the blank line joining each section
+    manifest = _manifest(graph, config, exclude=set(result.rendered) | pinned_ids, cap=manifest_cap,
+                         char_cap=max(0, budget * 3 - spent))
+    parts = [p for p in ("\n".join(head).rstrip(), "\n".join(pinned_lines).rstrip(),
+                         "\n".join(body).rstrip(), "\n".join(manifest).rstrip()) if p]
+    if not parts:
+        return None  # nothing pinned, no rules, no graph to orient on — stay silent (design law #4)
+    text = "\n\n".join(parts) + "\n"
+    return ContextResult(text=text, token_estimate=len(text) // 3,
+                         nodes_rendered=result.nodes_rendered + len(pinned_ids),
+                         nodes_total=result.nodes_total + len(pinned_ids),
+                         rendered=[*pinned_ids, *result.rendered])
 
 
 def _merge_seeds(lex_match: dict[str, float], sem_match: dict[str, float], config: dict) -> list[str]:
@@ -1107,16 +1311,18 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
     drift_items = compute_drift(graph)
     in_scope = set(hops)
     surfaced: list = []
-    stale_lines: list[str] = []
+    stale_items: list = []
     drifted_edges: set[tuple[str, str]] = set()
     for item in drift_items:
         if item.kind == "renamed":
             continue
         drifted_edges.add((item.task_id, item.locator))  # full set — _verified_reconcile needs it
+        # Scoped, unlike SessionStart: a topic query answers a topic, and the global obligation
+        # dashboard is what session start is *for*. Same split _capture_gaps has always made.
         in_view = item.task_id in in_scope or item.locator in in_scope
         if not is_surfaced(graph, item):  # done-task implements drift → STALE completion (int:drift-as-stale)
             if in_view:  # principal-facing here (a query), never the edit hook — mem:056/mem:81edb
-                stale_lines.append(_stale_line(item))
+                stale_items.append(item)
             continue
         if in_view:
             surfaced.append(item)
@@ -1130,4 +1336,4 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
                    root=root, config=config, capture_lines=capture_lines,
                    relevance_note=_relevance_note(sem_match, query, config), scores=scores,
                    task_reconcile_lines=task_reconcile, conflict_lines=conflicts,
-                   stale_lines=sorted(stale_lines), parent=parent)
+                   stale_lines=_stale_block(stale_items, config), parent=parent)

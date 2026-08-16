@@ -119,6 +119,14 @@ def run_unlink(repo: str | None, task: str, target: str) -> str:
     return _run_cli("unlink", [task, target], repo)
 
 
+def run_show(repo: str | None, target: str) -> str:
+    return _run_cli("show", [target], repo)
+
+
+def run_pin(repo: str | None, target: str, off: bool = False) -> str:
+    return _run_cli("pin", [target] + (["--off"] if off else []), repo)
+
+
 def _rejection_premise_args(valid_when: list[str] | None,
                             invalidated_when: list[str] | None) -> list[str]:
     """CLI args for a rejection's applicability premises (task 3), shared by every --rejected verb."""
@@ -289,6 +297,36 @@ def build_server(default_repo: str | None = None):
             target: the edge to retire, exactly as the task declares it.
         """
         return run_unlink(repo or default_repo, task, target)
+
+    @server.tool()
+    def show(target: str, repo: str | None = None) -> str:
+        """Read ONE node by id, in full — use this whenever yigraf has handed you an id.
+
+        `context` searches by *meaning*; handed an id it returns whichever nodes sit nearest in
+        embedding space, which reads like an answer and is not one. Every drift line, conflict line and
+        session-start manifest entry pre-fills an id — this is the tool that reads it. Nothing is
+        truncated: the whole `why`, the rejected alternatives, every anchor and its current drift state.
+
+        Args:
+            target: a node id or unique prefix — "mem:<id>", "int:<slug>", "task:<plan>/<n>",
+                "sym:<path>#<name>", or "file:<path>". A bare memory hash works too.
+        """
+        return run_show(repo or default_repo, target)
+
+    @server.tool()
+    def pin(target: str, off: bool = False, repo: str | None = None) -> str:
+        """Mark a decision for unconditional injection at every session start.
+
+        For the handful of rules that are load-bearing on EVERY task — the ones that, by construction,
+        never win a relevance ranking because they resemble no particular topic. Keep the set small: a
+        bounded budget drops the lowest-ranked pins, and a session-start block that grows without limit
+        stops being read. Everything else stays reachable through `context` and the titles manifest.
+
+        Args:
+            target: the memory id, e.g. "mem:1678ce10ad2fcc15".
+            off: unpin instead, returning it to relevance-ranked retrieval.
+        """
+        return run_pin(repo or default_repo, target, off)
 
     @server.tool()
     def remember(statement: str, why: str = "", serves: list[str] | None = None,

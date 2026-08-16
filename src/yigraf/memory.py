@@ -207,6 +207,13 @@ class Memory:
     grounding: str = DEFAULT_GROUNDING  # inferred | docs | empirical (int:memory-grounding, C#6)
     attestation: str = DEFAULT_ATTESTATION  # agent | human (int:memory-attestation)
     promotable: bool = False  # a constraint flagged as a candidate enforced check (capture-flow §0a)
+    #: Inject this belief IN FULL at SessionStart, regardless of what the session turns out to be about
+    #: (int:session-orientation). A *routing* flag, not a claim about the belief — which is why it is
+    #: deliberately outside :func:`memory_id`'s payload: pinning changes nothing about what the memory
+    #: asserts, so it must not re-identify the node or fork it from a teammate's identical capture.
+    #: Set it only for the handful of constraints that are load-bearing on every task; the budget
+    #: (``session_start.pinned_budget``) binds, and a pin tier where everything is pinned is wallpaper.
+    pinned: bool = False
     provenance: dict = field(default_factory=dict)
     #: The real "memory/<filename>.md" this node was read from (set by :func:`read_memory`). Lets a
     #: content-addressed (``<slug>-<hash>.md``) file be rewritten/projected by its true path instead of
@@ -284,6 +291,7 @@ def read_memory(path: Path) -> Memory:
         grounding=meta.get("grounding", DEFAULT_GROUNDING),
         attestation=meta.get("attestation", DEFAULT_ATTESTATION),
         promotable=bool(meta.get("promotable", False)),
+        pinned=bool(meta.get("pinned", False)),
         provenance=dict(meta.get("provenance") or {}),
     )
 
@@ -318,6 +326,8 @@ def render_memory(memory: Memory) -> str:
         meta["equivalent_to"] = list(memory.equivalent_to)
     if memory.promotable:
         meta["promotable"] = True
+    if memory.pinned:  # written only when set — an unpinned memory's artifact is byte-unchanged
+        meta["pinned"] = True
     if memory.provenance:
         meta["provenance"] = dict(memory.provenance)
 
@@ -464,6 +474,7 @@ def project_into(graph: nx.DiGraph, root: Path) -> None:
             why=memory.why,
             alternatives=memory.alternatives,
             promotable=memory.promotable,
+            pinned=memory.pinned,  # SessionStart injects these in full (retrieval._pinned_block)
             provenance=dict(memory.provenance),  # the landing tier is recomputed from this (R1)
             source_file=memory.source_file or f"memory/{memory.seq:03d}-{memory.slug}.md",
         )

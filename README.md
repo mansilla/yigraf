@@ -102,11 +102,29 @@ moments — but you can always prompt it directly:
   memory and resurfaces the next time someone touches that code.
 - **Coming back to a project?** *"Ask yigraf what's in flight."* The active plan and open tasks come
   back, so a thread dropped last week picks up where it left off.
+- **A rule that always applies?** *"Pin that."* Most knowledge surfaces because it's *relevant* to what
+  you're doing — but "never write this vendor's APIs from memory" is relevant to everything, which
+  means it ranks nowhere. Pinned rules are injected at the start of every session instead.
+- **Agent says it's done?** *"Have yigraf confirm."* `yigraf status` is the one surface that reports
+  everything outstanding at once; "no open tasks" is not the same as "nothing left to re-verify".
 
 That's the whole loop. Your agent handles the mechanics ([`context`](docs/guide.md#retrieve),
 [`link`](docs/guide.md#link), [`drift`](docs/guide.md#drift),
 [`remember`](docs/guide.md#memory)); you stay in plain language. The deeper mechanics — how drift is
 detected, how conflicts resolve, how a memory earns trust — are in the **[guide](docs/guide.md)**.
+
+### The house rules your agent reads first
+
+Every session starts with a short block of standing instructions, before anything relevance-ranked:
+read the skill, capture as the work lands, check `status` before claiming done. It sits in
+`yigraf/config.yaml` under `session_start.preamble`, and **it is yours to rewrite** — the file is
+committed, so a team's conventions live with the repo rather than in each agent's private memory.
+
+It exists because ranking has a blind spot that better ranking cannot fix. A rule *about how to work
+here* resembles no particular topic, so it never wins a relevance cut; and an agent cannot ask for
+knowledge it doesn't know exists — a fresh session, by construction, knows none of it exists. So
+session start also lists the **titles** of what it didn't have room to show, for about 30 tokens each.
+Knowing something is there is the whole precondition for asking about it.
 
 ## Works with your host
 

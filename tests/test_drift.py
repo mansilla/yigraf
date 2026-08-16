@@ -155,6 +155,66 @@ def test_drift_cli_hides_done_task_drift(tmp_path: Path):
     assert result.exit_code == 0 and "No drift" in result.output
 
 
+# --- The two drift surfaces now agree, and the count has something that can print it ----------------
+
+
+def test_no_drift_says_so_but_owns_up_to_the_stale_it_is_withholding(tmp_path: Path):
+    """`drift` printing "No drift." while `status` says `⚠ 2 stale` reads as a contradiction.
+
+    It is not one — stale is deliberately withheld from the agent-facing drift signal, because a closed
+    task must not nag mid-edit. But a count that no command can print is a dead end: the field had to
+    call `drift.compute_drift` from Python to find out what the number counted.
+    """
+    root = _linked_repo(tmp_path)
+    _mark_task_done(root)
+    _drift_the_body(root)
+    result = runner.invoke(app, ["drift", str(root)])
+    assert "No drift." in result.output
+    assert "1 stale completion(s) not shown" in result.output and "`yigraf drift --stale`" in result.output
+
+
+def test_drift_stale_lists_what_the_count_counts(tmp_path: Path):
+    root = _linked_repo(tmp_path)
+    _mark_task_done(root)
+    _drift_the_body(root)
+    result = runner.invoke(app, ["drift", "--stale", str(root)])
+    assert result.exit_code == 0  # a stale completion is not the CI gate; only live drift is
+    assert "STALE completions" in result.output and "task:auth/1" in result.output
+    assert "reopen the task if the change undid it" in result.output
+
+
+def test_the_drift_report_names_the_relation_the_claim_and_the_verb(tmp_path: Path):
+    """One wording across both surfaces (`retrieval.drift_tail`), plus what the CLI can afford.
+
+    The hook line was kind- and relation-aware while `yigraf drift` printed a bare
+    `soft drift: mem:X → sym:Y (body changed since anchored)` — so the surface an agent reaches for
+    once it knows the verbs was the one with no advice on it. And "something moved" never answers
+    whether the belief still holds, which is what picking between `reaffirm` and `supersede` requires:
+    the report is unbudgeted, so it can simply print the claim.
+    """
+    root = _linked_repo(tmp_path)
+    assert runner.invoke(app, ["remember", "refresh must stay free of I/O", "--repo", str(root),
+                               "--new", "--why", "it runs inside the request path",
+                               "--concerns", SYM]).exit_code == 0
+    _drift_the_body(root)
+    out = runner.invoke(app, ["drift", str(root)]).output
+    assert "soft drift · concerns:" in out              # WHICH anchor list drifted
+    assert '"refresh must stay free of I/O"' in out     # the claim, so the fork can be decided here
+    assert "`reaffirm mem:" in out and "`supersede mem:" in out  # ids pre-filled, same as the hook
+
+
+def test_both_drift_surfaces_share_one_wording(tmp_path: Path):
+    """The regression guard: the hook's line and the CLI's advice come from the same function."""
+    root = _linked_repo(tmp_path)
+    assert runner.invoke(app, ["remember", "a governed decision", "--repo", str(root), "--new",
+                               "--concerns", SYM]).exit_code == 0
+    _drift_the_body(root)
+    graph, _ = build_graph(root, default_config())
+    item = next(i for i in compute_drift(graph) if i.relation == "concerns")
+    assert retrieval.drift_tail(item) in runner.invoke(app, ["drift", str(root)]).output
+    assert retrieval.drift_tail(item) in retrieval._drift_line(item)
+
+
 def test_status_count_excludes_done_task_drift(tmp_path: Path):
     root = _linked_repo(tmp_path)
     _mark_task_done(root)

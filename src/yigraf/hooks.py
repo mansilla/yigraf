@@ -83,7 +83,7 @@ def install_post_commit_hook(root: Path) -> HookResult:
 SKILL_MD = """\
 ---
 name: yigraf
-description: Use when implementing or changing code in this repo to keep intent, code, and the reasoning behind it in sync. Before starting work, run `yigraf context "<topic>"` to surface governing intents, plans, prior decisions, and drift. After finishing a task, run `yigraf link <task> <symbol>` to name the symbols that implement it, and `yigraf remember` the non-obvious choices you made.
+description: Use when implementing or changing code in this repo to keep intent, code, and the reasoning behind it in sync. Before starting work, run `yigraf context "<topic>"` to surface governing intents, plans, prior decisions, and drift. After finishing a task, run `yigraf link <task> <symbol>` to name the symbols that implement it, and `yigraf remember` the non-obvious choices you made. Read this skill before driving the CLI — knowing the verbs is not knowing which one resolves which signal, and the wrong one either rubber-stamps a belief you didn't check or destroys a reasoning trail. Before you report done, run `yigraf status`: up to date means no drift AND no stale, which is not the same as no open tasks.
 ---
 
 # yigraf — the intent↔code spine
@@ -101,6 +101,21 @@ back through it, as a token-cheap map. Don't reach for a separate query or drift
 already covers your change, refine it; don't duplicate. If a decision already settled the question,
 follow it (or `supersede` it on purpose).
 
+Two companions to `context`, for the two questions it structurally cannot answer:
+- **Handed an id?** `yigraf show <id>` reads that one node in full — every anchor, the whole `why`,
+  and which of its anchors are drifting right now. `context` searches by *meaning*, so an id reaches
+  it as a bag of characters and comes back as whatever sits nearest; that reads like an answer and
+  isn't one. Drift lines, conflict lines and the session-start manifest all hand you ids.
+- **Don't know what to ask for?** Session start lists the *titles* of memories the packet didn't show
+  ("Also known"). You can't formulate a query for knowledge you don't know exists, and a fresh session
+  doesn't know any of it exists — so skim the titles, then `show` or `context` what looks relevant.
+
+## 0b. Before you say you're done: `yigraf status`
+"Up to date" means **no drift AND no stale**. Those are different from "no open tasks", and an empty
+`context` packet is evidence of neither — `context` answers the *topic* you asked about, while
+`status` is the only surface that reports both counts unconditionally. `yigraf drift` explains any
+drift; `yigraf drift --stale` lists the stale completions (that's what `⚠ n stale` counts).
+
 ## 1. Link when a task is done (the seam)
 When you finish a task, name the symbols that implement it:
 `yigraf link task:<plan>/<n> sym:<path>#<name>` — this anchors the link to the symbol's current
@@ -116,10 +131,28 @@ plus the rejected option is enough; capture at the *conclusion*, not mid-thinkin
 - Changed your mind? Never edit a decision in place — `yigraf supersede mem:<id> "<new decision>" --why "<what changed>"`. The old one stays as a rejected alternative.
 - Decision still holds after you edited the code it governs? `yigraf reaffirm mem:<id>` — re-stamps the anchor and clears the drift (the honest counterpart to `supersede`: don't re-`remember`, that duplicates).
 - Governing an infra/glue file with **no code symbol** (Dockerfile, buildspec, `*.sh`, `*.json`)? Anchor to the file: `--concerns file:<path>` (whole file), or `--concerns file:<path>:L10-L40` for a line range — region-scoped, so an unrelated edit elsewhere in the file doesn't drift it. `sym:` is for code; `file:` is for everything else. (A whole-file `file:` anchor on *indexed code* is refused — use a symbol or a line range there.)
+  Prefer a **line range** whenever the file *grows* — a log, a running notes file, an append-only
+  record. A whole-file anchor hashes the whole file, so every append drifts it, and you end up
+  reaffirming a claim that nothing has falsified. If what you're asserting is that the file *exists*
+  rather than what's in it, don't cite it as `--evidence` at all.
+- The human genuinely chose this (you asked, they answered)? `yigraf attest mem:<id>` records the
+  principal's endorsement — a sticky trust floor that ranks it up and holds any later agent
+  `supersede` of it *pending* a human. Use it for an elicited preference; never to bless your own call.
+- A rule that is load-bearing on **every** task, not just this code? `yigraf remember … --pin` (or
+  `yigraf pin mem:<id>`) injects it in full at every session start. Relevance ranking structurally
+  cannot reach a rule like that — it resembles no particular topic — so this is the only way it gets
+  seen. Keep the set tiny; the budget binds and drops the rest.
 
 A `--concerns` link is **anchored** like `implements`: edit that code later and yigraf surfaces a
 "re-verify this decision still holds" reconcile. That's the payoff — the next agent to touch the code
 sees the decision and its rationale without reading the history.
+
+**yigraf vs. your host's own memory** — they hold different things, so use both. A yigraf memory is
+*retrieved by relevance and anchored to code*: durable but topical, and it is the only one that can
+tell you your own edit just invalidated it. Your host's project memory is *loaded verbatim every
+session*: small and always-on. Anchored-and-topical → yigraf. Small-and-universal → host memory, or
+`--pin`. Writing a code-anchored finding into a flat file loses the drift signal, which is the whole
+reason to have yigraf at all.
 
 ## 3. Author specs as you plan
 - `yigraf intent <slug> -s "The system SHALL …" --scenario "Given …, When …, Then …" [--design "…"]`
@@ -127,8 +160,12 @@ sees the decision and its rationale without reading the history.
   to track the intent.
 
 ## 4. The three re-verify signals: drift, stale, conflict
-You never poll for these — `yigraf context` and the hooks surface them. Each has **one** resolving verb;
-using the wrong one either rubber-stamps a belief you didn't check or destroys a reasoning trail.
+`yigraf context` and the hooks push these at you as you work, so you rarely have to go looking —
+**but they are scoped**: the hooks to the file you touched, `context` to the topic you asked about. At
+the end of a task that is not enough. `yigraf status` is the authority, and it is the one surface that
+reports every count unconditionally (§0b). Each signal has **one** resolving verb; using the wrong one
+either rubber-stamps a belief you didn't check or destroys a reasoning trail. Read the claim before
+choosing — `yigraf show mem:<id>` prints it in full, and `yigraf drift` now prints it inline.
 
 **Drift** — a live link's anchor no longer matches: soft (the symbol's body changed) or hard (it's
 gone), on `implements` (task→code), `concerns` (decision→code), or `grounded_by` (decision→evidence).
@@ -152,7 +189,9 @@ A pure rename auto-re-anchors and never surfaces. Re-verify the code still satis
 false, it's *unverified*: the evidence for "done" moved. Re-verify, then `yigraf link task:<id> sym:…`
 to re-anchor — or reopen the task if the change actually regressed it. Never flip it to `todo`
 automatically. You won't see these at the edit hook (a closed task must not nag mid-edit); they surface
-in `yigraf context`, at SessionStart, and to your principal at the turn boundary.
+in `yigraf context`, at SessionStart, and to your principal at the turn boundary. This is what
+`status`'s `⚠ n stale` counts — `yigraf drift --stale` lists them. (Plain `yigraf drift` says "No
+drift." even when stale items exist; that isn't a contradiction, it's the suppression above.)
 
 **Conflict** — two live beliefs saying nearly the same thing about the same code, never reconciled.
 Either the cosine sweep found them, or a principal *nominated* them with `dispute`. Read both, then:
@@ -163,7 +202,8 @@ Either the cosine sweep found them, or a principal *nominated* them with `disput
   and actor-stamped so it rides the log to everyone — unlike a swept finding, which is index-derived
   and invisible to anyone without an index. Use it instead of silently moving on.
 - **pending** conflict (an agent supersede of a human-attested decision is held, never applied) → you
-  cannot clear this one. It needs `yigraf attest` from a human. Surface it and move on.
+  cannot clear this one. It needs `yigraf attest` from a human. Surface it and move on. (`attest` is
+  also a verb you can *reach for* — see §2 — when the principal has genuinely made the call.)
 - same provenance tier with no preferred side → that is not a bug. Two equal-authority beliefs stay an
   open question for the principal rather than being tie-broken. Ask, or `dispute` it.
 
@@ -184,8 +224,14 @@ _AGENTS_BLOCK = f"""{_AGENTS_START}
 ## yigraf
 This repo uses **yigraf** (a graph over code, intent, plan, and the *why*). Before changing code, run
 `yigraf context "<topic>"` — the one read command: it surfaces governing intents, prior decisions, and
-any drift to re-verify. After finishing a task, run `yigraf link task:<plan>/<n> sym:<path>#<name>`, and
-`yigraf remember` the non-obvious choices (with `--why` and `--concerns <sym>`).
+any drift to re-verify. Handed a node id by a warning, read it with `yigraf show <id>` (`context`
+searches by meaning and cannot match an id). After finishing a task, run
+`yigraf link task:<plan>/<n> sym:<path>#<name>`, and `yigraf remember` the non-obvious choices (with
+`--why` and `--concerns <sym>`) — as the work lands, not as a closing ritual.
+
+Before you report done, run `yigraf status`: "up to date" means **no drift AND no stale**, which is not
+the same as no open tasks. `yigraf drift` explains the drift; `yigraf drift --stale` lists the stale
+completions. `yigraf cheatsheet` prints every verb and flag.
 {_AGENTS_END}"""
 
 #: Machine-local Claude Code files `yigraf install-claude-hooks` writes — they bake this clone's
@@ -432,10 +478,15 @@ constraints, rejected alternatives). yigraf is wired as an MCP server; use its t
   intents, the active plan, implementing signatures, prior decisions and their *why*, and any drift to
   re-verify. Don't re-derive intent or re-read what the graph already encodes.
 - **After** finishing a task, call `link` to name the symbols it implements, and `remember` the
-  non-obvious decisions (with `why` and `concerns`). Changed your mind? `supersede` the old decision;
-  edited code a decision governs but it still holds? `reaffirm` it to clear the drift.
-  A correction/rule → `note_constraint`.
-- `status` gives a one-line health check (scale, drift, freshness).
+  non-obvious decisions (with `why` and `concerns`) — as the work lands, not as a closing ritual.
+  Changed your mind? `supersede` the old decision; edited code a decision governs but it still holds?
+  `reaffirm` it to clear the drift. A correction/rule → `note_constraint`.
+- **Handed a node id** by a warning? Call `show` with it. `context` searches by *meaning* and cannot
+  match an id except by accident, so it answers an id with proximity noise that reads like an answer.
+- **Before you report done**, call `status`: "up to date" means no drift AND no stale, which is not
+  the same as no open tasks.
+- A rule that is load-bearing on every task, not just this code? `pin` it — relevance ranking cannot
+  reach a rule that resembles no particular topic. Keep the set tiny.
 
 If a spec already governs your change, follow it; if a decision already settled the question, follow
 it (or `supersede` it on purpose).

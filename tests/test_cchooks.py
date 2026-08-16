@@ -106,9 +106,28 @@ def test_session_start_reinjects_the_active_plan(tmp_path: Path):
     assert "plan:auth" in out["hookSpecificOutput"]["additionalContext"]
 
 
-def test_session_start_is_silent_with_no_specs(tmp_path: Path):
+def test_session_start_still_delivers_the_rules_with_no_specs(tmp_path: Path):
+    """A graph with nothing in it yet is exactly when the house rules are the whole payload.
+
+    This inverts the pre-1.4.0 contract deliberately. Silence was right while every channel ranked —
+    nothing to rank, nothing to say — but the preamble does not rank, and an empty graph is the limit
+    case of the problem it exists for: the agent that most needs "capture as the work lands" is the one
+    whose repo has captured nothing. The `Context for` frame stays absent, so the packet costs only
+    what the rules cost.
+    """
     init_workspace(tmp_path)
     (tmp_path / "m.py").write_text("def f():\n    return 1\n")
+    result = runner.invoke(app, ["hook", "session-start"], input=json.dumps({"source": "clear", "cwd": str(tmp_path)}))
+    text = json.loads(result.output)["hookSpecificOutput"]["additionalContext"]
+    assert "Standing rules for this session" in text
+    assert "Context for" not in text  # nothing seeds ⇒ no ranked slice, just the rules + counts
+
+
+def test_session_start_is_silent_when_every_channel_is_off(tmp_path: Path):
+    """Design law #4 survives as an *opt-out*: silence the unranked channels and an empty graph is mute."""
+    init_workspace(tmp_path)
+    cfg = tmp_path / "yigraf" / "config.yaml"
+    cfg.write_text(cfg.read_text() + "\nsession_start:\n  preamble: ''\n  append_status: false\n")
     result = runner.invoke(app, ["hook", "session-start"], input=json.dumps({"source": "clear", "cwd": str(tmp_path)}))
     assert result.output.strip() == ""
 

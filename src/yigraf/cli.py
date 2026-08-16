@@ -21,6 +21,7 @@ import typer
 
 from yigraf import (__version__, artifacts, counters, embeddings, graphdb, memory,
                     obligations, relations, resolution, retrieval, status, update)
+from yigraf import show as show_mod  # aliased: the module and the `show` command share a name
 from yigraf.astnorm import ANCHOR_ALGO, FILE_ANCHOR_ALGO, file_content_hash, parse_file_target
 from yigraf.config import TOKEN_ENV, load_config
 from yigraf.drift import compute_drift, is_reverifiable, is_surfaced
@@ -624,6 +625,7 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
                     pending_supersedes: list[str] | None = None,
                     rejected_valid_when: list[str] | None = None,
                     rejected_invalidated_when: list[str] | None = None,
+                    pinned: bool = False,
                     provenance: dict | None = None) -> memory.Memory:
     """Write a new memory artifact, then re-materialize the view. Shared by remember/supersede/note-constraint.
 
@@ -702,7 +704,7 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
         rejected_invalidated_when=list(rejected_invalidated_when),
         serves=list(serves), concerns=concerns, evidence=evidence,
         supersedes=list(supersedes), pending_supersedes=list(pending_supersedes),
-        grounding=grounding, promotable=promotable, provenance=provenance,
+        grounding=grounding, promotable=promotable, pinned=pinned, provenance=provenance,
         maturity=memory.landing_maturity(provenance),  # proposed for mined/review, else working (task #1)
         source_file=f"memory/{dest.name}",
     )
@@ -722,7 +724,15 @@ def _report_capture(node: memory.Memory) -> None:
         bits.append("concerns " + ", ".join(c.sym for c in node.concerns))
     if node.supersedes:
         bits.append("supersedes " + ", ".join(node.supersedes))
+    if node.pinned:
+        bits.append("pinned")
     typer.echo(f"Captured {node.id} ({'; '.join(bits)})")
+
+
+#: Shared help for the ``--pin`` capture flag and the ``pin`` verb — one wording, three surfaces.
+_PIN_HELP = ("Inject this belief IN FULL at every SessionStart, whatever the session turns out to be "
+             "about. For the few rules that are load-bearing on EVERY task; the budget binds, so a "
+             "repo that pins everything pins nothing.")
 
 
 @app.command()
@@ -738,6 +748,7 @@ def remember(
     grounding: str = typer.Option(None, "--grounding", help=f"How the belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred). empirical = confirmed by a live observation."),
     evidence: list[str] = typer.Option(None, "--evidence", help="What grounds the belief (required for --grounding empirical): sym:<path>#<test> | file:<path> (drift-checked) | commit:<sha> | <url> (repeatable)."),
     new: bool = typer.Option(False, "--new", help="Capture even if it looks like a near-duplicate (skip the dedup guard)."),
+    pin: bool = typer.Option(False, "--pin", help=_PIN_HELP),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
     """Capture a decision/rationale/learned-fact as a memory node (serves an intent, concerns code)."""
@@ -746,7 +757,7 @@ def remember(
                            serves=serves or [], concern_syms=concerns or [], rejected=rejected,
                            supersedes=[], promotable=False, force_new=new, grounding=grounding,
                            evidence_refs=evidence or [], rejected_valid_when=rejected_valid_when or [],
-                           rejected_invalidated_when=rejected_invalidated_when or [])
+                           rejected_invalidated_when=rejected_invalidated_when or [], pinned=pin)
     _report_capture(node)
 
 
@@ -762,6 +773,7 @@ def note_constraint(
     grounding: str = typer.Option(None, "--grounding", help=f"How the belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred). empirical = confirmed by a live observation."),
     evidence: list[str] = typer.Option(None, "--evidence", help="What grounds the constraint (required for --grounding empirical): sym:<path>#<test> | file:<path> (drift-checked) | commit:<sha> | <url> (repeatable)."),
     new: bool = typer.Option(False, "--new", help="Capture even if it looks like a near-duplicate (skip the dedup guard)."),
+    pin: bool = typer.Option(False, "--pin", help=_PIN_HELP),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
     """Capture a constraint memory (flagged promotable to an enforced check; capture-flow §0a)."""
@@ -770,8 +782,48 @@ def note_constraint(
                            serves=serves or [], concern_syms=concerns or [], rejected=rejected,
                            supersedes=[], promotable=True, force_new=new, grounding=grounding,
                            evidence_refs=evidence or [], rejected_valid_when=rejected_valid_when or [],
-                           rejected_invalidated_when=rejected_invalidated_when or [])
+                           rejected_invalidated_when=rejected_invalidated_when or [], pinned=pin)
     _report_capture(node)
+
+
+@app.command()
+def pin(
+    target: str = typer.Argument(..., help="A memory id (mem:<id>) to inject at every SessionStart."),
+    off: bool = typer.Option(False, "--off", help="Unpin instead: drop it back to relevance-ranked retrieval."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Mark a belief for unconditional SessionStart injection — the tier relevance cannot reach.
+
+    Ranking answers "what is relevant to this topic?", which is the right question for a query and the
+    wrong one for orientation. A rule the agent needs on *every* task ("never write this vendor's APIs
+    from memory — grep the pinned refs") resembles no particular task, so it loses every cut no matter
+    how it is worded; and a belief the agent has never heard of is a query it cannot formulate. Pinning
+    is the escape hatch for the first case, and it is deliberately narrow — routing, not a claim, so it
+    changes nothing about what the memory asserts and never re-identifies the node.
+
+    Keep it scarce. ``session_start.pinned_budget`` binds and drops the lowest-standing pins loudly,
+    because a session-start block that grows without limit is the same wallpaper the per-edit channel
+    became. Everything else stays reachable through the titles manifest and ``yigraf context``.
+    """
+    _require_workspace(repo)
+    if not target.startswith("mem:"):
+        _guidance(f"pin takes a memory id (mem:<id>), got: {target}. Intents and active plans already "
+                  f"seed SessionStart unconditionally — only a decision needs pinning.")
+    path = memory.find_memory(repo, target)
+    if path is None:
+        _guidance(f'No memory node with id {target} to pin. Find it with `yigraf context "<topic>"`, '
+                  f"or read one by id with `yigraf show <id>`.")
+    node = memory.read_memory(path)
+    if node.pinned == (not off):
+        _guidance(f"{target} is already {'unpinned' if off else 'pinned'} — nothing to do.")
+    node.pinned = not off
+    path.write_text(memory.render_memory(node), encoding="utf-8")
+    _rebuild(repo)
+    if off:
+        typer.echo(f"Unpinned {target} — it is back to relevance-ranked retrieval.")
+        return
+    typer.echo(f"Pinned {target} — SessionStart now injects it in full, every session. "
+               f"Keep the set small: `yigraf pin <id> --off` to retire one.")
 
 
 @app.command()
@@ -1202,6 +1254,19 @@ def context(
         _guidance(f"--grounding must be one of {', '.join(memory.GROUNDINGS)} (got {grounding}).")
     config = load_config(workspace / "config.yaml")
     graph, _ = graphdb.load_or_build(repo, config)  # materialized view; rebuilt only when inputs changed
+    # An id is not a topic. Handed `context "mem:1678ce10…"` the seeder tokenizes the hex and returns
+    # whatever sits nearest in embedding space under a low-confidence banner — proximity noise that
+    # reads as an answer. Every drift/conflict line now pre-fills an id, so this is the query an agent
+    # makes right after being told what to act on; send it to the verb that reads one (design law #1).
+    if show_mod.looks_like_locator(query):
+        resolved, candidates = show_mod.resolve(graph, query)
+        if resolved:
+            _guidance(f"{query} is a node id, not a topic — read it in full with "
+                      f"`yigraf show {resolved}`. (`context` searches by meaning; it has no way to "
+                      f"match an id except by accident.)")
+        if candidates:
+            _guidance(f"{query} matches {len(candidates)} nodes — read one with `yigraf show <id>`: "
+                      f"{', '.join(candidates[:8])}{' …' if len(candidates) > 8 else ''}")
     _ranked_with_telemetry(repo, graph, config)  # recency/popularity + maturity verdict (R1)
     semantic = embeddings.semantic_scores(repo, graph, config, query)  # {} ⇒ lexical-only (M8 / v0)
     result = retrieval.context(graph, query, config, family=family, budget_tokens=budget,
@@ -1209,7 +1274,57 @@ def context(
                                show_scores=scores)
     _record_injection(repo, graph, result)  # a surfacing is a soft usage signal (sidecar, not the view)
     typer.echo(result.text, nl=False)
-    typer.echo(f"[~{result.token_estimate} tokens · {result.nodes_rendered}/{result.nodes_total} nodes shown]")
+    # The footer carries the obligation counts because it is the one line a truncating caller keeps.
+    # An agent that pipes `context` through `head` — a reasonable thing to do with a long packet —
+    # cut off the ⚠ Stale block, which renders near the end, and missed real obligations for a whole
+    # session. The counts are graph-wide on purpose: the blocks above are scoped to the query, so a
+    # footer that agreed with them would only ever confirm what was already visible.
+    typer.echo(f"[~{result.token_estimate} tokens · {result.nodes_rendered}/{result.nodes_total} "
+               f"nodes shown{_obligation_footer(graph)}]")
+
+
+def _obligation_footer(graph) -> str:
+    """`` · ⚠ 3 drift · 2 stale`` for the context footer — empty when the graph is clean (design law #4)."""
+    items = [i for i in compute_drift(graph) if i.kind in ("soft", "hard")]
+    drifting = sum(1 for i in items if is_surfaced(graph, i))
+    stale = len(items) - drifting
+    bits = ([f"{drifting} drift"] if drifting else []) + ([f"{stale} stale"] if stale else [])
+    return f" · ⚠ {' · '.join(bits)}" if bits else ""
+
+
+@app.command()
+def show(
+    target: str = typer.Argument(..., help="A node id or unique prefix: mem:<id> | int:<slug> | task:<plan>/<n> | sym:<path>#<name> | file:<path>."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Read ONE node by id, in full and unbudgeted — the verb that closes the loop drift opens.
+
+    Every warning yigraf prints hands you an id; this is what reads one. ``context`` cannot: it
+    searches by meaning, so an id reaches the seeder as a bag of hex characters and comes back as
+    whichever nodes happen to sit nearest, under a banner that is easy to skim past. Nothing here is
+    ranked, truncated, or budgeted — a 2000-character ``--why`` prints whole, because that reasoning is
+    the thing the node exists to survive ``/clear`` with.
+
+    Beyond the frontmatter it answers the two questions a caller acting on a drift line actually has:
+    which of this node's anchors are drifting *right now*, and which list each one lives in — a memory
+    can carry the same symbol under both ``concerns`` and ``evidence``, and a different call clears each.
+    """
+    workspace = _require_workspace(repo)
+    config = load_config(workspace / "config.yaml")
+    graph, _ = graphdb.load_or_build(repo, config)
+    _ranked_with_telemetry(repo, graph, config)  # so the shown maturity is the read-time verdict (R1)
+    resolved, candidates = show_mod.resolve(graph, target)
+    if resolved is None:
+        if candidates:
+            _guidance(f"{target} matches {len(candidates)} nodes — name one: "
+                      f"{', '.join(candidates[:10])}{' …' if len(candidates) > 10 else ''}")
+        _guidance(f'No node {target}. Find one by meaning with `yigraf context "<topic>"`, or by '
+                  f"obligation with `yigraf drift` / `yigraf drift --stale` — both print ids.")
+    typer.echo(show_mod.node_detail(graph, resolved, root=repo), nl=False)
+    # A read IS a review-encounter (mem:033): reading a belief and leaving it standing is the same
+    # un-superseded survival the edit hook books, so it feeds maturity exactly like an injection does.
+    _record_injection(repo, graph, retrieval.ContextResult(
+        text="", token_estimate=0, nodes_rendered=1, nodes_total=1, rendered=[resolved]))
 
 
 def _verb_catalog() -> list[dict]:
@@ -1421,29 +1536,69 @@ def _blast_reconcile_lines(graph, drifted_loci: set[str], exclude: set[str]) -> 
             for tid, r in sorted(best.items())]
 
 
+def _report_drift_item(graph, item) -> None:
+    """One drift item for the CLI report: the ids, the node's own claim, then the resolving advice.
+
+    The claim line is what made this report usable. ``soft drift: mem:X → sym:Y (body changed since
+    anchored)`` says *that* something moved, never whether the belief still holds — and deciding
+    between ``reaffirm`` and ``supersede`` requires the belief's text, so the honest workflow was
+    drift → read each → act, with no verb that could do the reading. Printing the title collapses two
+    of the three steps; ``yigraf show <id>`` covers the rest.
+    """
+    if item.kind == "renamed":
+        typer.echo(f"renamed (re-anchored): {item.task_id}  {item.locator} ⇒ {item.new_locator}")
+        return
+    typer.echo(f"{item.kind} drift · {item.relation}: {item.task_id} → {item.locator}")
+    claim = (graph.nodes.get(item.task_id, {}).get("statement")
+             or graph.nodes.get(item.task_id, {}).get("label", ""))
+    if claim:
+        typer.echo(f'    "{claim}"')
+    typer.echo(f"    {retrieval.drift_tail(item)}")
+
+
 @app.command()
 def drift(
     path: Path = typer.Argument(Path("."), help="Repo root (default: current dir)."),
+    stale: bool = typer.Option(False, "--stale", help="Also list STALE completions — done tasks whose implementing symbol drifted. These are what `yigraf status`'s `⚠ n stale` counts."),
 ) -> None:
-    """Report implements-edge drift: soft (body changed), hard (symbol gone), and renames."""
+    """Report drift: soft (body changed), hard (symbol gone), renames — and, with --stale, completions.
+
+    Each item names the relation that drifted (``concerns`` vs ``grounded_by`` vs ``implements``), the
+    claim at stake, and the one verb that resolves it — the same wording the edit hook injects
+    (``retrieval.drift_tail``), because the two surfaces disagreeing about the same event is how an
+    agent ends up running the form it already ran.
+    """
     workspace = _require_workspace(path)
     config = load_config(workspace / "config.yaml")
     graph, _ = build_graph(path, config)  # build re-anchors renames in-memory first
     # Surface only what the agent can honestly act on: a done task's implements drift is provenance,
     # not a re-verify prompt, so it's withheld (int:drift-done-suppression via drift.is_surfaced).
-    items = [i for i in compute_drift(graph) if is_surfaced(graph, i)]
+    all_items = compute_drift(graph)
+    items = [i for i in all_items if is_surfaced(graph, i)]
+    stale_items = [i for i in all_items if i.kind in ("soft", "hard") and not is_surfaced(graph, i)]
 
     if not items:
         typer.echo("No drift.")
-        return
-
+        # …but `status` may simultaneously report `⚠ n stale`, which reads as a contradiction unless
+        # you already know stale is deliberately withheld from the agent-facing drift signal. A count
+        # nothing can print is a dead end: name it, and name the flag that lists it.
+        if stale_items and not stale:
+            typer.echo(f"(⚠ {len(stale_items)} stale completion(s) not shown — `yigraf drift --stale` "
+                       f"lists them. This is what `yigraf status`'s `⚠ n stale` counts.)")
     for item in items:
-        if item.kind == "renamed":
-            typer.echo(f"renamed (re-anchored): {item.task_id}  {item.locator} ⇒ {item.new_locator}")
-        elif item.kind == "soft":
-            typer.echo(f"soft drift: {item.task_id} → {item.locator} ({item.detail})")
-        else:
-            typer.echo(f"hard drift: {item.task_id} → {item.locator} ({item.detail})")
+        _report_drift_item(graph, item)
+
+    if stale and stale_items:
+        typer.echo("")
+        typer.echo("STALE completions (the work shipped; its evidence moved):")
+        for item in stale_items:
+            typer.echo(retrieval._stale_line(item).lstrip().removeprefix("⚠ "))
+    elif items and stale_items and not stale:
+        typer.echo("")
+        typer.echo(f"(⚠ {len(stale_items)} stale completion(s) not shown — `yigraf drift --stale`.)")
+
+    if not items:
+        return
 
     # Beyond the edges the lines above named: which governed nodes are reachable back from a drifted
     # symbol (a task implementing code that *calls* it, a memory concerning its container)? Typed
@@ -2523,14 +2678,33 @@ def _post_tool_use(data: dict) -> dict | None:
     return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": result.text}}
 
 
+def _session_status_line(root: Path, graph, config: dict) -> str | None:
+    """The one-line ``yigraf status`` summary for the SessionStart head, or ``None`` (fail-open).
+
+    Called BEFORE :func:`_ranked_with_telemetry`, and that ordering is load-bearing: the freshness
+    check compares the rebuilt graph byte-for-byte against the persisted view, and the maturity verdict
+    the overlay applies rewrites ``maturity`` — a non-volatile attr — so computing this afterwards
+    would report a spuriously ``stale`` view. Plain text, never ANSI: this goes into the *agent's*
+    context, where escape codes are wasted tokens (design law #2).
+    """
+    try:
+        summary = status.compute_status(graph, root, config)
+        return summary.render_line(color=False)
+    except Exception:
+        return None  # a status failure must not cost the agent its rules and its plan (design law #5)
+
+
 def _session_start(data: dict) -> dict | None:
     root = Path(data.get("cwd") or os.getcwd())
     built = _hook_graph(root)
     if built is None:
         return None
     graph, config = built
+    scfg = config.get("session_start", {}) or {}
+    status_line = (_session_status_line(root, graph, config)
+                   if scfg.get("append_status", True) else None)
     _ranked_with_telemetry(root, graph, config)  # recency/popularity + maturity verdict (R1)
-    result = retrieval.session_context(graph, config, root=root)
+    result = retrieval.session_context(graph, config, root=root, status_line=status_line)
     if result is None:
         return None
     _record_injection(root, graph, result)  # the re-injection is a soft usage signal (sidecar)

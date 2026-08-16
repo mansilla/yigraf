@@ -8,6 +8,7 @@ and that memory's supersedes/append discipline now generalizes to every write:
 - pending supersede (mem:062): recorded, not counted; the target stays authoritative;
 - no phantom nodes: an unresolved edge target is stashed, matching ``memory.project_into``.
 """
+from yigraf.filelog import denormalize_danglings
 from yigraf.fold import fold
 from yigraf.graph import empty_graph, to_node_link
 from yigraf.log import Assertion, InMemoryLog
@@ -112,6 +113,28 @@ def test_unresolved_target_is_stashed_not_phantomed():
     assert "int:missing" not in g               # no phantom node
     assert not g.has_edge("mem:1", "int:missing")
     assert g.nodes["mem:1"]["dangling_edges"][0]["target"] == "int:missing"
+
+
+def test_denormalizing_a_dangling_contains_does_not_kill_the_fold():
+    """A plan whose tasks have not arrived is the ordinary partial-replica shape, not a broken log.
+
+    project_into never produced a dangling `contains` (a plan and its tasks come out of one file), so
+    the bridge to the per-relation `dangling_*` keys had no entry for it and raised `KeyError` on the
+    whole graph — turning "one edge is unresolved" into "this project has no view at all", which is
+    exactly the failure stashing an unresolved edge exists to prevent.
+    """
+    g = fold(_log(_node("plan:a", family="plan", attrs={"kind": "plan"},
+                        edges=[{"relation": "contains", "target": "task:a/1"}])))
+    denormalize_danglings(g)
+    assert "task:a/1" not in g                              # still no phantom task
+    assert g.nodes["plan:a"]["dangling_contains"] == ["task:a/1"]
+
+
+def test_an_unbridged_relation_is_stashed_rather_than_raised():
+    """Fail open: a relation this module has no bridge for costs an unread attr, never the fold."""
+    g = fold(_log(_node("mem:1", edges=[{"relation": "invented_later", "target": "mem:missing"}])))
+    denormalize_danglings(g)
+    assert g.nodes["mem:1"]["dangling_invented_later"] == ["mem:missing"]
 
 
 # -- purity / determinism ---------------------------------------------------------------------------
