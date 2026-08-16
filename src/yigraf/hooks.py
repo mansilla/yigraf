@@ -316,17 +316,29 @@ def install_claude_hooks(root: Path) -> ClaudeHookResult:
                             gitignore_path=gitignore_path, statusline=statusline)
 
 
-def _write_agents_block(agents_path: Path) -> Path:
-    """Insert or refresh the marked yigraf block in AGENTS.md without disturbing the rest."""
-    existing = agents_path.read_text(encoding="utf-8") if agents_path.exists() else ""
+def _write_fenced_section(path: Path, block: str) -> Path:
+    """Insert or refresh a `yigraf:start`/`yigraf:end`-fenced block in a file yigraf does NOT own.
+
+    Used for every *shared* instruction file — AGENTS.md, and the Tier-A hosts whose native context
+    file is a single shared document the user also writes in (Copilot's `.github/copilot-instructions.md`,
+    Gemini CLI's `GEMINI.md`). Wholly-owned rule files (`.cursor/rules/yigraf.mdc`) are clobbered
+    instead; only shared files get a fence, because clobbering one would eat the user's own content.
+    """
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
     if _AGENTS_START in existing and _AGENTS_END in existing:
         head, _, rest = existing.partition(_AGENTS_START)
         _, _, tail = rest.partition(_AGENTS_END)
-        updated = head + _AGENTS_BLOCK + tail
+        updated = head + block + tail
     else:
-        updated = (existing.rstrip() + "\n\n" if existing.strip() else "") + _AGENTS_BLOCK + "\n"
-    agents_path.write_text(updated, encoding="utf-8")
-    return agents_path
+        updated = (existing.rstrip() + "\n\n" if existing.strip() else "") + block + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(updated, encoding="utf-8")
+    return path
+
+
+def _write_agents_block(agents_path: Path) -> Path:
+    """Insert or refresh the marked yigraf block in AGENTS.md without disturbing the rest."""
+    return _write_fenced_section(agents_path, _AGENTS_BLOCK)
 
 
 def _ensure_gitignore(directory: Path, ignore_line: str, comment: str) -> Path:
@@ -434,11 +446,20 @@ it (or `supersede` it on purpose).
 class AmbientRuleHost:
     """A Tier-A host's install target: where its always-on rule file lives and any frontmatter its rule
     format needs to be recognized as always-applied. ``frontmatter`` is prepended verbatim to the shared
-    rule body — empty for hosts that apply every file in the rules dir (Antigravity, Kilo)."""
+    rule body — empty for hosts that apply every file in the rules dir (Antigravity, Kilo).
+
+    ``shared`` splits the two ownership models. False (the default) means yigraf *owns* the file — a
+    dedicated rule in the host's rules dir, rewritten wholesale. True means the host's native context
+    file is one shared document the user also writes in (Copilot's `.github/copilot-instructions.md`,
+    Gemini CLI's `GEMINI.md`), so yigraf may only maintain a `yigraf:start`/`yigraf:end`-fenced section
+    of it — clobbering would eat the user's own instructions. Shared hosts take no frontmatter: their
+    file is always-on by virtue of being *the* context file.
+    """
     name: str
-    rules_dir: tuple[str, ...]  # path parts under the repo root, e.g. (".cursor", "rules")
+    rules_dir: tuple[str, ...]  # path parts under the repo root, e.g. (".cursor", "rules"); () = repo root
     filename: str
     frontmatter: str = ""
+    shared: bool = False
 
 
 #: Cursor `.mdc` and Windsurf rules gate application on frontmatter — without ``alwaysApply``/``always_on``
@@ -454,6 +475,9 @@ _TIER_A_HOSTS: dict[str, AmbientRuleHost] = {
     "windsurf": AmbientRuleHost(
         "windsurf", (".windsurf", "rules"), "yigraf.md",
         frontmatter="---\ntrigger: always_on\ndescription: yigraf — pull governing intent, plan, and prior decisions\n---\n\n"),
+    "kiro": AmbientRuleHost("kiro", (".kiro", "steering"), "yigraf.md"),
+    "gemini": AmbientRuleHost("gemini", (), "GEMINI.md", shared=True),
+    "copilot": AmbientRuleHost("copilot", (".github",), "copilot-instructions.md", shared=True),
 }
 
 
@@ -468,18 +492,23 @@ class AmbientRuleResult:
 def install_ambient_rule(root: Path, host: str) -> AmbientRuleResult:
     """Wire a Tier-A host: write its always-on rule (pointing at the yigraf MCP tools) + the AGENTS block.
 
-    One shape for every ambient-rule host (Antigravity, Kilo, Cursor, Windsurf) — only the rule file's
-    location and any always-on frontmatter differ, both carried by ``_TIER_A_HOSTS[host]``. Both files
-    are committed/shareable. The MCP server is the data channel; the caller prints the ``mcpServers``
-    snippet for the user to add via the host's own MCP editor (global paths are version-specific, so we
-    don't auto-write them).
+    One shape for every ambient-rule host — only the rule file's location, any always-on frontmatter,
+    and whether yigraf *owns* that file differ, all carried by ``_TIER_A_HOSTS[host]``. Hosts with a
+    dedicated rules dir (Antigravity, Kilo, Cursor, Windsurf, Kiro) get a wholly-owned rule file;
+    hosts whose native context file is a shared document (Gemini CLI's `GEMINI.md`, Copilot's
+    `.github/copilot-instructions.md`) get a fenced section instead, so the user's own instructions
+    survive. Both files are committed/shareable. The MCP server is the data channel; the caller prints
+    the ``mcpServers`` snippet for the user to add via the host's own MCP editor (global paths are
+    version-specific, so we don't auto-write them).
     """
     spec = _TIER_A_HOSTS[host]
     root = Path(root).resolve()
-    rules_dir = root.joinpath(*spec.rules_dir)
-    rules_dir.mkdir(parents=True, exist_ok=True)
-    rule_path = rules_dir / spec.filename
-    rule_path.write_text(spec.frontmatter + _AMBIENT_MCP_RULE, encoding="utf-8")
+    rule_path = root.joinpath(*spec.rules_dir) / spec.filename
+    if spec.shared:
+        _write_fenced_section(rule_path, f"{_AGENTS_START}\n{_AMBIENT_MCP_RULE.strip()}\n{_AGENTS_END}")
+    else:
+        rule_path.parent.mkdir(parents=True, exist_ok=True)
+        rule_path.write_text(spec.frontmatter + _AMBIENT_MCP_RULE, encoding="utf-8")
     agents_path = _write_agents_block(root / "AGENTS.md")
     mcp_command = f'"{sys.executable}" -m yigraf mcp --repo "{root}"'
     return AmbientRuleResult(host=host, rule_path=rule_path, agents_path=agents_path,
@@ -535,6 +564,11 @@ HOST_FIDELITY: tuple[HostFidelity, ...] = (
     HostFidelity("kilo", ".kilocode/rules/", False, TIER_AMBIENT, TIER_AMBIENT, "install-kilo"),
     HostFidelity("cursor", ".cursor/rules/*.mdc", False, TIER_AMBIENT, TIER_AMBIENT, "install-cursor"),
     HostFidelity("windsurf", ".windsurf/rules/", False, TIER_AMBIENT, TIER_AMBIENT, "install-windsurf"),
+    HostFidelity("kiro", ".kiro/steering/", False, TIER_AMBIENT, TIER_AMBIENT, "install-kiro"),
+    HostFidelity("gemini", "GEMINI.md (shared context file)", False, TIER_AMBIENT, TIER_AMBIENT,
+                 "install-gemini"),
+    HostFidelity("copilot", ".github/copilot-instructions.md (shared context file)", False,
+                 TIER_AMBIENT, TIER_AMBIENT, "install-copilot"),
 )
 
 #: The Tier-E push-hook hosts, in install order (their installers wire lifecycle hooks, not a rule).
@@ -559,15 +593,31 @@ _HOST_MARKERS = {
     "kilo": (".kilocode",),
     "cursor": (".cursor",),
     "windsurf": (".windsurf",),
+    "kiro": (".kiro",),
+    "gemini": (".gemini", "GEMINI.md"),
+    "copilot": (),  # explicit-only — see below
 }
 #: A host name → the home-dir marker dirs that signal "installed on this machine".
+#: Antigravity ships *under* ``~/.gemini`` (mcp_config lives at ``~/.gemini/antigravity/``), so a bare
+#: ``~/.gemini`` is Gemini CLI, NOT Antigravity — matching it for antigravity mis-wired every Gemini CLI
+#: user with an ``.agents/rules/`` dir their host never reads. Antigravity's home marker is therefore the
+#: narrow ``.gemini/antigravity`` (or its own ``~/.antigravity``); the broad ``~/.gemini`` belongs to
+#: gemini. The reverse overlap is harmless and deliberate: an Antigravity user also has ``~/.gemini``, so
+#: both get wired — which is exactly the documented wire-all-detected behaviour (mem:643ef324c28df1e3).
+#:
+#: Copilot has NO safe marker: ``.github/`` exists in nearly every repo, and Copilot's VS Code extension
+#: dir is version-globbed. Auto-detecting it would false-positive on almost every repository, so it is
+#: reachable only via an explicit ``--host copilot`` / ``install-copilot`` (empty tuples never match).
 _HOST_HOME_MARKERS = {
     "claude": (".claude",),
     "codex": (".codex",),
-    "antigravity": (".gemini", ".antigravity"),
+    "antigravity": (".antigravity", ".gemini/antigravity"),
     "kilo": (".kilocode",),
     "cursor": (".cursor",),
     "windsurf": (".codeium", ".windsurf"),  # Windsurf (Codeium) keeps global state under ~/.codeium
+    "kiro": (".kiro",),
+    "gemini": (".gemini",),
+    "copilot": (),  # explicit-only — see above
 }
 
 

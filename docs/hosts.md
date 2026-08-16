@@ -28,27 +28,53 @@ is the highest tier the host's native seams could reach **without a plugin runti
 | **Kilo Code** | `.kilocode/rules/` | ❌ | **A** | A | `yigraf install-kilo` |
 | **Cursor** | `.cursor/rules/*.mdc` | ❌ | **A** | A | `yigraf install-cursor` |
 | **Windsurf** | `.windsurf/rules/` | ❌ | **A** | A | `yigraf install-windsurf` |
+| **Kiro** | `.kiro/steering/` | ❌ | **A** | A | `yigraf install-kiro` |
+| **Gemini CLI** | `GEMINI.md` (shared context file) | ❌ | **A** | A | `yigraf install-gemini` |
+| **GitHub Copilot** | `.github/copilot-instructions.md` (shared) | ❌ | **A** | A | `yigraf install-copilot` |
 | **any other MCP host** | MCP | ❌ | **P** | P | point at `yigraf mcp` (`docs/mcp.md`) |
 
-The Tier-A hosts (Antigravity + the VS Code family) share **one adapter shape** — an always-on rule
-(`_AMBIENT_MCP_RULE`) pointing the agent at the MCP tools, plus the printed `mcpServers` config. They
-differ *only* in where the rule file lives and whether that host's rule format needs frontmatter to be
-recognized as always-on: Cursor `.mdc` needs `alwaysApply: true`; Windsurf needs `trigger: always_on`;
-Antigravity/Kilo apply every file in their rules dir, so no frontmatter. (Those frontmatter keys are
-host-version-sensitive; if a host renames them the rule degrades to on-demand — it never breaks.)
+Every Tier-A host shares **one adapter shape** — an always-on rule (`_AMBIENT_MCP_RULE`) pointing the
+agent at the MCP tools, plus the printed `mcpServers` config. They differ on only three axes, all
+carried by the `_TIER_A_HOSTS` table:
+
+1. **Where the rule file lives** — `.agents/rules/`, `.kilocode/rules/`, `.cursor/rules/`,
+   `.windsurf/rules/`, `.kiro/steering/`, or the repo root.
+2. **Whether the format needs always-on frontmatter** — Cursor `.mdc` needs `alwaysApply: true`;
+   Windsurf needs `trigger: always_on`; the rules-dir hosts apply every file, so none. (Those keys are
+   host-version-sensitive; if a host renames one the rule degrades to on-demand — it never breaks.)
+3. **Whether yigraf owns the file** (`shared`) — most hosts get a *dedicated* rule file yigraf rewrites
+   wholesale. But **Gemini CLI** (`GEMINI.md`) and **Copilot** (`.github/copilot-instructions.md`) have
+   no rules dir: their always-on context is a single shared document the user also writes in. For those,
+   yigraf maintains **only its `<!-- yigraf:start -->` / `<!-- yigraf:end -->` fenced section** — the
+   same non-clobbering writer used for `AGENTS.md`. Re-installing refreshes the block in place and never
+   duplicates it; everything outside the fence is the user's.
 
 ## One command: `yigraf install`
 
 ```bash
 yigraf install                       # auto-detect the host(s) and wire the right tier for each
-yigraf install --host cursor         # or target one: claude|codex|antigravity|kilo|cursor|windsurf|mcp
+yigraf install --host cursor         # or target one: claude|codex|antigravity|kilo|cursor|
+                                     #   windsurf|kiro|gemini|copilot|mcp
 ```
 
 `auto` detects a host by its config markers — a **repo-local** dir (`.claude`/`.codex`/`.agents`/
-`.kilocode`/`.cursor`/`.windsurf`) **or** a **home** dir (`~/.claude`, `~/.codex`, `~/.gemini`,
-`~/.kilocode`, `~/.cursor`, `~/.codeium`) — and wires each detected one at its tier. If **none** is found
-— or you pass an unsupported `--host` (e.g. `mcp`, or an editor with no rules/hook seam) — it falls back
-to the universal **MCP** server config (Tier P), which any MCP host accepts.
+`.kilocode`/`.cursor`/`.windsurf`/`.kiro`/`.gemini`) **or** a **home** dir (`~/.claude`, `~/.codex`,
+`~/.antigravity`, `~/.kilocode`, `~/.cursor`, `~/.codeium`, `~/.kiro`, `~/.gemini`) — and wires each
+detected one at its tier. If **none** is found — or you pass an unsupported `--host` (e.g. `mcp`, or an
+editor with no rules/hook seam) — it falls back to the universal **MCP** server config (Tier P), which
+any MCP host accepts.
+
+Two detection subtleties are deliberate:
+
+- **`~/.gemini` is Gemini CLI, not Antigravity.** Antigravity ships *under* that directory (its MCP
+  config lives at `~/.gemini/antigravity/`), so Antigravity's home marker is the narrow
+  `~/.gemini/antigravity` (or its own `~/.antigravity`) and the broad `~/.gemini` belongs to Gemini CLI.
+  Matching the broad path for Antigravity gave every Gemini CLI user an `.agents/rules/` dir their host
+  never reads. The reverse overlap stands: an Antigravity user *does* have `~/.gemini`, so both get
+  wired — which is exactly the documented wire-all-detected behaviour.
+- **Copilot is explicit-only.** `.github/` exists in nearly every repository and Copilot's extension dir
+  is version-globbed, so there is no marker that wouldn't false-positive almost everywhere. Copilot is
+  never auto-detected; reach it with `yigraf install-copilot` or `--host copilot`.
 
 ## Tier E — the push hosts (Claude Code, Codex)
 
@@ -73,6 +99,9 @@ yigraf install-antigravity   # .agents/rules/yigraf.md
 yigraf install-kilo          # .kilocode/rules/yigraf.md
 yigraf install-cursor        # .cursor/rules/yigraf.mdc   (frontmatter: alwaysApply: true)
 yigraf install-windsurf      # .windsurf/rules/yigraf.md  (frontmatter: trigger: always_on)
+yigraf install-kiro          # .kiro/steering/yigraf.md
+yigraf install-gemini        # GEMINI.md                        (fenced section — shared file)
+yigraf install-copilot       # .github/copilot-instructions.md  (fenced section — shared file)
 ```
 
 ## Probe: can a VS Code-family host reach Tier E?

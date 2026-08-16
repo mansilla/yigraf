@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 from yigraf.cli import _edited_file, _post_tool_use, app
 from yigraf.hooks import (AMBIENT_HOSTS, EVENT_HOSTS, HOST_FIDELITY, SUPPORTED_HOSTS, TIER_AMBIENT,
-                          _AGENTS_START, _TIER_A_HOSTS, detect_hosts, install_ambient_rule,
+                          _AGENTS_END, _AGENTS_START, _TIER_A_HOSTS, detect_hosts, install_ambient_rule,
                           install_antigravity, install_codex_hooks)
 
 runner = CliRunner()
@@ -84,26 +84,50 @@ def test_install_antigravity_writes_rule_and_mcp_command(tmp_path: Path):
 # ── Tier-A ambient-rule adapters (VS Code family: Kilo / Cursor / Windsurf) ────────────────────────
 
 def test_ambient_hosts_share_one_rule_body_differing_only_in_target(tmp_path: Path):
-    """Every Tier-A host writes the SAME rule body; only the file location + always-on frontmatter differ."""
+    """Every Tier-A host writes the SAME rule body; only the file location, always-on frontmatter, and
+    whether yigraf OWNS the file (dedicated rule) or only a fence of it (shared context file) differ."""
     runner.invoke(app, ["init", str(tmp_path)])
-    expected = {  # host → (rule path relative to root, must-contain frontmatter marker or "")
-        "antigravity": (Path(".agents") / "rules" / "yigraf.md", ""),
-        "kilo": (Path(".kilocode") / "rules" / "yigraf.md", ""),
-        "cursor": (Path(".cursor") / "rules" / "yigraf.mdc", "alwaysApply: true"),
-        "windsurf": (Path(".windsurf") / "rules" / "yigraf.md", "trigger: always_on"),
+    expected = {  # host → (rule path relative to root, frontmatter marker or "", shared?)
+        "antigravity": (Path(".agents") / "rules" / "yigraf.md", "", False),
+        "kilo": (Path(".kilocode") / "rules" / "yigraf.md", "", False),
+        "cursor": (Path(".cursor") / "rules" / "yigraf.mdc", "alwaysApply: true", False),
+        "windsurf": (Path(".windsurf") / "rules" / "yigraf.md", "trigger: always_on", False),
+        "kiro": (Path(".kiro") / "steering" / "yigraf.md", "", False),
+        "gemini": (Path("GEMINI.md"), "", True),
+        "copilot": (Path(".github") / "copilot-instructions.md", "", True),
     }
     assert set(expected) == set(AMBIENT_HOSTS) == set(_TIER_A_HOSTS)  # no host missing coverage
-    for host, (relpath, marker) in expected.items():
+    for host, (relpath, marker, shared) in expected.items():
         res = install_ambient_rule(tmp_path, host)
         assert res.host == host
         assert res.rule_path == tmp_path / relpath
         body = res.rule_path.read_text()
         assert "yigraf (via MCP)" in body and "context" in body  # the shared body
-        if marker:
+        if shared:
+            # A file the user also writes in ⇒ yigraf owns only its fence, never the whole document.
+            assert _AGENTS_START in body and _AGENTS_END in body
+        elif marker:
             assert body.startswith("---") and marker in body.split("# yigraf", 1)[0]  # frontmatter only
         else:
             assert not body.startswith("---")  # no frontmatter — the dir applies every file
         assert _AGENTS_START in res.agents_path.read_text()
+
+
+def test_shared_context_hosts_preserve_user_content_and_are_idempotent(tmp_path: Path):
+    """Gemini CLI / Copilot write into a file the user owns, so yigraf may only maintain its fenced
+    section: the user's prose survives, and re-installing never duplicates the block."""
+    runner.invoke(app, ["init", str(tmp_path)])
+    for host, rel in (("gemini", Path("GEMINI.md")),
+                      ("copilot", Path(".github") / "copilot-instructions.md")):
+        target = tmp_path / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("# House rules\n\nKeep this line.\n", encoding="utf-8")
+        install_ambient_rule(tmp_path, host)
+        install_ambient_rule(tmp_path, host)  # re-install must be idempotent
+        body = target.read_text()
+        assert "Keep this line." in body                       # user content untouched
+        assert body.count(_AGENTS_START) == 1                  # exactly one fence, not two
+        assert body.count(_AGENTS_END) == 1
 
 
 def test_install_host_cursor_wires_ambient_rule_not_hooks(tmp_path: Path):
@@ -148,7 +172,31 @@ def test_detect_hosts_by_repo_and_home_markers(tmp_path: Path):
     assert detect_hosts(repo, home) == []                       # nothing installed/configured
     (repo / ".claude").mkdir(); assert detect_hosts(repo, home) == ["claude"]   # repo marker
     (home / ".codex").mkdir(); assert detect_hosts(repo, home) == ["claude", "codex"]  # home marker
-    (home / ".gemini").mkdir(); assert detect_hosts(repo, home) == ["claude", "codex", "antigravity"]
+    (home / ".gemini").mkdir(); assert detect_hosts(repo, home) == ["claude", "codex", "gemini"]
+
+
+def test_bare_gemini_home_is_gemini_cli_not_antigravity(tmp_path: Path):
+    """Regression: Antigravity lives UNDER ~/.gemini, so a bare ~/.gemini is Gemini CLI. Claiming it for
+    antigravity wired every Gemini CLI user with an `.agents/rules/` dir their host never reads."""
+    repo, home = tmp_path / "repo", tmp_path / "home"
+    repo.mkdir(); home.mkdir()
+    (home / ".gemini").mkdir()
+    assert detect_hosts(repo, home) == ["gemini"]                    # NOT antigravity
+    (home / ".gemini" / "antigravity").mkdir()                       # the narrow marker
+    assert detect_hosts(repo, home) == ["antigravity", "gemini"]     # overlap is deliberate: wire both
+
+
+def test_copilot_is_explicit_only_never_auto_detected(tmp_path: Path):
+    """`.github/` exists in nearly every repo, so auto-detecting Copilot would false-positive almost
+    everywhere. It is reachable only via `--host copilot` / `install-copilot`."""
+    repo, home = tmp_path / "repo", tmp_path / "home"
+    repo.mkdir(); home.mkdir()
+    (repo / ".github").mkdir()
+    assert detect_hosts(repo, home) == []
+    out = runner.invoke(app, ["init", str(repo)])
+    out = runner.invoke(app, ["install-copilot", str(repo)])         # but explicit opt-in works
+    assert out.exit_code == 0
+    assert (repo / ".github" / "copilot-instructions.md").exists()
 
 
 def test_detect_hosts_recognizes_vscode_family(tmp_path: Path):

@@ -2150,6 +2150,46 @@ def install_windsurf_cmd(
     _install_ambient_rule_cmd(path, "windsurf")
 
 
+@app.command(name="install-kiro")
+def install_kiro_cmd(
+    path: Path = typer.Argument(Path("."), help="Repo root to wire up for Kiro."),
+) -> None:
+    """Wire yigraf for Kiro (Tier A — no edit hook): `.kiro/steering/` + MCP.
+
+    Kiro's steering docs are always-on context but expose no edit-lifecycle hook, so push tops out at a
+    rule telling the agent to pull `context`. Writes `.kiro/steering/yigraf.md` + the AGENTS block and
+    prints the MCP-server config to add via Kiro's MCP settings.
+    """
+    _install_ambient_rule_cmd(path, "kiro")
+
+
+@app.command(name="install-gemini")
+def install_gemini_cmd(
+    path: Path = typer.Argument(Path("."), help="Repo root to wire up for Gemini CLI."),
+) -> None:
+    """Wire yigraf for Gemini CLI (Tier A — no edit hook): a fenced block in `GEMINI.md` + MCP.
+
+    Gemini CLI's always-on context is the shared `GEMINI.md`, not a rules dir yigraf can own, so yigraf
+    maintains only its `yigraf:start`/`yigraf:end` section — the user's own instructions survive a
+    re-install. Prints the MCP-server config to add to `.gemini/settings.json`.
+    """
+    _install_ambient_rule_cmd(path, "gemini")
+
+
+@app.command(name="install-copilot")
+def install_copilot_cmd(
+    path: Path = typer.Argument(Path("."), help="Repo root to wire up for GitHub Copilot."),
+) -> None:
+    """Wire yigraf for GitHub Copilot (Tier A — no edit hook): a fenced block in the instructions file.
+
+    Copilot's repo-wide context is the shared `.github/copilot-instructions.md`, so yigraf maintains only
+    its fenced section. Copilot is **explicit-only**: `.github/` exists in nearly every repo and its
+    extension dir is version-globbed, so there is no marker `yigraf install` could auto-detect without
+    false-positiving on almost everything — run this command (or `--host copilot`) to opt in.
+    """
+    _install_ambient_rule_cmd(path, "copilot")
+
+
 def _print_mcp_config(repo: Path) -> None:
     """Print the ``mcpServers`` entry for ``yigraf mcp`` — the universal pull setup any MCP host accepts."""
     cfg = {"mcpServers": {"yigraf": {
@@ -2286,7 +2326,8 @@ def _render_plan(plan: dict) -> None:
 def install_cmd(
     path: Path = typer.Argument(Path("."), help="Repo root to wire up."),
     host: str = typer.Option("auto", "--host",
-                             help="auto | claude | codex | antigravity | kilo | cursor | windsurf | mcp "
+                             help="auto | claude | codex | antigravity | kilo | cursor | windsurf | "
+                                  "kiro | gemini | copilot | mcp "
                                   "(default: auto-detect)."),
     plan: bool = typer.Option(False, "--plan",
                               help="Inspect only: print the menu of what would be wired, apply nothing."),
@@ -2380,7 +2421,7 @@ def install_cmd(
             r = install_codex_hooks(path)
             typer.echo(f"  hooks → {r.hooks_path}  ·  AGENTS → {r.agents_path}")
             typer.echo("  (Codex loads project `.codex/` hooks only for a *trusted* project.)")
-        elif h in AMBIENT_HOSTS:  # antigravity, kilo, cursor, windsurf — one ambient-rule shape
+        elif h in AMBIENT_HOSTS:  # antigravity, kilo, cursor, windsurf, kiro, gemini, copilot
             r = install_ambient_rule(path, h)
             typer.echo(f"  rule → {r.rule_path}  ·  AGENTS → {r.agents_path}")
             typer.echo(f"  ambient rule only (no edit-lifecycle hook); add the yigraf MCP server "
