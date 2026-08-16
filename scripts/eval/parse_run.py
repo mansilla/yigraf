@@ -57,22 +57,50 @@ def _iter_objects(path: Path):
 
 
 def parse_file(path: Path) -> RunMetrics:
-    """Reduce one stream-json transcript to :class:`RunMetrics`."""
+    """Reduce one stream-json transcript to :class:`RunMetrics`.
+
+    Tokens come from the final ``result.usage`` when present, and fall back to the per-turn sum only
+    when it is absent. The per-turn sum alone is wrong in BOTH directions, measured on a live run:
+
+    * **output undercounts ~80×** — streaming assistant messages carry a *partial* ``output_tokens``
+      (observed 3, 3, 3, 1 → "10" for an answer whose real total was **814**).
+    * **input overcounts ~2.5×** — each turn repeats the same ``cache_read_input_tokens``, so summing
+      them double-counts the same prompt prefix (observed 162,973 vs an actual 64,354).
+
+    The README's "sum per assistant turn, not the final result object, so the count is robust across
+    Claude Code versions" rationale is kept as the *fallback* path, not the primary — a robust reading
+    of the wrong quantity is still the wrong quantity.
+    """
     m = RunMetrics()
     for obj in _iter_objects(path):
         kind = obj.get("type")
         if kind == "assistant":
             _account_assistant(obj.get("message") or {}, m)
         elif kind == "result":
-            # Final summary line — authoritative for wall-time / turns / cost only.
+            # Final summary line — authoritative for wall-time / turns / cost AND tokens.
             m.duration_ms = int(obj.get("duration_ms") or m.duration_ms)
             m.num_turns = int(obj.get("num_turns") or m.num_turns)
             m.cost_usd = float(obj.get("total_cost_usd") or m.cost_usd)
+            _account_result_usage(obj.get("usage") or {}, m)
     return m
 
 
+def _account_result_usage(usage: dict, m: RunMetrics) -> None:
+    """Overwrite the per-turn token estimate with the authoritative end-of-run totals, when present."""
+    if not usage:
+        return
+    total_in = (int(usage.get("input_tokens") or 0)
+                + int(usage.get("cache_read_input_tokens") or 0)
+                + int(usage.get("cache_creation_input_tokens") or 0))
+    if total_in:
+        m.input_tokens = total_in          # replaces (never adds to) the double-counted per-turn sum
+    if usage.get("output_tokens"):
+        m.output_tokens = int(usage["output_tokens"])
+
+
 def _account_assistant(message: dict, m: RunMetrics) -> None:
-    """Tally tool calls + per-turn tokens from one assistant message (the per-turn sum, not result.usage)."""
+    """Tally tool calls, plus a per-turn token estimate used ONLY if the run has no final result.usage
+    (see :func:`parse_file` — the per-turn sum under/over-counts and is a fallback, not the source)."""
     for block in message.get("content") or []:
         if isinstance(block, dict) and block.get("type") == "tool_use":
             name = block.get("name") or "<unknown>"

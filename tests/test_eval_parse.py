@@ -1,8 +1,8 @@
 """The eval harness's transcript parser (scripts/eval/parse_run.py).
 
 The parser is the part that must be correct — it's offline-testable without the ``claude`` binary, so
-we pin its contract here: tool-call bucketing, per-turn token summation (not the cumulative result
-object), and median aggregation across runs.
+we pin its contract here: tool-call bucketing, token accounting (the authoritative end-of-run
+``result.usage``, with the per-turn sum only as a fallback), and median aggregation across runs.
 """
 import json
 import sys
@@ -39,9 +39,37 @@ def test_parses_tool_calls_and_buckets(tmp_path: Path):
     assert m.tool_calls == 5
     assert m.reads == 2 and m.greps == 1 and m.mcp_calls == 1
     assert m.by_tool["Read"] == 2 and m.by_tool["Edit"] == 1
-    # Tokens are the per-turn SUM (100+20+50+10), never the cumulative result.usage (999/999).
-    assert m.input_tokens == 150 and m.output_tokens == 30
+    # Tokens come from the authoritative result.usage (999/999), NOT the per-turn sum (150/30). The
+    # per-turn sum is wrong both ways on a real transcript: streaming turns carry partial
+    # output_tokens (undercounts ~80×) and repeat cache_read_input_tokens (overcounts ~2.5×).
+    assert m.input_tokens == 999 and m.output_tokens == 999
     assert m.num_turns == 2 and m.duration_ms == 4200 and m.cost_usd == pytest.approx(0.12)
+
+
+def test_result_usage_counts_cache_tokens_and_wins_over_per_turn_sum(tmp_path: Path):
+    """Cache reads/creation are input the model processed, so they count — and the end-of-run totals
+    replace the per-turn estimate rather than adding to it."""
+    t = _transcript(tmp_path, "cached.jsonl", [
+        _assistant(["Read"], inp=2, out=3),
+        _assistant(["Read"], inp=2, out=3),
+        {"type": "result", "subtype": "success", "duration_ms": 100, "num_turns": 2,
+         "total_cost_usd": 0.01,
+         "usage": {"input_tokens": 4, "cache_read_input_tokens": 64354,
+                   "cache_creation_input_tokens": 19687, "output_tokens": 814}},
+    ])
+    m = parse_run.parse_file(t)
+    assert m.input_tokens == 4 + 64354 + 19687     # not 4 + the per-turn 4
+    assert m.output_tokens == 814                  # not the streamed-partial 6
+
+
+def test_per_turn_sum_is_the_fallback_when_result_usage_is_absent(tmp_path: Path):
+    """A transcript with no final result.usage still reports something — the old per-turn path."""
+    t = _transcript(tmp_path, "noresult.jsonl", [
+        _assistant(["Read"], inp=100, out=20),
+        _assistant(["Edit"], inp=50, out=10),
+    ])
+    m = parse_run.parse_file(t)
+    assert m.input_tokens == 150 and m.output_tokens == 30
 
 
 def test_skips_blank_and_unparseable_lines(tmp_path: Path):

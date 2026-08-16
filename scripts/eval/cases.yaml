@@ -1,20 +1,26 @@
 # yigraf eval cases.
 #
-# `structural` cases are the A/B battery run by run_ab.py: the same question, with vs without yigraf's
-# hooks, on this repo. Pick questions whose honest answer needs the governance graph (intent / plan /
+# `structural` cases are the battery run by run_ab.py: the same question across all three arms, on
+# this repo. Pick questions whose honest answer needs the governance graph (intent / plan /
 # why / drift) — the thing grep+Read can't reconstruct — so a win is attributable to yigraf, not to
 # generic code search.
 #
 # `enforceable` cases test the *enforceable* axis (yigraf's actual moat): introduce drift, then check
-# whether the drift hook changes what the agent does. run_ab.py records these but the pass/fail judgment
-# is currently manual (or an LLM-judge) — see README "Enforceable axis".
+# whether the drift hook changes what the agent does. run_ab.py auto-judges these via judge.py, against
+# BOTH baselines (`ambient` = the hook's own effect, `off` = the whole install's) — see the README.
 
 cases:
+  # NOTE: these target yigraf's OWN repo (self-hosted). Adapt them when pointing --repo elsewhere.
+  # They replaced a placeholder battery that asked about an `auth/session.py` and a "session-refresh
+  # locking strategy" — neither of which exists here, so both arms would have searched for a phantom
+  # and the deltas would have measured nothing. Every subject below is verified real and governed.
+
   - id: why-this-code
     kind: structural
     question: >
-      What governs auth/session.py — which requirement does it implement, which task tracks it, and
-      what decision explains how it works? Answer from the project's own records, not by guessing.
+      What governs the is_surfaced function in src/yigraf/drift.py — which requirement does it
+      implement, which task tracks it, and what decision explains how it works? Answer from the
+      project's own records, not by guessing.
 
   - id: whats-left
     kind: structural
@@ -24,24 +30,26 @@ cases:
   - id: decision-why
     kind: structural
     question: >
-      Why was the current session-refresh locking strategy chosen, and what alternative was rejected?
+      Why do file: anchors hash raw bytes under their own distinct algorithm instead of reusing the
+      extractor's existing file-node content hash, and what alternative was rejected?
 
   # --- enforceable axis (auto-judged by scripts/eval/judge.py) -------------------------------------
   - id: drift-reverify
     kind: enforceable
     # The agent edits a GOVERNED symbol; its own edit drifts the implements-anchor, so the PostToolUse
-    # hook surfaces the drift + what governs it (no pre-seeded setup needed). PASS = the WITH arm
+    # hook surfaces the drift + what governs it (no pre-seeded setup needed). PASS = the `with` arm
     # re-verifies against that governance (acknowledges the task/decision, or runs `yigraf context`/
-    # `link`); the WITHOUT arm (no hook) edits blind. `run_ab.py` scores this automatically via the
+    # `link`); the hookless baseline edits blind. `run_ab.py` scores this automatically via the
     # judge, and restores `restore_paths` after each run. This targets yigraf-self — adapt the
     # symbol/file (and `restore_paths`) to your repo.
     #
     # Three guards are ALL required for a valid hook delta (each cost us a false verdict before it was
     # found, live): (1) the prompt is a BLIND edit — no "check what governs this" hint, so any
     # re-verification is attributable to the hook, not the wording; (2) run with `--isolate`, which moves
-    # aside `.claude/skills/` so the yigraf Skill (itself "run `yigraf context` first") can't leak that
-    # affordance into the WITHOUT arm; (3) `restore_paths` restores the WHOLE `yigraf/` workspace, not
-    # just the edited file — because when the WITH arm enforces it RE-ANCHORS the link (writes
+    # aside `.claude/skills/` AND `AGENTS.md`/`CLAUDE.md` for the `off` arm — each of those tells an agent
+    # to run `yigraf context` with no hook at all, and the instruction files were the leak that made every
+    # yigraf-self delta read ~0 by construction; (3) `restore_paths` restores the WHOLE `yigraf/` workspace, not
+    # just the edited file — because when the `with` arm enforces it RE-ANCHORS the link (writes
     # yigraf/memory/*, yigraf/plans/*), which silently reconciles the drift and poisons every later run
     # (run-0 enforces → symbol no longer drifts → runs 1..N falsely read "edited blind"). And the
     # harness runs `--permission-mode bypassPermissions` by default so the edit actually lands.
