@@ -4,6 +4,34 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+A workspace yigraf cannot write to is now a condition it survives and explains, rather than one it
+crashes on. Both caches under `yigraf/` — the SQLite materialized view and the tree-sitter parse cache
+— are *derived* (design law #6), so neither losing a write can cost an answer; until now either one
+ended the command in a raw storage traceback. No behaviour changes on a writable workspace.
+
+### Fixed
+- **An unwritable `yigraf/.local/` no longer takes down `build` — or, worse, `context`.** A read-only
+  `.local/` (a restrictive umask, a full disk, a `graph.db` left root-owned by a `sudo yigraf` run)
+  raised `sqlite3.OperationalError` straight through Typer: `yigraf build` **and** `yigraf context`
+  both exited 1 on a ~40-line traceback. The read path was the sharper break — a `context` query whose
+  answer was already computed failed because its *cache* could not be refreshed, which is exactly the
+  fail-open guarantee design law #5 makes to hooks. `graphdb.materialize` now raises a typed
+  `ViewUnwritable` carrying the fix, and both seams degrade to an uncached rebuild: reads answer
+  normally and silently, `build` prints its real index counts and then the guidance at exit 0, and a
+  capture (`remember`, `link`, …) warns but still reports the artifact it already wrote to disk. The
+  guidance leads with *nothing was lost* — `graph.db` is a projection of the markdown, and an agent
+  that doesn't know that reads any write failure as data loss. The catch stays narrow (`OSError` +
+  `sqlite3.OperationalError`), so a genuine bug still surfaces as itself.
+- **An unwritable `yigraf/cache/structure.json` no longer takes down the same two commands.**
+  `StructureCache.load` had always started empty on an `OSError`; `save` had no such guard, so one
+  read-only parse cache raised `PermissionError` from `cache.py` during `build_graph` — before the
+  materialized view was ever reached. It now fails open to a re-parse, silently: any condition that
+  refuses this write refuses the view in the same workspace, and that surface already names the path
+  and the fix, so the operator hears about it once (design law #4). A fully read-only `yigraf/` now
+  builds and queries cleanly, emitting exactly one line of guidance.
+
 ## [1.3.1] — 2026-08-13
 
 Six fixes from the first field report on the 1.3.0 shared-log line (one developer, one repo, a day of

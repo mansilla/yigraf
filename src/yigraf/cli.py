@@ -176,6 +176,10 @@ def build(
             "tracks none of your memory artifacts and no shared log is synced. The floor is being "
             "IGNORED (it would otherwise stop anything from ever settling). Commit yigraf/memory/, "
             "connect a shared log, or set the floor back to 0.")
+    if unwritable := graph.graph.get("view_unwritable"):
+        # The index built fine and every count above is real — only the cache didn't stick. Last, so the
+        # exit-0 guidance never swallows the report of the work that DID happen (design law #1).
+        _guidance(f"  ⚠ {unwritable}")
 
 
 def _require_workspace(root: Path) -> Path:
@@ -192,10 +196,17 @@ def _rebuild(root: Path):
     ``refresh_index`` re-embeds only memory/intent nodes whose text changed (a no-op — no model load —
     when nothing did), so a captured decision/intent becomes semantically searchable immediately.
     Returns the rebuilt graph, so a caller that needs to read what just landed doesn't build it twice.
+
+    An unwritable view warns and continues — it never aborts the capture. By the time we get here the
+    artifact is already on disk, and the markdown IS the truth (design law #6): failing now would report
+    a write that fully succeeded as a crash. Warned rather than ``_guidance``-d for the same reason the
+    soft ``--concerns`` warnings are: the caller still has its own result line to print.
     """
     config = load_config(root / WORKSPACE_DIRNAME / "config.yaml")
     graph, _ = graphdb.rebuild(root, config)  # build + re-materialize the gitignored view
     embeddings.refresh_index(root, graph, config)
+    if unwritable := graph.graph.get("view_unwritable"):
+        typer.echo(f"⚠ {unwritable}")
     return graph
 
 

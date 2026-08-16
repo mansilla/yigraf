@@ -33,6 +33,23 @@ def test_build_projects_the_repo_structure(tmp_path: Path):
     assert "sym:src/pkg/b.py#g" in graph
 
 
+def test_an_unwritable_parse_cache_never_breaks_the_build(tmp_path: Path):
+    """Design law #5: ``structure.json`` is a speed cache, so refusing its write costs a re-parse only.
+
+    ``StructureCache.load`` has always started empty on an ``OSError``; ``save`` did not, so a read-only
+    ``yigraf/cache/`` ended both `build` and `context` in a raw ``PermissionError``. Blocked here by
+    putting a *directory* where the cache file goes — the same ``OSError``, but reproducible under any
+    uid (a root-run CI writes straight through ``chmod 444``) and on any platform.
+    """
+    _make_repo(tmp_path)
+    (tmp_path / "yigraf" / "cache" / "structure.json").mkdir(parents=True)
+
+    graph, stats = build_graph(tmp_path, default_config())        # must not raise
+    assert stats.files == 3 and "sym:src/pkg/a.py#f" in graph     # the full, correct projection
+    result = runner.invoke(app, ["build", str(tmp_path)])
+    assert result.exit_code == 0
+
+
 def test_intra_repo_import_resolves_to_an_edge(tmp_path: Path):
     _make_repo(tmp_path)
     graph, _ = build_graph(tmp_path, default_config())

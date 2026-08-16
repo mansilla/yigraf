@@ -94,9 +94,24 @@ class StructureCache:
                 del self.entries[relpath]
 
     def save(self, path: Path) -> None:
-        """Write the cache as deterministic JSON (sorted keys)."""
+        """Write the cache as deterministic JSON (sorted keys); a refused write is survived, not raised.
+
+        Symmetric with :meth:`load`, which has always started empty on an ``OSError``: this is a pure
+        SPEED cache — its loss costs a re-parse, never an answer — so a read-only or full
+        ``yigraf/cache/`` must not take down ``build``, nor the ``context`` query that only incidentally
+        refreshes it (design law #5). Before this guard, one unwritable ``structure.json`` ended both in
+        a raw ``PermissionError`` traceback.
+
+        Silent, unlike :func:`yigraf.graphdb.materialize`'s guidance, because the operator has nothing
+        distinct to act on: any condition that refuses this write refuses the materialized view in the
+        same workspace, and that surface already names the path and the fix. Saying it twice would spend
+        the agent's attention on one problem twice (design law #4).
+        """
         p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
         out = {"format": CACHE_FORMAT, "algo": self.algo, "files": self.entries,
                "maturity": self.maturity}
-        p.write_text(json.dumps(out, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps(out, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        except OSError:
+            pass
