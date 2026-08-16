@@ -4,14 +4,175 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.4.0] — 2026-08-16
 
-Three unrelated lines of work. A workspace yigraf cannot write to is now a condition it survives and
-explains rather than one it crashes on — both caches under `yigraf/` are *derived* (design law #6), so
-losing either write can never cost an answer, yet either one ended the command in a raw storage
-traceback. Three more hosts reach Tier A, two of them through a shared context file yigraf may only
-fence a section of. And the eval harness can finally produce an honest number, which it could not do
-before — including one about yigraf that is unflattering.
+**A store's value is bounded by what the agent can be made aware of without already knowing it.**
+
+That sentence is the whole release, and it comes from a second field report — four sessions on the
+same repo, the author's agent driving. The report's sharpest moment is a two-line exchange. The agent
+had just carefully established that prose-shaped knowledge *is* retrievable, so the only gap was that
+it couldn't be pushed. Its principal replied: *"yes, but you will not query memories that you can't
+recall because you don't know are there."* That dismantles it. **Retrievable** means "if I ask the
+right question, it comes back" — verified working. **Reachable** means "something causes me to ask" —
+and that was only ever true for knowledge anchored to a symbol the agent happened to edit. Everything
+else was *invisible-but-present*: it counts as coverage in `status` (129 decisions!) while
+contributing nothing, and the failure is unfalsifiable from inside the session, because you cannot
+notice the absence of something you never knew about.
+
+Per-edit symbol matching answers *"what is relevant to this line?"*. The unanswered and more important
+question is *"what would this agent regret not knowing before it starts?"* — which cannot be derived
+from a symbol, because no symbol has been touched yet. So session start grows three channels that
+deliberately **do not rank**, and every obligation the graph is carrying now reaches it.
+
+The same report also documented the honest half: an agent that read yigraf all session and never
+wrote to it, ignoring ~15 consecutive drift warnings — not because the warnings were unclear, but
+because they arrived as tool-result context labelled "Context for", which reads as *reference about
+the code*, while the competing memory system lived in the system prompt and read as *a rule I am
+operating under*. The rules now arrive in the position CLAUDE.md occupies, and for the same three
+reasons it works: **once**, **before any action is chosen**, and **as instruction**.
+
+### Added — the three unranked session-start channels
+- **House rules, verbatim, before anything ranked** (`session_start.preamble`). yigraf ships a default
+  — read the skill before driving the CLI, capture as the work lands, `status` before claiming done,
+  one verb per signal — and it is **yours to rewrite** in the committed `yigraf/config.yaml`, so a
+  team's conventions ride the repo instead of each agent's private memory. Ranking structurally cannot
+  reach this content and no amount of better ranking will: a rule about *using yigraf* has no lexical
+  or semantic affinity with a domain intent, which the field verified from the other side — `attest`
+  does not promote a node into injection (attested two, re-ran the hook, byte-identical payload), and
+  `settled` is earned at read time, not settable. There was simply no channel for it. `""` silences it.
+  A user had already built this as a second, git-excluded SessionStart hook; this is that idea adopted.
+- **`append_status`** ends the head with the one-line `yigraf status`, so the rules arrive with the
+  live counts attached rather than as abstract advice — the detail that made the hand-rolled version
+  earn its place on first run. Computed *before* the telemetry overlay, deliberately: the maturity
+  verdict rewrites a non-volatile attr, so reading it afterwards would report a spuriously stale view.
+- **A pin tier** — `yigraf pin mem:<id>` (`--off` to retire), `remember --pin`, `note-constraint
+  --pin`, both over MCP. Pinned beliefs inject **in full**, every session, whatever the session is
+  about. Pinning is *routing, not a claim*, so it stays outside the content-addressed memory id
+  (mem:063): it changes nothing about what the belief says and must never fork the node from a
+  teammate's identical capture. It rides the assertion log, so a teammate's pin is everyone's.
+  `session_start.pinned_budget` **binds** and drops the lowest-standing pins loudly — a pin tier where
+  everything fits is the next thing to become wallpaper.
+- **A titles manifest** (`session_start.manifest_titles`, default 15). Ids and truncated statements
+  for the live memories the packet did not otherwise show, ~30 tokens each — the cheapest thing in
+  yigraf per token of value, and the direct answer to the exchange above. It converts the store from
+  invisible-but-present into a set of known-unknowns, which is the entire precondition for the agent
+  choosing to spend a `context` call. Measured on this repo: 686 tokens buys awareness of 129
+  decisions. The ids are live handles, which is what the next entry is for.
+- **`yigraf show <id>`** — read one node in full, unbudgeted, over MCP too. Every warning yigraf prints
+  hands the agent an id, and until now no verb took one: `context "mem:1678ce10…"` tokenizes the hex,
+  searches by meaning, and returns whichever nodes sit nearest under a low-confidence banner — an
+  answer-shaped non-answer, worse than a refusal. 1.3.1 made this *more* acute by pre-filling ids in
+  every drift line. Nothing here is ranked or truncated: a 2500-character `--why` prints whole,
+  because that reasoning is what the node exists to survive `/clear` with. `context` handed a bare
+  locator now redirects to it (exit 0, with the command) instead of searching.
+- **`yigraf drift --stale`** lists the completions `status`'s `⚠ n stale` counts. A count no command
+  could print was a dead end — the field had to call `drift.compute_drift` from Python to find out
+  what the number meant. Plain `yigraf drift` now also owns up to what it is withholding, so "No
+  drift." beside `⚠ 2 stale` stops reading as a contradiction.
+
+### Fixed
+- **Every obligation now reaches SessionStart, not just the ones the traversal happened to touch.**
+  Drift and stale lines were gated on `in_view` — the hop set reached from the seeds — and a plan drops
+  out of that seed set the moment its last box is checked (`_plan_has_open_work`, correctly: a
+  finished milestone should not re-cost context forever). Compose the two and a repo that has just
+  closed a milestone has **no path** by which a stale completion or a drifted belief reaches the
+  agent: it reads as a clean dashboard precisely when a forgotten obligation goes unnoticed longest.
+  Measured on yigraf's own graph, which carries 10 surfaced drift and 12 stale completions: **1 drift
+  and 1 stale were reachable at session start; 9 and 11 were invisible.** They are now global, like
+  the `_capture_gaps` call sitting immediately beside them — which had always been right, for exactly
+  this stated reason ("SessionStart is the orientation dashboard for graph health"). Going global
+  means going bounded: stale gets `retrieval.max_stale_lines` (default 4) and the same
+  count-plus-a-verb tail drift got in 1.3.1. `yigraf context` stays scoped to its topic — that split
+  is the point.
+  - A second copy of the same hole, one level down: the ranked slice was emitted only `if seeds`, so a
+    repo with **no intents at all** and every box checked computed its obligations correctly and then
+    threw them away with the empty frame that held them. The slice now renders for anything it has to
+    say — nodes *or* a warning.
+- **The two drift surfaces stopped disagreeing about the same event.** The hook line was relation- and
+  kind-aware; `yigraf drift` printed a bare `soft drift: mem:X → sym:Y (body changed since anchored)`
+  that named neither the relation nor a verb. So the surface an agent reaches for *once it knows the
+  verbs* — which is the steady state after session one — was the one with no advice on it. Both now
+  render from one `retrieval.drift_tail`. The CLI report is unbudgeted, so it also prints **the claim
+  itself**: "something moved" never answers whether the belief still holds, which is exactly what
+  choosing between `reaffirm` and `supersede` requires, and that forced a read step the tool had no
+  verb for.
+- **`show` reads a memory's anchors from its artifact, because the graph cannot hold both.**
+  Discovered building it: `nx.DiGraph` keeps one edge per node pair, so a memory carrying the *same*
+  symbol under `concerns` and under `evidence` projects the second over the first — one of the two
+  anchors is invisible to every edge-derived surface. That is the mechanism behind the field's
+  "reaffirm cleared it and it still drifts" session: each `reaffirm` form updated a different list,
+  both reported success, and the memory looked permanently drifted. Files are truth (design law #6),
+  so `show` compares each stored anchor against its target directly and prints both lists with their
+  own drift state. (The locus form of `reaffirm` still searches only `concerns` — see below.)
+- **The `context` footer carries the obligation counts.** `[~3996 tokens · 31/37 nodes shown · ⚠ 8
+  drift · 11 stale]` — because the footer is the one line a truncating caller keeps. An agent piping
+  `context` through `| head -35` (a reasonable thing to do with a long packet) cut off the ⚠ Stale
+  block, which renders near the end, and missed real obligations for a whole session.
+- **A dangling `contains` no longer kills a fold** (from the yigraf-server line, where it 500s a
+  project overview). `denormalize_danglings` indexed `_TYPED_DANGLING[relation]` directly and had no
+  `contains` entry, because `project_into` never produces one — a plan and its tasks come out of the
+  same file, so locally the target is always there. The *fold* can: a plan assertion arriving without
+  the task assertions it names (a partial replica, or a `since=` pull that starts after them). One
+  unresolved edge became "this project has no view at all", the exact opposite of what stashing an
+  unresolved edge is for. `contains` is now in the map, and an unknown relation falls back to
+  `dangling_<relation>` rather than raising — every reader looks a key up by name, so an unclaimed one
+  is inert.
+
+### Changed
+- **SessionStart is no longer silent on a graph with nothing in it.** Silence was right while every
+  channel ranked — nothing to rank, nothing to say — but the preamble does not rank, and an empty
+  graph is the limit case of the problem it exists for: the agent that most needs "capture as the work
+  lands" is the one whose repo has captured nothing. The ranked frame stays absent, so the packet
+  costs only what the rules cost. Design law #4 survives as an **opt-out**: silence the unranked
+  channels in config and an empty graph is mute again.
+- **All three new channels are charged to the budget, never added to it.** The 1.3.1 lesson was that a
+  block outside the budget does not merely overrun, it *starves the render*; three appended blocks
+  would have re-entered that failure three times. A bloated preamble must visibly cost the ranked
+  content it displaces. The manifest is built **last** and trimmed to what the render actually left,
+  rather than reserved for at a guessed worst case, so a wrong guess costs a few tokens of slice and
+  can never overrun. Measured on this repo: 3946 tokens against the 4000 budget, of which 375 is the
+  rules + status line and 686 the 15 manifest titles.
+
+### Documentation
+- **The skill's `description` now carries the closing check** — in Claude Code that string is injected
+  into the skill listing every session while the *body* is read only on invocation, which makes it the
+  only always-on surface, and it stopped at "context / link / remember". So §4's drift/stale/conflict
+  guidance never reached an agent that had learned those three verbs and was driving the CLI directly
+  — the steady state after session one, and the documented cause of a session that missed 1 drift and
+  2 stale entirely. It now also says *read this skill before driving the CLI* and *up to date means no
+  drift AND no stale*.
+- **§4's "You never poll for these" is corrected.** It was the wrong steer for a closing check, and
+  the agent followed it: the hooks are scoped to the file, `context` to the topic, and **`yigraf
+  status` is the authority** — the only surface reporting every count unconditionally. New §0b says so.
+- **`attest` is documented as a capability, not only as a dead end.** It appeared twice, both inside
+  the pending-conflict bullet as something the agent *cannot* do, so there was no way to learn that
+  capturing an elicited preference-fork is a supported move.
+- **The division of labour with a host's own memory is stated.** A yigraf memory is retrieved by
+  relevance and anchored to code (durable, topical, and the only one that can tell you your own edit
+  invalidated it); a host's project memory is loaded verbatim every session (small, always-on).
+  Anchored-and-topical → yigraf; small-and-universal → host memory, or `--pin`.
+- **Region anchors are motivated for a file that *grows*.** The skill sold them as "so an unrelated
+  edit elsewhere doesn't drift it", which doesn't obviously cover an append-only log — where a
+  whole-file anchor drifts on every append and costs five reaffirms of a claim nothing falsified.
+
+### Still open from the report, deliberately
+`reaffirm <locus>` matches only `concerns`, never `grounded_by` (`show` now at least makes the split
+visible); nothing reports a dangling `grounded_by` ref on a live belief, so `unlink` still has no
+trigger; the `Stop` hook counts new obligations rather than omissions ("0 memories captured across 11
+commits"); an unresolved `file:` anchor still says "typo?" without checking whether the path exists on
+disk; `--evidence` is not sanity-checked against a dated observation it postdates; and `remember`
+still echoes a bare id.
+
+---
+
+## Also in 1.4.0 — three unrelated lines of work
+
+Landed since 1.3.1 and unreleased until now. A workspace yigraf cannot write to is now a condition it
+survives and explains rather than one it crashes on — both caches under `yigraf/` are *derived*
+(design law #6), so losing either write can never cost an answer, yet either one ended the command in
+a raw storage traceback. Three more hosts reach Tier A, two of them through a shared context file
+yigraf may only fence a section of. And the eval harness can finally produce an honest number, which
+it could not do before — including one about yigraf that is unflattering.
 
 No behaviour changes on a writable workspace, and none at all for a host already wired.
 
@@ -81,11 +242,25 @@ No behaviour changes on a writable workspace, and none at all for a host already
   re-verification as the hook did, so yigraf's most distinctive mechanism bought nothing measurable
   over simply telling the agent to ask. One case, one model, n = 8: an open question now, not a claim.
 
-### Upgrading
-- Nothing to do. No wire change, no node-id change, no change to any graph a rebuild produces. A host
-  already wired keeps its existing rule file untouched; the antigravity marker fix only affects what a
-  *future* `yigraf install` auto-detects, and an `.agents/rules/` dir a previous run left in a Gemini
-  CLI repo is inert and safe to delete.
+### Upgrading to 1.4.0
+- **Nothing to do, and no graph changes.** No wire change, no node-id change (pinning is deliberately
+  outside the content-addressed payload), no change to any graph a rebuild produces. A host already
+  wired keeps its existing rule file untouched; the antigravity marker fix only affects what a *future*
+  `yigraf install` auto-detects, and an `.agents/rules/` dir a previous run left in a Gemini CLI repo
+  is inert and safe to delete.
+- **Re-run `yigraf install`** (or `install-claude-hooks`) to refresh `SKILL.md` and the `AGENTS.md`
+  block with the new guidance. Idempotent and non-clobbering, as before.
+- **Your session-start packet will look different**, and that is the release. Expect the house rules
+  at the top, the live `status` line under them, every outstanding obligation (not just the ones the
+  traversal reached), and a titles manifest at the bottom. It stays inside the same
+  `retrieval.query_token_budget`, so the ranked slice shrinks by roughly what the new channels cost —
+  measured on this repo, 375 tokens for the head and 686 for 15 titles, out of 4000.
+- **To tune it**, `yigraf/config.yaml` gains a `session_start:` block (`preamble`, `append_status`,
+  `pinned_budget`, `manifest_titles`) and `retrieval.max_stale_lines`. Existing config files keep
+  working untouched — anything absent falls back to the defaults. Rewrite `preamble` to encode your
+  own conventions; set it to `""` to silence the channel.
+- **If you were running a hand-rolled second SessionStart hook** to tell your agent to read the skill,
+  you can retire it: that is what `session_start.preamble` + `append_status` now do.
 
 ## [1.3.1] — 2026-08-13
 
