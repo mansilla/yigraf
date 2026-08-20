@@ -69,11 +69,12 @@ def test_empty_and_all_done_render_differently(tmp_path: Path):
     assert empty.tasks_total == 0 and "0 task" in empty.render_line() and "✓" not in empty.render_line()
 
 
-def test_freshness_fresh_then_stale_then_absent(tmp_path: Path):
+def test_freshness_fresh_then_behind_then_absent(tmp_path: Path):
+    """"behind", never "stale" — bare "stale" belongs to stale completions (feedback-v3 #13)."""
     root = _repo(tmp_path)
     assert _summary(root).freshness == "fresh"
     (root / SRC).write_text("def refresh(token):\n    return token + 1\n")  # source moved past the view
-    assert _summary(root).freshness == "stale"
+    assert _summary(root).freshness == "behind"
     graphdb.db_path(root).unlink()
     assert _summary(root).freshness == "absent"
 
@@ -197,13 +198,15 @@ def test_status_cli_line_and_json(tmp_path: Path):
 def test_coherence_is_silent_when_clean(tmp_path: Path):
     """No open conflicts ⇒ no coherence segment (design law #4: silence over a permanent '0 conflict')."""
     s = _summary(_repo(tmp_path))
-    assert s.coherence == 0 and "conflict" not in s.render_line()
+    assert s.conflicts == 0 and "conflict" not in s.render_line()
 
 
 def test_coherence_dirty_renders_a_conflict_count(tmp_path: Path):
-    """The coherence-dirty dimension (mem:062) shows in both renders when a principal has conflicts to resolve."""
+    """The coherence-dirty dimension (mem:062) shows in both renders when a principal has conflicts to
+    resolve — and the JSON key matches the rendered word, so a program sees what the line says
+    (feedback-v3 #1: `⚠ 2 conflict` beside a JSON with no conflicts key misled an agent twice)."""
     s = _summary(_repo(tmp_path))
-    s.coherence = 3  # inject the count; detection itself is covered by test_contradiction
+    s.conflicts = 3  # inject the count; detection itself is covered by test_contradiction
     assert "⚠ 3 conflict" in s.render_line()
     assert "3 conflict" in s.render_line(color=True, icon=status.SPIN[0])
-    assert s.as_dict()["coherence"] == 3
+    assert s.as_dict()["conflicts"] == 3 and "coherence" not in s.as_dict()

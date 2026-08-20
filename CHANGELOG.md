@@ -4,6 +4,87 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+**A warning you cannot act on, and a success that did nothing, are the same bug.**
+
+This release is the third field report (feedback-v3, a week of daily use on 1.4.0) applied. Its two
+sharpest findings shaped everything here: a conflict count no command could list — "the only
+actionable information was the integer 1, while every resolving verb takes two ids that nothing hands
+you" — and a `supersede` that silently dropped the predecessor's anchors, leaving a correction that
+would never resurface at the edit hook on the exact symbol it warns about. The report also put the
+first measured number on yigraf's cost: 15 of 23 PostToolUse packets in one session were byte-identical
+repeats, 3.47M tokens for text the model could already read.
+
+### Added
+- **`yigraf conflicts`** — the third re-verify signal finally gets the same listing surface as the
+  other two: every open pair with its shared anchor, cosine, provenance-preferred side, and resolving
+  verbs (same wording as the Stop-hook notice). Exits non-zero when conflicts stand, so CI can gate on
+  it exactly like `drift`. Over MCP too. `yigraf show <mem>` now also reports any open conflict the
+  shown node is a side of — the natural second home, since a reader holding an id is the one most able
+  to resolve it. And `status --json` now carries the count under **`conflicts`** (was `coherence`,
+  a key that matched neither the rendered `⚠ n conflict` nor anything an agent would look for).
+- **`yigraf reanchor <mem> <old> <new>`** — the locus-repair verb: moves one `concerns`/`grounded_by`
+  anchor with **no supersedes edge**. The field paid for its absence four times, each a node whose
+  entire body reads "LOCUS REPAIR ONLY — see the node this supersedes for the argument". One meaning
+  per verb: locus moved → `reanchor` · unchanged locus drifted → `reaffirm` · mind changed →
+  `supersede` · never belonged → `unlink`. Over MCP too.
+- **`--governs`** (on `remember`/`note-constraint`/`supersede`) — a policy anchor for a belief about
+  how a locus is *used* rather than what it contains ("status.md holds ONLY status"). Surfaces at the
+  edit hook exactly like `--concerns`, carries no content hash, **never drifts** — the field's policy
+  memory drifted three times in one session while every flagged edit *obeyed* it, and a ⚠ that is
+  usually noise trains the reader to clear it unread.
+- **`unlink mem:<id>` now retires a `concerns` ref too** (it reached only `grounded_by`; the fix for a
+  mis-anchored capture was hand-editing frontmatter). Refusals on both `unlink` and `reanchor` name
+  every anchor the node actually carries, so "no such anchor" can no longer be read where "wrong list"
+  is the truth.
+
+### Changed
+- **A conflict now leads the Stop-hook obligation notice** (`KIND_ORDER`), because it is the only
+  signal that structurally requires the principal — the agent can re-link a stale completion and
+  re-verify drift, but two same-tier live beliefs stay open until a human decides. This is the *real*
+  mechanism behind the field's "the conflict reached nothing": it was computed all along
+  (`detect_conflicts` self-loads the index), then crowded out — a repo carrying 16 stale completions
+  and one conflict rendered five stale lines and "… 12 more not shown", dropping the one item only
+  that reader could resolve.
+- **Hard `concerns` drift leads with `reanchor`** in both drift surfaces (`retrieval.drift_tail`, so
+  the hook and the CLI keep one wording): "the locus is gone" usually means the subject *moved*, and
+  the old advice — `supersede` as the only exit — is what manufactured the false mind-changes.
+- **`supersede` inherits the predecessor's `concerns`/`governs`/`serves` by default** (explicit flags
+  re-aim, each overriding its own kind), re-resolving inherited loci fresh and saying what carried. A
+  mind-change is about the same subject; a correction that lands with no anchor is inert.
+- **An applied `supersede` (and an `attest` that applies a held one) stamps the predecessor's artifact
+  `status: superseded` + `superseded_by:`** — mirroring `supersede-intent`. Both twins reading
+  `active` in the store is how a retired belief got pinned.
+- **The PostToolUse hook injects nothing when the packet is byte-identical to one this session already
+  received** — a digest-keyed, session-keyed latch in `.local/emitted.json`, same pattern as the
+  obligations announce latch. Anything yigraf would say *differently* re-injects. The single
+  highest-value change by measured tokens (~3.5M returned on the field's session shape), at zero
+  capability cost.
+- **`status` renders index freshness as `behind`, never `stale`** — bare "stale" is reserved for stale
+  completions (one word carrying two health dimensions cost a session six commands), and
+  `drift --stale` with nothing to show now says "No drift, and no stale completions."
+- **`yigraf drift` groups multi-memory loci** — "N memories concern `sym:X` — once re-verified,
+  `reaffirm sym:X` clears …" — the flat per-id list read as one command per memory, and the field ran
+  fourteen where four locus calls sufficed.
+
+### Fixed
+- **`reaffirm --grounding empirical` with standing grounds-drift and no `--evidence` is refused**
+  instead of exiting clean over the ⚠ (the empirical gate only checked that *stored* evidence existed,
+  so the skill's own recipe silently failed to clear grounds-drift). A bare `reaffirm` that leaves
+  grounds-drift standing now says so and names the two verbs that reach it. The skill's §4
+  `grounded_by` bullet carries the full working form.
+- **The locus form `reaffirm <sym|file>` skips superseded memories** — it re-stamped them, counted
+  them in its total, and credited them maturity upholds (re-stamping a node the caller had superseded
+  minutes earlier).
+- **`pin` refuses a superseded memory, naming the successor** — it answered "SessionStart now injects
+  it in full" and injected nothing, correctly but silently, forever.
+- **A bare `sym:<path>` (no `#name`) is refused at capture** with the candidate symbols in that file —
+  it is never valid, could only land as permanent hard drift, and the field filed it three times in
+  one session because the capture "succeeded" and the warning scrolled past.
+- The installed skill's frontmatter `description` shrank 709 → 296 chars (it is resident in every
+  session's prompt whether or not the skill loads), keeping the closing `status` check.
+
 ## [1.4.0] — 2026-08-16
 
 **A store's value is bounded by what the agent can be made aware of without already knowing it.**

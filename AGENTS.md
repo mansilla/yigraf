@@ -9,5 +9,6 @@ searches by meaning and cannot match an id). After finishing a task, run
 
 Before you report done, run `yigraf status`: "up to date" means **no drift AND no stale**, which is not
 the same as no open tasks. `yigraf drift` explains the drift; `yigraf drift --stale` lists the stale
-completions. `yigraf cheatsheet` prints every verb and flag.
+completions; `yigraf conflicts` lists the open knowledge-conflicts (`⚠ n conflict`) with the verbs
+that resolve them. `yigraf cheatsheet` prints every verb and flag.
 <!-- yigraf:end -->

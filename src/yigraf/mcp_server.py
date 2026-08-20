@@ -123,6 +123,26 @@ def run_show(repo: str | None, target: str) -> str:
     return _run_cli("show", [target], repo)
 
 
+def run_reanchor(repo: str | None, target: str, old: str, new: str) -> str:
+    return _run_cli("reanchor", [target, old, new], repo)
+
+
+def run_conflicts(repo: str | None) -> str:
+    """`conflicts` takes its repo as a positional (drift's sibling), so it bypasses ``_run_cli``.
+
+    A non-zero exit here means "conflicts stand" (the CI gate), not a failure — stdout IS the report,
+    so it is returned either way.
+    """
+    root = str(_resolve_root(repo))
+    cmd = [sys.executable, "-m", "yigraf", "conflicts", root]
+    try:
+        done = subprocess.run(cmd, capture_output=True, text=True, timeout=180, cwd=root)
+    except (OSError, subprocess.SubprocessError) as exc:  # pragma: no cover - environmental
+        return f"yigraf conflicts could not run: {exc}"
+    out = done.stdout.strip()
+    return out or done.stderr.strip() or "(yigraf conflicts produced no output)"
+
+
 def run_pin(repo: str | None, target: str, off: bool = False) -> str:
     return _run_cli("pin", [target] + (["--off"] if off else []), repo)
 
@@ -312,6 +332,34 @@ def build_server(default_repo: str | None = None):
                 "sym:<path>#<name>", or "file:<path>". A bare memory hash works too.
         """
         return run_show(repo or default_repo, target)
+
+    @server.tool()
+    def reanchor(target: str, old: str, new: str, repo: str | None = None) -> str:
+        """Move ONE anchor of a memory to the locus its subject moved to — a locus repair, never a
+        mind-change.
+
+        Use when a belief still holds but the code it governs (or the evidence grounding it) lives
+        somewhere else now, or the anchor was mis-declared at capture. No supersedes edge is written:
+        the claim, its why, and its history are untouched. An anchor that never belonged → `unlink`;
+        a mind-change → `supersede`; an unchanged locus that drifted → `reaffirm`.
+
+        Args:
+            target: the memory id, e.g. "mem:1678ce10ad2fcc15".
+            old: the anchor to move, exactly as the node carries it.
+            new: where the subject now lives — "sym:<path>#<name>" or "file:<path>[:L<a>-L<b>]".
+        """
+        return run_reanchor(repo or default_repo, target, old, new)
+
+    @server.tool()
+    def conflicts(repo: str | None = None) -> str:
+        """List open knowledge-conflicts — the pairs `status`'s `⚠ n conflict` counts.
+
+        Each finding names the two belief ids, their shared anchor, how close they read, which side
+        provenance prefers, and the verbs that resolve it (reconcile = compatible, supersede = one
+        side won, dispute = nominate for a principal). The count is never a dead end: this is the
+        listing behind it.
+        """
+        return run_conflicts(repo or default_repo)
 
     @server.tool()
     def pin(target: str, off: bool = False, repo: str | None = None) -> str:

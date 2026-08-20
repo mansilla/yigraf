@@ -83,7 +83,7 @@ def install_post_commit_hook(root: Path) -> HookResult:
 SKILL_MD = """\
 ---
 name: yigraf
-description: Use when implementing or changing code in this repo to keep intent, code, and the reasoning behind it in sync. Before starting work, run `yigraf context "<topic>"` to surface governing intents, plans, prior decisions, and drift. After finishing a task, run `yigraf link <task> <symbol>` to name the symbols that implement it, and `yigraf remember` the non-obvious choices you made. Read this skill before driving the CLI — knowing the verbs is not knowing which one resolves which signal, and the wrong one either rubber-stamps a belief you didn't check or destroys a reasoning trail. Before you report done, run `yigraf status`: up to date means no drift AND no stale, which is not the same as no open tasks.
+description: Keep intent, code, and the reasoning behind them in sync when changing code in this repo. Read this skill before driving the CLI — the wrong verb rubber-stamps or destroys a trail. Before you report done, run `yigraf status`: up to date means no drift AND no stale, not the same as no open tasks.
 ---
 
 # yigraf — the intent↔code spine
@@ -128,13 +128,26 @@ plus the rejected option is enough; capture at the *conclusion*, not mid-thinkin
 - `yigraf remember "<the decision, one line>" --type decision --why "<reasoning>" --serves int:<slug> --concerns sym:<path>#<name> [--rejected "<the alternative + why not>"]`
 - A correction or rule → `yigraf note-constraint "<rule>" --concerns sym:<path>#<name>` (flagged as a
   candidate to promote into an enforced check).
-- Changed your mind? Never edit a decision in place — `yigraf supersede mem:<id> "<new decision>" --why "<what changed>"`. The old one stays as a rejected alternative.
+- Changed your mind? Never edit a decision in place — `yigraf supersede mem:<id> "<new decision>" --why "<what changed>"`. The old one stays as a rejected alternative, and the new one **inherits the old one's `--concerns`/`--serves` anchors** unless you re-aim with explicit flags — a correction that loses its anchor never resurfaces at the edit hook on the exact symbol it warns about.
 - Decision still holds after you edited the code it governs? `yigraf reaffirm mem:<id>` — re-stamps the anchor and clears the drift (the honest counterpart to `supersede`: don't re-`remember`, that duplicates).
+- Decision holds but its **subject moved** (the code lives somewhere else now, or the anchor was
+  mis-declared at capture)? `yigraf reanchor mem:<id> <old> <new>` moves one anchor with **no
+  supersedes trail** — a locus repair is not a mind-change, and filing it as one writes a false entry
+  into the most valuable structure in the graph. An anchor that never belonged at all →
+  `yigraf unlink mem:<id> <ref>` (works for `concerns` and `grounded_by`).
+- A belief about how a file is *used* rather than what it contains ("status.md holds ONLY status")?
+  `--governs file:<path>`: surfaces at the edit hook exactly like `--concerns` but carries no content
+  hash, so it **never drifts** — a content anchor on a usage policy demands a rubber-stamp reaffirm on
+  every edit that obeys it, and a ⚠ that is usually noise trains you to clear it without reading.
 - Governing an infra/glue file with **no code symbol** (Dockerfile, buildspec, `*.sh`, `*.json`)? Anchor to the file: `--concerns file:<path>` (whole file), or `--concerns file:<path>:L10-L40` for a line range — region-scoped, so an unrelated edit elsewhere in the file doesn't drift it. `sym:` is for code; `file:` is for everything else. (A whole-file `file:` anchor on *indexed code* is refused — use a symbol or a line range there.)
-  Prefer a **line range** whenever the file *grows* — a log, a running notes file, an append-only
-  record. A whole-file anchor hashes the whole file, so every append drifts it, and you end up
-  reaffirming a claim that nothing has falsified. If what you're asserting is that the file *exists*
-  rather than what's in it, don't cite it as `--evidence` at all.
+  Prefer a **line range** only for a file that grows at the END — a log, an append-only record. A
+  curated list edited in the middle silently *slides* the range onto unrelated text while leaving it
+  syntactically valid, so a later reaffirm re-stamps the wrong region. When the locus is code, anchor
+  a **symbol** even if the claim feels like it's about a passage — a symbol moves with its body. For a
+  usage policy over a whole document, use `--governs` (§2). And note anchor granularity: a *class*
+  anchor hashes member names, not method bodies — a belief about what a method computes must anchor
+  the method, or it never resurfaces when that arithmetic changes. If what you're asserting is that
+  the file *exists* rather than what's in it, don't cite it as `--evidence` at all.
 - The human genuinely chose this (you asked, they answered)? `yigraf attest mem:<id>` records the
   principal's endorsement — a sticky trust floor that ranks it up and holds any later agent
   `supersede` of it *pending* a human. Use it for an elicited preference; never to bless your own call.
@@ -179,8 +192,12 @@ A pure rename auto-re-anchors and never surfaces. Re-verify the code still satis
   never (or is no longer) true.
 - a decision's `concerns` that still holds → `yigraf reaffirm mem:<id>` (never re-`remember` — that
   duplicates; never `supersede` unless your mind actually changed)
-- `grounded_by` → `yigraf reaffirm mem:<id> --grounding empirical` if you re-observed the evidence,
-  otherwise downgrade the claim to `inferred` — an `empirical` tier whose evidence moved is unearned
+- a decision's anchor whose subject MOVED → `yigraf reanchor mem:<id> <old> <new>` (a locus repair,
+  no supersedes trail); one that never belonged → `yigraf unlink mem:<id> <ref>`
+- `grounded_by` → `yigraf reaffirm mem:<id> --grounding empirical --evidence <ref>` if you re-observed
+  the evidence — **the `--evidence` re-stamp is what clears it**; without it the command is refused
+  rather than exiting clean over a standing ⚠. Otherwise downgrade the claim to `inferred`, or retire
+  a dead ref with `yigraf unlink mem:<id> <ref>` — an `empirical` tier whose evidence moved is unearned
 - an edit-heavy session that drifted many decisions on one locus → `yigraf reaffirm <sym|file>`
   reaffirms every memory concerning that locus at once. Scoped to a locus you *actually re-verified* —
   there is deliberately no blanket "clear all drift", because that is rubber-stamping.
@@ -194,7 +211,10 @@ in `yigraf context`, at SessionStart, and to your principal at the turn boundary
 drift." even when stale items exist; that isn't a contradiction, it's the suppression above.)
 
 **Conflict** — two live beliefs saying nearly the same thing about the same code, never reconciled.
-Either the cosine sweep found them, or a principal *nominated* them with `dispute`. Read both, then:
+Either the cosine sweep found them, or a principal *nominated* them with `dispute`. **`yigraf
+conflicts` lists every open pair** with its shared anchor and the verbs that resolve it — that is what
+`status`'s `⚠ n conflict` counts, and it exits non-zero exactly like `drift`, so a count is never a
+dead end. Read both sides (`yigraf show <id>`), then:
 - they're compatible / one refines the other → `yigraf reconcile mem:<a> mem:<b>`
 - one genuinely wins → `yigraf supersede mem:<loser> "<the surviving claim>" --why "…"`
 - you can see they conflict but the call isn't yours → `yigraf dispute mem:<a> mem:<b> --why "…"`.
@@ -231,7 +251,8 @@ searches by meaning and cannot match an id). After finishing a task, run
 
 Before you report done, run `yigraf status`: "up to date" means **no drift AND no stale**, which is not
 the same as no open tasks. `yigraf drift` explains the drift; `yigraf drift --stale` lists the stale
-completions. `yigraf cheatsheet` prints every verb and flag.
+completions; `yigraf conflicts` lists the open knowledge-conflicts (`⚠ n conflict`) with the verbs
+that resolve them. `yigraf cheatsheet` prints every verb and flag.
 {_AGENTS_END}"""
 
 #: Machine-local Claude Code files `yigraf install-claude-hooks` writes — they bake this clone's

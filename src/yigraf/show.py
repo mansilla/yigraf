@@ -73,6 +73,28 @@ def _drift_on(graph: nx.DiGraph, node_id: str) -> list:
             if i.task_id == node_id and i.kind != "renamed" and is_surfaced(graph, i)]
 
 
+def _conflicts_on(graph: nx.DiGraph, node_id: str, root: Path | None, config: dict | None) -> list[str]:
+    """Open knowledge-conflicts this node is a side of — the natural second home for the finding
+    (feedback-v3 #1): a reader holding an id is the one most able to resolve a conflict that node is
+    in, and until now six `show`s on candidate memories printed no conflict line while `status` read
+    `⚠ 1 conflict`. Same wording as the Stop-hook notice (one wording, every surface)."""
+    if root is None or config is None:
+        return []
+    from yigraf import obligations
+    from yigraf.contradiction import detect_conflicts
+
+    out: list[str] = []
+    for c in detect_conflicts(graph, root, config):
+        if node_id not in (c.left, c.right):
+            continue
+        ob = obligations._conflict(c, graph)
+        other = c.right if c.left == node_id else c.left
+        anchor = f" at {c.anchor}" if c.anchor else ""
+        out.append(f"  ⟂ {other}{anchor}: {ob.detail}")
+        out.append(f"    → {ob.verb}")
+    return out
+
+
 def _edges_out(graph: nx.DiGraph, node_id: str, relation: str) -> list[str]:
     return sorted(d for _, d, a in graph.out_edges(node_id, data=True) if a.get("relation") == relation)
 
@@ -146,8 +168,13 @@ def _memory_links(graph: nx.DiGraph, node_id: str, root: Path | None) -> list[st
     if path is None:
         return None
     node = memory_mod.read_memory(path)
+    from yigraf.memory import GOVERNS_ALGO
+
     out = [f"  {'serves':<13} {t}" for t in node.serves]
-    out += [f"  {'concerns':<13} {c.sym}{_anchor_state(graph, c.sym, c.anchor, c.anchor_algo)}"
+    out += [f"  {'concerns':<13} {c.sym}"
+            + ("   (governs — a policy anchor, never drifts)"
+               if (c.anchor_algo or "") == GOVERNS_ALGO
+               else _anchor_state(graph, c.sym, c.anchor, c.anchor_algo))
             for c in node.concerns]
     for ev in node.evidence:
         if ev.anchor is None and not ev.ref.startswith(("sym:", "file:")):
@@ -228,8 +255,9 @@ def _structure_detail(graph: nx.DiGraph, node_id: str, attrs: dict) -> list[str]
     return out
 
 
-def node_detail(graph: nx.DiGraph, node_id: str, root: Path | None = None) -> str:
-    """The full, unbudgeted rendering of one node: its content, its links, and its live drift."""
+def node_detail(graph: nx.DiGraph, node_id: str, root: Path | None = None,
+                config: dict | None = None) -> str:
+    """The full, unbudgeted rendering of one node: content, links, live drift, and open conflicts."""
     attrs = graph.nodes[node_id]
     family = attrs.get("family")
     if family == "memory":
@@ -264,4 +292,8 @@ def node_detail(graph: nx.DiGraph, node_id: str, root: Path | None = None) -> st
     if items:
         out += ["", f"⚠ Drift ({len(items)}):"]
         out += [f"  {i.locator}: {drift_tail(i)}" for i in items]
+
+    conflict_lines = _conflicts_on(graph, node_id, root, config)
+    if conflict_lines:
+        out += ["", f"⚠ Conflict ({len(conflict_lines) // 2}):", *conflict_lines]
     return "\n".join(out).rstrip() + "\n"

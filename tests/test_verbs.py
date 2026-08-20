@@ -199,10 +199,12 @@ def test_downgrading_first_then_retiring_the_dead_ref_is_the_honest_path(tmp_pat
 
 
 def test_unlink_names_what_actually_grounds_the_memory(tmp_path: Path):
-    """Same guidance shape as the task path: a ref that reads right but isn't the string on disk."""
+    """Same guidance shape as the task path: a ref that reads right but isn't the string on disk.
+    The refusal names EVERY anchor list (feedback-v3 #2: the grounded_by-only wording read as 'this
+    memory has no such anchor' while `show` listed a concern two lines later)."""
     root, mem_id = _grounded(tmp_path, extra_evidence=True)
     out = _run(["unlink", mem_id, "sym:tests/test_auth.py#test_nope", "--repo", str(root)])
-    assert "isn't grounded by" in out.output and TEST_SYM in out.output
+    assert "any anchor list" in out.output and TEST_SYM in out.output
 
 
 def test_editing_a_linked_symbol_makes_the_anchor_drift(tmp_path: Path):

@@ -48,6 +48,15 @@ CONF = "EXTRACTED"  # agent-asserted at a commit boundary, not inferred
 GROUNDINGS = ("inferred", "docs", "empirical")
 DEFAULT_GROUNDING = "inferred"
 
+#: The anchor "algorithm" of a policy concern (``--governs``, feedback-v3 #5): the belief governs how
+#: a locus is USED, not what it contains — so it surfaces at the edit hook exactly like a concern but
+#: carries no content hash and NEVER drifts. A whole-file hash on "status.md holds only status" drifted
+#: once per commit while every one of those edits obeyed it; a recurring never-real ⚠ trains the reader
+#: to clear the badge without reading it, which is the failure the reaffirm/supersede split exists to
+#: prevent. drift skips anchorless edges, so this needs no special-casing there; only re-stampers must
+#: leave it alone (cli._reaffirm_concerns).
+GOVERNS_ALGO = "governs-v1"
+
 #: Attestation axis (int:memory-attestation): *who endorsed* a belief — orthogonal to grounding (how)
 #: and maturity (survived?). ``agent`` is the default (an agent-captured node); ``human`` marks a
 #: principal-endorsed node — a trust floor that ranks it up and makes it **sticky**: an agent
@@ -203,6 +212,11 @@ class Memory:
     #: complementary restatement, not a mind-change (which is ``supersedes``).
     equivalent_to: list[str] = field(default_factory=list)
     status: str = "active"
+    #: The successor's id, stamped onto THIS artifact when an applied supersede demotes it — so the
+    #: artifact tells the truth on its own (feedback-v3 #8: both twins read ``active`` in the store
+    #: and a retired belief got pinned). The graph's ``superseded_in`` counter stays the derived
+    #: authority; this is the artifact-side mirror, written by the verb that owns the edge.
+    superseded_by: str | None = None
     maturity: str = "working"  # working → settled by survived review-encounters at read time (mem:033)
     grounding: str = DEFAULT_GROUNDING  # inferred | docs | empirical (int:memory-grounding, C#6)
     attestation: str = DEFAULT_ATTESTATION  # agent | human (int:memory-attestation)
@@ -287,6 +301,7 @@ def read_memory(path: Path) -> Memory:
         pending_supersedes=list(meta.get("pending_supersedes") or []),
         equivalent_to=list(meta.get("equivalent_to") or []),
         status=meta.get("status", "active"),
+        superseded_by=meta.get("superseded_by"),
         maturity=meta.get("maturity", "working"),
         grounding=meta.get("grounding", DEFAULT_GROUNDING),
         attestation=meta.get("attestation", DEFAULT_ATTESTATION),
@@ -312,6 +327,8 @@ def render_memory(memory: Memory) -> str:
         ],
         "supersedes": list(memory.supersedes),
     }
+    if memory.superseded_by:  # stamped by the successor's applied supersede — see the field's docstring
+        meta["superseded_by"] = memory.superseded_by
     if memory.evidence:  # written only when present, like pending_supersedes (keeps the artifact terse)
         meta["evidence"] = [
             {"ref": e.ref, "anchor": e.anchor, "anchor_algo": e.anchor_algo} for e in memory.evidence

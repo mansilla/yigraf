@@ -303,10 +303,16 @@ def drift_tail(item) -> str:
     """
     verb = "changed since anchored" if item.kind == "soft" else "no longer found"
     if item.relation == "concerns":
+        # Hard drift names `reanchor` FIRST, because "the locus is gone" most often means the subject
+        # MOVED, and routing that through `supersede` files a mind-change nobody had — the false-trail
+        # cost that earned the verb (feedback-v3 #2). `supersede` stays for an actual mind-change and
+        # `unlink` for an anchor that never belonged.
         return (f"{verb} — re-verify this decision, then `reaffirm {item.task_id}` or "
                 f'`supersede {item.task_id} "<restated>"`.' if item.kind == "soft" else
-                f"{verb} — the locus is gone, so `reaffirm` can't re-anchor it — if the decision "
-                f'moved, `supersede {item.task_id} "<restated>" --concerns <new locus>`.')
+                f"{verb} — the locus is gone, so `reaffirm` can't re-anchor it — if the subject moved, "
+                f"`reanchor {item.task_id} {item.locator} <new locus>` (no mind-change recorded); if "
+                f'the decision itself changed, `supersede {item.task_id} "<restated>"`; if the anchor '
+                f"never belonged, `unlink {item.task_id} {item.locator}`.")
     if item.relation == "grounded_by":
         # Kind-aware for the same reason the concerns fork is (mem:05f50ec0daf05115): on hard drift the
         # observation is GONE, so "re-verify it still holds" names something unreadable and `--evidence`

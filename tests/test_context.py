@@ -344,14 +344,20 @@ def test_the_verb_fork_is_stated_once_not_per_item(tmp_path: Path):
 
 def test_hard_drift_does_not_offer_reaffirm(tmp_path: Path):
     """Kind-awareness: `reaffirm` cannot re-anchor a locus that is gone (cli.reaffirm refuses it), so
-    offering it on hard drift would send the agent down a dead end — the friend's #4 failure exactly."""
+    offering it on hard drift would send the agent down a dead end — the friend's #4 failure exactly.
+
+    It now leads with `reanchor`: "the locus is gone" usually means the subject MOVED, and routing that
+    through `supersede` files a mind-change nobody had (feedback-v3 #2). All three honest exits are
+    named, and `reaffirm` still is not one of them."""
     root = _repo(tmp_path)
     mem_id = _memory_concerning(root)
     (root / SRC).write_text("def unrelated():\n    return 0\n")  # `refresh` no longer exists
     text = _ctx(root, "refresh idempotent").text
     assert "no longer found" in text
     assert f"`reaffirm {mem_id}`" not in text
-    assert f'`supersede {mem_id} "<restated>" --concerns <new locus>`' in text
+    assert f"`reanchor {mem_id} sym:{SRC}#refresh <new locus>`" in text
+    assert f'`supersede {mem_id} "<restated>"`' in text
+    assert f"`unlink {mem_id} sym:{SRC}#refresh`" in text
 
 
 def test_no_verb_fork_when_no_decision_drifted(tmp_path: Path):

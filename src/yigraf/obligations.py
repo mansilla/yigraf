@@ -42,9 +42,15 @@ import networkx as nx
 from yigraf.contradiction import detect_conflicts
 from yigraf.drift import compute_drift, is_surfaced, stale_completions
 
-#: Obligation kinds, in the order they are announced — most-actionable first. ``stale`` leads because a
-#: completion whose evidence moved is the one signal that silently makes a *claim of done* untrue.
-KIND_ORDER = ("stale", "conflict", "drift")
+#: Obligation kinds, in the order they are announced — most-actionable first. ``conflict`` leads
+#: because it is the only signal that structurally **requires** the principal: the agent can clear a
+#: stale completion by re-linking and drift by re-verifying, but two same-tier live beliefs stay an
+#: open question until a human decides (mem:95444dc — no scalar tiebreak). Ordering is load-bearing
+#: against :data:`DEFAULT_MAX`: with stale first, a repo carrying 16 stale completions and one
+#: conflict showed five stale lines and "… 12 more not shown", so the one item only this reader could
+#: resolve was the one the notice dropped — measured on the field's own repo shape (feedback-v3 #1,
+#: which reported the conflict as reaching "nothing"; it was computed, then crowded out).
+KIND_ORDER = ("conflict", "stale", "drift")
 
 #: Default cap on announced lines per turn. The host caps hook output at 10,000 chars, but the real
 #: limit is attention: a notice longer than a few lines is skimmed, which is the failure this channel

@@ -78,8 +78,10 @@ class StatusSummary:
     tasks_open: int
     decisions: int  # active (non-superseded) memory nodes
     drifting: int  # soft + hard drift items (the re-verify count); renames auto-re-anchor, so excluded
-    freshness: str  # "fresh" | "stale" | "absent" — the gitignored SQLite view vs the rebuilt graph
-    # (graph.json + its whole-graph merge lock are retired, mem:059; see _freshness below)
+    freshness: str  # "fresh" | "behind" | "absent" — the gitignored SQLite view vs the rebuilt graph
+    # (graph.json + its whole-graph merge lock are retired, mem:059; see _freshness below).
+    # "behind", not "stale": bare "stale" is reserved for stale COMPLETIONS (the `stale` count below),
+    # and one word carrying two health dimensions cost a field session six commands (feedback-v3 #13).
     semantic: bool  # a non-empty embedding index is present (reflects the last build, not a live model load)
     embedded: int  # nodes in that index
     head: str | None  # short HEAD sha, informational
@@ -87,8 +89,9 @@ class StatusSummary:
     ctx_used: int | None = None  # context tokens in use, if a host supplied it
     ctx_limit: int | None = None  # context window size, if a host supplied it
     ctx_soft_limit: int = 250_000  # usable-budget knee the gauge scales to (config status.ctx_soft_limit; mem:053)
-    coherence: int = 0  # open knowledge-conflicts awaiting a principal (mem:062) — the coherence-dirty
-    # dimension distinct from freshness; a cheap count only (the full findings go to the resolution UI)
+    conflicts: int = 0  # open knowledge-conflicts awaiting a principal (mem:062) — the coherence-dirty
+    # dimension distinct from freshness; a cheap count only (`yigraf conflicts` lists the findings).
+    # Named after what it counts so the JSON key matches the rendered "⚠ n conflict" (feedback-v3 #1).
     stale: int = 0  # done-task completions whose implementing symbol drifted (int:drift-as-stale): the
     # completion is no longer verified. Principal-facing, shown only when >0 — never at the edit hook (mem:056)
     diverged: int = 0  # locators ANOTHER PRINCIPAL's log revision differs on (extract._fold_replica) —
@@ -162,8 +165,8 @@ class StatusSummary:
             tasks = f"{self.tasks_total} task ✓"
         parts = [f"{brand} {self.symbols} sym", f"{self.intents} int", tasks, f"{self.decisions} dec",
                  f"⚠ {self.drifting} drift" if self.drifting else "no drift", self.freshness]
-        if self.coherence:  # only when there are open conflicts — silent when coherent (design law #4)
-            parts.append(f"⚠ {self.coherence} conflict")
+        if self.conflicts:  # only when there are open conflicts — silent when coherent (design law #4)
+            parts.append(f"⚠ {self.conflicts} conflict")
         if self.stale:  # done completions whose evidence drifted (int:drift-as-stale) — shown only when >0
             parts.append(f"⚠ {self.stale} stale")
         if self.diverged:  # another workspace holds a different revision no git merge will reconcile
@@ -189,11 +192,11 @@ class StatusSummary:
                else _c(" ✓", "32") if self.tasks_total else ""),
             kv(self.decisions, "dec"),
             _c(f"⚠ {self.drifting} drift", "1;33") if self.drifting else _c("✓ clear", "32"),
-            {"fresh": _c("● fresh", "32"), "stale": _c("○ stale", "33")}.get(
+            {"fresh": _c("● fresh", "32"), "behind": _c("○ behind", "33")}.get(
                 self.freshness, _c("○ none", "2")),
         ]
-        if self.coherence:  # coherence-dirty (mem:062): open conflicts for a principal, shown only when >0
-            segs.append(_c(f"⚠ {self.coherence} conflict", "1;33"))
+        if self.conflicts:  # coherence-dirty (mem:062): open conflicts for a principal, shown only when >0
+            segs.append(_c(f"⚠ {self.conflicts} conflict", "1;33"))
         if self.stale:  # int:drift-as-stale: done completions whose evidence drifted, shown only when >0
             segs.append(_c(f"⚠ {self.stale} stale", "1;33"))
         if self.diverged:  # another workspace holds a different revision no git merge will reconcile
@@ -254,7 +257,9 @@ def _freshness(root: Path, graph: nx.DiGraph) -> str:
     if persisted is None:
         return "absent"
     canon = lambda g: json.dumps(to_node_link(g), sort_keys=True)
-    return "fresh" if canon(persisted) == canon(graph) else "stale"
+    # "behind", never "stale": that word belongs to stale completions, and any read that rebuilds the
+    # view clears this — an unindexed-artifact marker, not a health problem (feedback-v3 #13).
+    return "fresh" if canon(persisted) == canon(graph) else "behind"
 
 
 def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
@@ -297,7 +302,7 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
     # Coherence-dirty (mem:062): open knowledge-conflicts awaiting a principal — a graph-health
     # dimension distinct from freshness. Reuses the index just loaded (no model, no second read); a
     # cheap count only, so a frequent statusline never pays for it and the agent's budget is untouched.
-    coherence = open_conflict_count(graph, root, config, index=index)
+    conflicts = open_conflict_count(graph, root, config, index=index)
 
     # Single read-only git call; counters._head_sha is the canonical HEAD probe (fail-open ⇒ None).
     from yigraf.counters import _head_sha
@@ -314,7 +319,7 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
     return StatusSummary(
         symbols=symbols, intents=intents, plans=plans,
         tasks_total=tasks_total, tasks_open=tasks_open, decisions=decisions,
-        drifting=drifting, freshness=_freshness(root, graph), coherence=coherence, stale=stale,
+        drifting=drifting, freshness=_freshness(root, graph), conflicts=conflicts, stale=stale,
         # Computed at fold time (only the fold sees what it declined) and carried on the graph, so a
         # statusline read costs nothing extra — extract._fold_replica.
         diverged=len(graph.graph.get("diverged") or ()),

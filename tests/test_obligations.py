@@ -217,3 +217,23 @@ def test_a_resolved_obligation_that_recurs_announces_again(tmp_path: Path, stale
     fresh = obligations.new_obligations(stale_repo, [], "s1", fingerprint="x")
     assert fresh == []
     assert json.loads(obligations.latch_path(stale_repo).read_text())["s1"]["keys"] == []
+
+
+# --- Ordering under the cap: the item only a human can resolve must not be the one dropped ---------
+
+
+def test_a_conflict_outranks_stale_under_the_notice_cap():
+    """feedback-v3 #1's real mechanism. The conflict WAS computed (detect_conflicts self-loads the
+    index) — it was crowded out: with stale first, a repo carrying 16 stale completions and one
+    conflict showed five stale lines and "… 12 more not shown", dropping the only item the agent
+    structurally cannot clear. Conflict now leads."""
+    obs = [obligations.Obligation("stale", f"stale::t{i}", f"task:p/{i}", SYM, "moved", "yigraf link …")
+           for i in range(16)]
+    obs.append(obligations.Obligation("conflict", "conflict::a::b", "mem:a ⟂ mem:b", SYM,
+                                      "co-anchored and unreconciled",
+                                      "yigraf reconcile mem:a mem:b"))
+    order = {k: i for i, k in enumerate(obligations.KIND_ORDER)}
+    obs.sort(key=lambda o: (order.get(o.kind, len(order)), o.key))
+    notice = obligations.render_notice(obs, len(obs), obligations.DEFAULT_MAX)
+    assert "yigraf reconcile mem:a mem:b" in notice     # survives the cap
+    assert "12 more not shown" in notice                # and the elision is still stated
