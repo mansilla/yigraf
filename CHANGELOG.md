@@ -4,6 +4,71 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.5.1] — 2026-08-20
+
+**A verb that re-stamps one field must not rewrite the rest of the artifact.**
+
+Two fixes from the first day on 1.5.0, both the same failure at different altitudes: a write that
+reported success while destroying or burying something the caller meant to keep. No new capability,
+no new flag, no node-id or wire change — a rebuild produces an identical graph.
+
+### Fixed
+- **A metadata verb deleted whatever the canonical body shape does not model.** `yigraf reaffirm
+  mem:<id>` dropped 125 words of hand-written prose — two paragraphs extending a belief, added that
+  morning — because it re-read the artifact, rebuilt the body from (statement, why, alternatives), and
+  wrote back the difference. Those three are the only things `_parse_body` recognizes, so everything
+  else in the file was, to the serializer, not there; nothing in the output said anything had been
+  removed, and the entire trace was a diffstat showing 5 deletions where sibling files showed 1. The
+  blast radius was every verb that round-trips an artifact to edit one frontmatter field — `reaffirm`,
+  `reanchor`, `attest`, `pin`, `unlink`, and `supersede`, which truncates the **predecessor**, the
+  artifact whose body is pure history and the one a truncation is least recoverable from. It is also
+  the verb whose whole job is to say "still true", re-stamping an anchor by destroying the record it
+  vouches for. `artifacts.update_intent_frontmatter` already had this right for intents (mutate the
+  parsed frontmatter, write the body back untouched); the memory family was the lone outlier.
+  `Memory` now carries the body as read and `render_memory` re-emits it verbatim, composing the
+  canonical shape only for a node that has none yet — a fresh capture. Rebuilding and appending the
+  leftovers was rejected: it reflows what a human wrote and moves interleaved prose to the end, so a
+  re-stamp is still not byte-clean. When the canonical triple has changed under an authored body both
+  exits lose something the caller wanted, so rendering raises *before* any write and names the right
+  verb — a changed belief is a new node that `supersede`s this one, never an edit, the law
+  `artifacts.py` already states for an intent's SHALL contract. The carried body stays outside
+  `memory_id`, so a hand extension can never re-identify the node or fork it from a teammate's
+  byte-identical capture.
+- **Unrecognized frontmatter keys now ride through a re-stamp** instead of being dropped. The memory
+  store is committed and shared across machines, so version skew is normal, and an older engine
+  re-stamping one anchor must not silently strip a field a newer one wrote. `_MANAGED_META` names the
+  keys `render_memory` owns, asserted by containment rather than by trusting two lists to be edited
+  together — a renderer field missing from the set would read back as unrecognized, and then a verb
+  that *clears* a conditionally-written key (`pinned`, dropped by `pin --off`) would find the stale
+  on-disk value riding through and silently un-clear itself.
+- **`remember --rejected-invalidated-when <a premise that already holds>` captured a rejection born
+  invisible.** The field names the condition that *retires* a rejection, so one that is already true
+  withdraws it from the moment of capture: the alternative is recorded and unreachable, because no
+  later event can make an already-true condition become true. The mis-fill was a `file:` locator
+  naming the file the belief was *about* — reaching for the subject instead of a condition that could
+  still change. The sibling `--rejected-valid-when` has had a typo warning all along; this half was
+  deliberately left unvalidated on the grounds that it legitimately names something not-yet-present,
+  which is true of the field and says nothing about the value. Soft-warn only (D#3): the premise is
+  still captured, and the message names the fix rather than the fault. Warning on the locator *kind*
+  was rejected — a `file:` premise is not nonsense, it is `int:conditioned-rejections`' own scenario;
+  what makes a premise wrong is that it is already true.
+- **A capture-time premise check asks the filesystem about a `file:` premise, never the pre-build
+  graph.** The first version of the warning above called `retrieval.premise_holds` against the graph
+  `_capture_memory` already had, and never fired — including on the exact mis-fill it exists to catch.
+  That graph predates the artifact being captured, and a `file:` node outside an extractable language
+  (`console.html`, `redis.tf`, a Dockerfile) is projected *only* by the references pointing at it, one
+  of which is this very capture, so asking it reports every such premise absent. `file_content_hash`
+  is the honest oracle (files are truth, design law #6) and already resolves the `:L<a>-L<b>` region
+  form. `int:`/`mem:`/`sym:` are projected independently of who points at them, so the graph still
+  answers for those three.
+
+### Upgrading
+- Nothing to do. No wire change, no node-id change, no new flag — a rebuild produces an identical
+  graph, and an existing memory artifact is read and re-stamped byte-for-byte. Two notes for anything
+  that consumes yigraf programmatically: `remember` can emit one additional ⚠ line (soft, still exit
+  0, the capture still lands), and `memory.render_memory` now raises `ValueError` on an authored body
+  whose statement/why/rejected changed — no verb reaches that path, it is a caller-bug guard.
+
 ## [1.5.0] — 2026-08-20
 
 **A warning you cannot act on, and a success that did nothing, are the same bug.**
@@ -880,6 +945,9 @@ Three orthogonal axes on a memory node, all overlaid at read time (never stored)
   resolution UI (consuming the derived `accepted`/`dominant` fields), and a native
   TaskList host-adapter (blocked until a host exposes a writable task API).
 
+[1.5.1]: https://github.com/mansilla/yigraf/releases/tag/v1.5.1
+[1.5.0]: https://github.com/mansilla/yigraf/releases/tag/v1.5.0
+[1.4.0]: https://github.com/mansilla/yigraf/releases/tag/v1.4.0
 [1.3.1]: https://github.com/mansilla/yigraf/releases/tag/v1.3.1
 [1.3.0]: https://github.com/mansilla/yigraf/releases/tag/v1.3.0
 [1.2.0]: https://github.com/mansilla/yigraf/releases/tag/v1.2.0
