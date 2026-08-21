@@ -377,6 +377,109 @@ def test_my_own_replaced_revision_is_history_not_divergence(repo):
     assert _diverged(repo, config) == []
 
 
+def _record_actor(repo: Path, actor: str = "me@example.com") -> None:
+    """What a real push does on the way back: the authority stamps the principal, the client keeps it
+    (:func:`yigraf.sync.push_assertion`). Without it a workspace does not know its own name."""
+    SqliteAssertionStore(repo / "yigraf" / "cache" / "replica.db").set_actor(PROJECT, actor)
+
+
+def test_my_own_unpushed_edit_is_not_divergence(repo):
+    """The residue the arrival-based classifier could not see, and the reason the count read as
+    permanent. Edit an already-pushed artifact and DON'T push: the log's newest word on the locator is
+    still my older revision, which matches the divergence test exactly. Measured on a live single-actor
+    project as `⚠ 6 diverged` — every one an unpushed edit, none a disagreement with anybody."""
+    _plan_repo(repo)
+    config = _config(repo)
+    log = _replica(repo)
+
+    log.append(_task_assertion(repo))  # what an earlier session pushed
+    _complete_the_task(repo)           # today's edit, still on disk only
+    _record_actor(repo)
+
+    assert _diverged(repo, config) == []
+
+
+def test_an_unpushed_edit_still_diverges_before_the_workspace_knows_its_name(repo):
+    """Fail-safe, not fail-quiet: with no actor recorded (never pushed since the upgrade) the old
+    ambiguity stands and the locator is still surfaced. The `yigraf sync` hint in the report is what
+    covers this case, and one push both clears it and teaches the workspace its name."""
+    _plan_repo(repo)
+    config = _config(repo)
+    _replica(repo).append(_task_assertion(repo))
+    _complete_the_task(repo)
+
+    assert _diverged(repo, config) == ["task:greeting/1"]
+
+
+def test_a_teammates_revision_survives_my_unpushed_edit(repo):
+    """The guard, and the reason this needs an identity at all: my having edited a locator says nothing
+    about a revision of it that is not mine. Their machine may still hold it — pushing my edit would not
+    retract theirs from an append-only log — so it stays the open question."""
+    _plan_repo(repo)
+    config = _config(repo)
+    log = _replica(repo)
+
+    log.append(_task_assertion(repo, actor="teammate@example.com",
+                               id="task:greeting/1@theirs", parents=()))
+    _complete_the_task(repo)  # I edit the same locator and do not push
+    _record_actor(repo)
+
+    assert _diverged(repo, config) == ["task:greeting/1"]
+
+
+def test_a_push_teaches_the_workspace_its_own_name(repo):
+    """The actor is assigned server-side from the authenticated principal, so the push response is the
+    only place a client ever learns it. `push_assertion` must keep it or the classifier stays blind."""
+    from yigraf.log import Assertion
+    from yigraf.onlinelog import StoredEvent
+    from yigraf.sync import push_assertion
+
+    store = SqliteAssertionStore(repo / "yigraf" / "cache" / "replica.db")
+    assertion = Assertion(id="int:x@abc", kind="intent",
+                          body={"family": "intent", "locator": "int:x", "attrs": {}, "edges": []},
+                          provenance=[{"actor": "a-client-claim", "source": "cli"}])
+
+    class _Remote:
+        def push(self, project, assertions):
+            # The authority re-stamps provenance from the authenticated principal (sync.assertion_to_wire).
+            return [StoredEvent(seq=1, id=assertion.id, kind=assertion.kind, body=assertion.body,
+                                parents=(), provenance={"actor": "prn_real", "source": "cli"},
+                                scope=(), prev_hash="0" * 64, entry_hash="1" * 64,
+                                event_key="ek")]
+
+    assert store.get_actor(PROJECT) is None
+    push_assertion(store, _Remote(), PROJECT, assertion)
+    assert store.get_actor(PROJECT) == "prn_real", "the client kept the authority's word, not its own"
+
+
+def test_whoami_records_the_identity_it_prints(repo, monkeypatch):
+    """The read-only way in. A workspace that has only ever pulled never gets a push response to learn
+    its own name from, and while it is anonymous its own unpushed edits keep reporting as divergence —
+    so the command whose whole job is answering "who am I" must keep the answer, not just print it."""
+    import yaml
+    from typer.testing import CliRunner
+
+    from yigraf import online as online_mod
+    from yigraf.cli import app
+
+    cfg_path = repo / "yigraf" / "config.yaml"
+    cfg = yaml.safe_load(cfg_path.read_text()) or {}
+    cfg.setdefault("online", {}).update({"project": PROJECT, "remote": "https://example.test"})
+    cfg_path.write_text(yaml.safe_dump(cfg))
+    SqliteAssertionStore(repo / "yigraf" / "cache" / "replica.db")  # the replica exists, unsynced
+
+    monkeypatch.setattr(online_mod, "resolve_token", lambda remote, env: "tok")
+    monkeypatch.setattr(online_mod, "whoami", lambda remote, token: {
+        "actor": "prn_from_the_server", "email": "me@example.com", "project": PROJECT,
+        "role": "writer", "label": "laptop"})
+
+    result = CliRunner().invoke(app, ["whoami", "--repo", str(repo)])
+    assert result.exit_code == 0, result.output
+    assert "me@example.com" in result.output, "the command must have actually run, not bailed"
+    assert SqliteAssertionStore(repo / "yigraf" / "cache" / "replica.db").get_actor(PROJECT) == \
+        "prn_from_the_server"
+
+
 def test_a_teammates_competing_revision_survives_my_later_push(repo):
     """The guard on the fix: superseding is keyed on (locator, ACTOR), so arriving later than a teammate
     never silences them. Their machine may still hold that revision — it stays the open question."""

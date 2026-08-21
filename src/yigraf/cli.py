@@ -2214,9 +2214,32 @@ def whoami(
         me = online_mod.whoami(remote_url, token)
     except online_mod.LinkError as exc:
         _guidance(exc.guidance)
+    # The answer is worth keeping, not just printing: while the replica does not know this workspace's
+    # own name, every unpushed edit of its own keeps reporting as divergence
+    # (OnlineLog.pending_local_revisions). `sync` learns it too, but only a push or a pull earns the
+    # right to; this command is the read-only way to answer the same question, so a workspace that has
+    # only ever pulled can clear a phantom divergence count without pushing anything.
+    _remember_actor(repo, settings, me.get("actor"))
     typer.echo(f"{me.get('email') or me.get('actor')} — {me.get('role') or 'no role'} on "
                f"{me.get('project') or settings.get('project')} at {remote_url}"
                + (f" (machine: {me['label']})" if me.get("label") else ""))
+
+
+def _remember_actor(repo: Path, settings: dict, actor: str | None) -> None:
+    """Record the principal the authority reports as this workspace, on its replica. Best-effort: an
+    identity yigraf failed to store costs precision in the divergence report, never the command."""
+    project = settings.get("project")
+    if not actor or not project:
+        return
+    replica = Path(repo) / "yigraf" / (settings.get("replica") or "cache/replica.db")
+    if not replica.exists():
+        return
+    try:
+        from yigraf.onlinelog import SqliteAssertionStore
+
+        SqliteAssertionStore(replica).set_actor(project, actor)
+    except Exception:  # noqa: BLE001 - see the docstring; never fail a read command over bookkeeping
+        pass
 
 
 @app.command()
@@ -2280,6 +2303,19 @@ def sync(
     replica_path.parent.mkdir(parents=True, exist_ok=True)
     store = SqliteAssertionStore(replica_path)
     remote = HttpRemote(remote_url, token)
+
+    # Learn this workspace's own name if it doesn't know it yet. A push teaches it (the authority stamps
+    # `actor` and `push_assertion` keeps it), but a workspace that has only ever pulled — or that
+    # predates the identity table — would stay anonymous, and while it is anonymous every unpushed edit
+    # of its own keeps reporting as divergence (OnlineLog.pending_local_revisions). One call yigraf
+    # already owns, on a token it already has. Best-effort: an unreachable /me must not stop a sync.
+    if store.get_actor(project) is None:
+        try:
+            actor = (online_mod.whoami(remote_url, token) or {}).get("actor")
+            if actor:
+                store.set_actor(project, actor)
+        except Exception:  # noqa: BLE001 - identity is an optimization; syncing without it still works
+            pass
 
     try:
         local = list(FileLog(repo).iter_assertions_in_causal_order())
@@ -2407,11 +2443,12 @@ def _report_divergence(repo: Path, graph) -> None:
     if not diverged:
         return
     shown = diverged[:10]
-    # Deliberately NOT "another principal": superseded_revisions can only recognize a replaced revision
-    # once the replacement has actually reached the log, so an edit you have not pushed yet lands here
-    # too — the log's newest word on that locator really is the older revision. Both cases are honestly
-    # "the log disagrees with your file and you have not replaced it there"; the push hint separates them
-    # without yigraf having to know, offline, which actor is "you".
+    # Still deliberately NOT "another principal". An unpushed edit of your own no longer lands here once
+    # the workspace knows its own name (pending_local_revisions, learned from the actor the authority
+    # stamps on a push) — but a workspace that has never pushed has never been told it, and there the old
+    # ambiguity stands: the log's newest word on that locator really is the older revision, and offline
+    # yigraf cannot say whose. Both cases are honestly "the log disagrees with your file and you have not
+    # replaced it there", and the push hint still separates them without yigraf having to guess.
     typer.echo(f"\n⚠ {len(diverged)} locator(s) diverged — the shared log holds a revision of these that "
                f"differs from your file and that you have not replaced there:")
     for locator in shown:

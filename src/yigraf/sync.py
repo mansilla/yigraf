@@ -154,6 +154,13 @@ def push_assertion(store: SqliteAssertionStore, remote: RemoteClient, project: s
     treating it as data loss: the work is already persisted, and the next ``yigraf sync`` sends it."""
     authoritative = remote.push(project, [assertion])[0]
     store.upsert_event(project, authoritative)
+    # The response is also the only place this workspace is ever told its own name: the authority
+    # stamps `actor` from the authenticated principal, so a client cannot derive it (see
+    # `assertion_to_wire`). Remember it — `OnlineLog.pending_local_revisions` needs it to tell a
+    # revision of mine that the log has not heard yet from a revision another principal still holds.
+    actor = (authoritative.provenance or {}).get("actor")
+    if actor:
+        store.set_actor(project, actor)
     return authoritative
 
 

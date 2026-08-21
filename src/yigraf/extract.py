@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -34,6 +35,7 @@ from yigraf.languages import (
     extractor_for_path,
 )
 from yigraf.languages.python import PY_LANGUAGE as _PY_LANGUAGE  # noqa: F401 (back-compat re-export)
+from yigraf.log import Assertion
 
 __all__ = ["FileProjection", "BuildStats", "build_graph", "extract_file", "symbol_content_hash"]
 
@@ -130,7 +132,7 @@ def build_graph(root: Path, config: dict) -> tuple[nx.DiGraph, BuildStats]:
     # Keep the local assertion ids: they are what tells a replica assertion that merely *echoes* this
     # workspace apart from one that genuinely disagrees with it (see _fold_replica's divergence note).
     local = fold_assertions(FileLog(root).iter_assertions_in_causal_order(), base=graph)
-    stats.synced = _fold_replica(graph, root, config, {a.id for a in local})
+    stats.synced = _fold_replica(graph, root, config, local)
     filelog.denormalize_danglings(graph)
     drift.resolve_renames(graph)  # re-anchor moved/renamed implements + concerns targets (M3/M7)
     # Stamps `survival` (HEAD-cached, R2) + the provenance-derived landing tier only; `settled` is the
@@ -143,7 +145,7 @@ def build_graph(root: Path, config: dict) -> tuple[nx.DiGraph, BuildStats]:
 
 
 def _fold_replica(graph: nx.DiGraph, root: Path, config: dict,
-                  local_ids: frozenset[str] | set[str] = frozenset()) -> int:
+                  local: Sequence[Assertion] = ()) -> int:
     """Fold the synced replica's assertions onto the same base the authored ones landed on.
 
     This is what makes a teammate's belief a first-class citizen of *your* graph: their intent anchored
@@ -177,15 +179,19 @@ def _fold_replica(graph: nx.DiGraph, root: Path, config: dict,
     place every other conflict in the repo is resolved. A workspace that *gitignores* its artifacts —
     which yigraf's own repo does, and any repo may — has no such merge point, so declining the replica's
     revision silently discards the only other copy, permanently, with each machine convinced it is
-    current. So the declined set is inspected rather than dropped, and triaged three ways: an assertion
+    current. So the declined set is inspected rather than dropped, and triaged four ways: an assertion
     whose id this workspace also authored is a harmless echo; one the *same actor* has since replaced
-    with the live revision is that actor's own superseded history
-    (:meth:`~yigraf.onlinelog.OnlineLog.superseded_revisions`); and only what survives both is a locator
-    two principals genuinely disagree about. Without that middle case the count ratcheted upward on
-    ordinary solo work — for a revisioned family the id IS the revision, so every re-``link`` of an
-    already-pushed task left its previous revision behind looking like a disagreement with nobody. The
-    locators land on ``graph.graph["diverged"]`` for ``status`` and ``sync`` to surface (never a node
-    attr — it is a property of the pair of logs, not of the belief).
+    with a revision that REACHED the log is that actor's own superseded history
+    (:meth:`~yigraf.onlinelog.OnlineLog.superseded_revisions`); one that actor has replaced only on
+    disk, with an edit not yet pushed, is the same history one step earlier
+    (:meth:`~yigraf.onlinelog.OnlineLog.pending_local_revisions`); and only what survives all three is a
+    locator two principals genuinely disagree about. Both middle cases are one accounting error — for a
+    revisioned family the id IS the revision, so every edit to an already-pushed artifact leaves its
+    previous revision behind looking like a disagreement with nobody. Without the first, the count
+    ratcheted upward one entry per re-``link``; without the second, every UNPUSHED edit did the same and
+    read as permanent, because only a push could ever clear it. The locators land on
+    ``graph.graph["diverged"]`` for ``status`` and ``sync`` to surface (never a node attr — it is a
+    property of the pair of logs, not of the belief).
 
     This can only fire for the revisioned families. Memory and resolution key their node on the content
     hash itself, so a differing body is a different NODE and never reaches the deferral at all — their
@@ -207,16 +213,27 @@ def _fold_replica(graph: nx.DiGraph, root: Path, config: dict,
         from yigraf.onlinelog import SqliteAssertionStore
         from yigraf.sync import replica_log
 
-        log = replica_log(SqliteAssertionStore(replica), project)
+        store = SqliteAssertionStore(replica)
+        log = replica_log(store, project)
         declined: list = []
         folded = fold_assertions(log.iter_assertions_in_causal_order(), base=graph,
                                  defer_families=FILE_TRUTH_FAMILIES, declined=declined)
-        # Two kinds of declined assertion are NOT divergence: one whose id this workspace also authored
-        # (a plain echo of the live revision), and one the same actor has since replaced with the live
-        # revision (:meth:`OnlineLog.superseded_revisions`) — for a revisioned family the id *is* the
-        # revision, so without the second test every edit to an already-pushed plan left its previous
-        # revision behind looking like a disagreement, and the count only ever grew.
-        history = log.superseded_revisions(set(local_ids))
+        # THREE kinds of declined assertion are NOT divergence — for a revisioned family the id *is*
+        # the revision, so an edit to an already-pushed artifact always leaves its previous revision in
+        # the log matching the naive test exactly:
+        #   1. an id this workspace also authored — a plain echo of the live revision;
+        #   2. one the same actor has since replaced with a revision that REACHED the log
+        #      (:meth:`OnlineLog.superseded_revisions`);
+        #   3. one the same actor has replaced only on disk, with a revision still unpushed
+        #      (:meth:`OnlineLog.pending_local_revisions`) — invisible to (2), which searches the log for
+        #      the replacement, and the residue that made the count look permanent: every locator in it
+        #      is waiting on a `yigraf sync`, not on a teammate.
+        local_ids = {a.id for a in local}
+        pushed = store.known_ids(project)
+        unpushed = {a.body["locator"] for a in local
+                    if a.id not in pushed and (a.body or {}).get("locator")}
+        history = (log.superseded_revisions(local_ids)
+                   | log.pending_local_revisions(unpushed, store.get_actor(project)))
         graph.graph["diverged"] = sorted({
             a.body["locator"] for a in declined
             if a.id not in local_ids and a.id not in history and a.body.get("locator")})

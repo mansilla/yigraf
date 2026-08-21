@@ -350,6 +350,37 @@ class OnlineLog:
         return {aid for aid, cs in claims.items()
                 if all(seq < live_seq.get(key, -1) for key, seq in cs)}
 
+    def pending_local_revisions(self, unpushed_locators: set[str] | frozenset[str],
+                                me: str | None) -> set[str]:
+        """Ids this log holds that **I** have already replaced on disk with a revision it has not heard.
+
+        The other half of :meth:`superseded_revisions`, which can only recognize a replacement that
+        ARRIVED — it looks for the live revision among the log's own events. So an artifact you edited
+        and have not pushed leaves its previously pushed revision matching the divergence test exactly
+        (for a revisioned family the id IS the revision), and it keeps reporting until the push lands.
+        Measured on a single-actor project: all six "diverged" locators were unpushed local edits, and
+        the count read on the statusline as a disagreement with a teammate who did not exist.
+
+        Files are truth (design law #6), so *any* revision of a locator I now hold an unpushed edit to
+        is my own superseded history — no arrival-order heuristic is needed here, unlike the sibling
+        method.
+
+        The honest guard is unchanged, and is why this needs ``me``: a revision is filtered only when
+        EVERY claim on it is mine. A different principal's revision of the same locator is still
+        surfaced — pushing my edit does not retract theirs from an append-only log, so it stays the open
+        question divergence exists to raise. Filters nothing when ``me`` is unknown (a workspace that
+        has never pushed, so nothing has told it its own name).
+        """
+        if not me or not unpushed_locators:
+            return set()
+        claims: dict[str, list[tuple[str, str]]] = {}
+        for event in self.store.iter_events(self.project):
+            locator, actor = (event.body or {}).get("locator"), (event.provenance or {}).get("actor")
+            if locator and actor:
+                claims.setdefault(event.id, []).append((locator, actor))
+        return {aid for aid, cs in claims.items()
+                if all(actor == me and locator in unpushed_locators for locator, actor in cs)}
+
     # -- integrity (task #8) -----------------------------------------------------------------------
 
     def verify_chain(self) -> bool:
@@ -411,6 +442,10 @@ CREATE TABLE IF NOT EXISTS sync_state (
   project     TEXT PRIMARY KEY,
   remote_seq  INTEGER NOT NULL,
   remote_head TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS identity (
+  project TEXT PRIMARY KEY,
+  actor   TEXT NOT NULL
 );
 """
 
@@ -523,6 +558,28 @@ class SqliteAssertionStore:
             "INSERT INTO sync_state (project, remote_seq, remote_head) VALUES (?,?,?) "
             "ON CONFLICT(project) DO UPDATE SET remote_seq=excluded.remote_seq, "
             "remote_head=excluded.remote_head", (project, remote_seq, remote_head))
+        self._conn.commit()
+
+    def get_actor(self, project: str) -> str | None:
+        """The principal id the authority stamped on THIS workspace's own pushes to ``project``, or
+        ``None`` if it has never pushed one.
+
+        Replica-side bookkeeping beside the cursor, and the one fact about itself a client cannot
+        derive: ``provenance.actor`` is assigned server-side from the authenticated principal (a client
+        claim would be meaningless, :func:`yigraf.sync.assertion_to_wire`), so the only way a workspace
+        learns its own name is to be told it on a push. Knowing it is what lets the divergence
+        classifier separate "the log's newest word on this locator is MINE and my replacement has not
+        been pushed yet" from "another principal holds a revision" — see
+        :meth:`OnlineLog.pending_local_revisions`, which filters nothing while this is ``None``.
+        """
+        row = self._conn.execute(
+            "SELECT actor FROM identity WHERE project=?", (project,)).fetchone()
+        return row["actor"] if row else None
+
+    def set_actor(self, project: str, actor: str) -> None:
+        self._conn.execute(
+            "INSERT INTO identity (project, actor) VALUES (?,?) "
+            "ON CONFLICT(project) DO UPDATE SET actor=excluded.actor", (project, actor))
         self._conn.commit()
 
     def close(self) -> None:
