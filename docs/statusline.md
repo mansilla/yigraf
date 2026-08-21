@@ -38,9 +38,18 @@ Pretty output (what a statusline shows):
 | `N sym/int/dec`| symbols · intents · active decisions in the graph                              |
 | `N task/M open`| total tasks · open (non-done) tasks; the `/M open` is yellow when `M>0`        |
 | `✓ clear` / `⚠ N drift` | green when no implements/concerns link has drifted; yellow with a count otherwise |
-| `● fresh` / `○ stale` / `○ none` | committed `graph.json` vs the rebuilt graph (green/yellow/dim) |
+| `● fresh` / `○ behind` / `○ none` | the gitignored SQLite view (`.local/graph.db`) vs the rebuilt graph (green/yellow/dim) |
+| `⚠ N conflict` | open knowledge-conflicts awaiting a principal; **shown only when `N>0`**. List them with `yigraf conflicts` |
+| `⚠ N stale`    | done tasks whose implementing symbol drifted — the completion is unverified, not false; **only when `N>0`**. List with `yigraf drift --stale` |
+| `⚠ N diverged` | loci another principal's log revision differs on; **only when `N>0`**. `yigraf sync` reconciles |
 | `✦ sem N`      | a semantic index of `N` memory+intent nodes is present (dim = the index is on) |
 | `ctx ▰▰▱▱ NN%` | context-window fill, **only if a host supplied it**; green <50, yellow <80, red ≥80 |
+
+**`behind` is not `stale`.** They are different dimensions and the words are kept apart deliberately:
+`○ behind` means the materialized view hasn't caught up with the source and *any read rebuilds it* — an
+unindexed-artifact marker, not a health problem. `⚠ N stale` means N shipped completions lost their
+evidence and need a human decision. The three `⚠` segments are silent at zero (design law #4), so their
+absence is a real all-clear rather than a missing field.
 
 Color is auto-on for a TTY (honoring `NO_COLOR`) and forced with `--color`. The **non-TTY pipe is the
 statusline's case**, so the adapter passes `--color`; yigraf keeps `click` from stripping the ANSI.

@@ -134,4 +134,55 @@ def test_build_server_registers_all_tools(tmp_path: Path):
     server = mcp_server.build_server(str(_repo(tmp_path)))
     names = {t.name for t in asyncio.run(server.list_tools())}
     assert {"context", "status", "link", "unlink", "remember", "note_constraint", "propose",
-            "supersede", "reaffirm", "supersede_intent"} <= names
+            "supersede", "reaffirm", "supersede_intent", "show", "pin", "attest",
+            "reanchor", "conflicts"} <= names
+
+
+def test_every_registered_tool_is_documented(tmp_path: Path):
+    """`docs/mcp.md` must name every tool the server registers.
+
+    The doc promises "the whole of yigraf" over MCP, and on a hook-less host it IS the whole of yigraf
+    (mem:016) — so an undocumented tool is unreachable in practice. It drifted to 6 of 15 documented
+    (and "yigraf adds 2" when it added 15) precisely because nothing compared the two, and the table is
+    hand-maintained by necessity: it carries *when to reach for* each verb, which no generator knows.
+    """
+    import pytest
+    pytest.importorskip("mcp")
+    doc = (Path(__file__).parent.parent / "docs" / "mcp.md").read_text(encoding="utf-8")
+    server = mcp_server.build_server(str(_repo(tmp_path)))
+    undocumented = [t.name for t in asyncio.run(server.list_tools()) if f"`{t.name}`" not in doc]
+    assert not undocumented, f"tools registered but absent from docs/mcp.md: {undocumented}"
+
+
+def test_governs_reaches_the_mcp_capture_tools(tmp_path: Path):
+    """`--governs` must be callable over MCP, not CLI-only (docs/mcp.md promises "the whole of yigraf").
+
+    MCP is the ONLY channel on a hook-less host (the Antigravity IDE, mem:016), so a capture flag that
+    stops at the CLI is simply absent for those users — and a policy anchor is exactly what an agent
+    editing a governed document needs. Asserted on the passthrough AND the registered schema, because
+    the two failed independently: the flag can reach the CLI while the tool signature omits it.
+    """
+    import pytest
+    pytest.importorskip("mcp")
+    root = _repo(tmp_path)
+    out = mcp_server.run_remember(str(root), "session.py holds ONLY refresh logic",
+                                  governs=["file:auth/session.py"])
+    assert out.startswith("Captured mem:"), out
+
+    server = mcp_server.build_server(str(root))
+    schemas = {t.name: (t.inputSchema or {}).get("properties", {})
+               for t in asyncio.run(server.list_tools())}
+    for verb in ("remember", "note_constraint", "supersede"):
+        assert "governs" in schemas[verb], f"{verb} cannot express a policy anchor over MCP"
+
+
+def test_governs_anchor_never_drifts_through_mcp(tmp_path: Path):
+    """The point of the flag: a policy anchor survives an edit to the locus it governs, unwarned."""
+    root = _repo(tmp_path)
+    assert mcp_server.run_remember(str(root), "session.py holds ONLY refresh logic",
+                                   governs=["file:auth/session.py"]).startswith("Captured mem:")
+    (root / "auth" / "session.py").write_text("def refresh(token):\n    return token.strip()\n")
+    assert runner.invoke(app, ["build", str(root)]).exit_code == 0
+    # `drift` takes its repo positionally (like `conflicts`), so it is invoked directly, not via _run_cli.
+    drift = runner.invoke(app, ["drift", str(root)])
+    assert drift.exit_code == 0 and "No drift" in drift.output, drift.output

@@ -4,7 +4,7 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.5.0] — 2026-08-20
 
 **A warning you cannot act on, and a success that did nothing, are the same bug.**
 
@@ -33,7 +33,9 @@ repeats, 3.47M tokens for text the model could already read.
   how a locus is *used* rather than what it contains ("status.md holds ONLY status"). Surfaces at the
   edit hook exactly like `--concerns`, carries no content hash, **never drifts** — the field's policy
   memory drifted three times in one session while every flagged edit *obeyed* it, and a ⚠ that is
-  usually noise trains the reader to clear it unread.
+  usually noise trains the reader to clear it unread. Over MCP too, on all three capture tools: MCP is
+  the *only* channel on a hook-less host (the Antigravity IDE, mem:016), so a capture flag that stops
+  at the CLI is simply absent for those users.
 - **`unlink mem:<id>` now retires a `concerns` ref too** (it reached only `grounded_by`; the fix for a
   mis-anchored capture was hand-editing frontmatter). Refusals on both `unlink` and `reanchor` name
   every anchor the node actually carries, so "no such anchor" can no longer be read where "wrong list"
@@ -84,6 +86,25 @@ repeats, 3.47M tokens for text the model could already read.
   one session because the capture "succeeded" and the warning scrolled past.
 - The installed skill's frontmatter `description` shrank 709 → 296 chars (it is resident in every
   session's prompt whether or not the skill loads), keeping the closing `status` check.
+
+### Documentation
+The release-readiness pass found the docs teaching the exact error this release removes, so they are
+part of it rather than a follow-up.
+- **`docs/guide.md`'s drift-verb table said a decision whose code "just moved" is a `reaffirm`.** That
+  is the `reanchor` case, and the row was the false-mind-change trap in print — the one surface a
+  reader consults *because* they don't yet know which verb applies. The table now carries all four
+  exits (`link` · `reaffirm` · `reanchor` · `supersede` · `unlink`) with the distinction spelled out.
+- **`docs/statusline.md` described the freshness segment as `○ stale` over "committed `graph.json`"** —
+  wrong on both halves: `graph.json` was retired in 1.4.0 (mem:059; it is the gitignored SQLite view),
+  and `stale` is the word this release moved off that dimension. A doc still calling it `stale` rebuilt
+  the very collision the rename fixed. The legend also gained the three `⚠` segments it never
+  documented (`conflict`, `stale`, `diverged`) and a note that they are silent at zero, so their
+  absence reads as an all-clear rather than a missing field.
+- **`docs/mcp.md` documented 6 of 15 MCP tools** and told Antigravity users "yigraf adds 2". Nine tools
+  were unreachable-in-practice on the hosts where MCP is the *only* channel. The table is now complete,
+  grouped by what the agent is doing (orient · seam · capture · re-verify), and a test asserts every
+  registered tool appears in it — the table stays hand-written because it carries *when to reach for*
+  each verb, which no generator knows, but it can no longer silently fall behind the surface.
 
 ## [1.4.0] — 2026-08-16
 

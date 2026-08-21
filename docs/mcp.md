@@ -11,18 +11,50 @@ at all; on Claude Code the push hooks are still preferred (and this is optional/
 The full agent loop — **read** the governing slice, then **write** back links and the *why* — over MCP,
 so a host with no lifecycle hook (e.g. the Antigravity IDE) still gets the whole of yigraf.
 
+Every tool also takes `repo?` (the call's repo override); it's omitted below for brevity.
+
+**Read — orient before acting**
+
 | Tool | Args | Does |
 |------|------|------|
-| `context` | `query`, `repo?`, `family?`, `budget?` | Pull the token-budgeted slice: governing intents, plan, implementing signatures, prior decisions + *why*, drift. Call BEFORE changing code. |
-| `status`  | `repo?` | The compact status line: counts, drift, freshness, semantic-index size. |
-| `link`    | `task`, `target`, `repo?` | Bind a finished task to the `sym:` it implements (or the `int:` it tracks), anchored to current content. |
-| `remember`| `statement`, `why?`, `serves?`, `concerns?`, `rejected?`, `type?`, `repo?` | Persist a decision/rationale as a memory node; a `concerns` symbol is anchored (drift re-surfaces it). |
-| `note_constraint` | `rule`, `concerns?`, `why?`, `serves?`, `repo?` | Capture a constraint/rule governing code. |
-| `supersede` | `old_id`, `statement`, `why?`, `serves?`, `concerns?`, `rejected?`, `type?`, `repo?` | Record a mind-change: a new node superseding an old one. |
+| `context` | `query`, `family?`, `budget?` | Pull the token-budgeted slice: governing intents, plan, implementing signatures, prior decisions + *why*, drift. Call BEFORE changing code. |
+| `status`  | — | The compact status line: counts, drift, freshness, conflicts, stale, diverged, semantic-index size. |
+| `show`    | `target` | Read ONE node by id, in full and unbudgeted — every anchor, the whole `why`, its live drift, and any conflict it is a side of. `context` searches by *meaning*, so an id reaches it as noise; this is the verb for an id a warning handed you. |
+| `conflicts` | — | List every open knowledge-conflict: the pair, their shared anchor, how close they read, which side provenance prefers, and the resolving verb. This is the listing behind `status`'s `⚠ N conflict`. |
+
+**Write — the seam between code and intent**
+
+| Tool | Args | Does |
+|------|------|------|
+| `link`    | `task`, `target` | Bind a finished task to the `sym:` it implements (or the `int:` it tracks), anchored to current content. Re-call to re-anchor after the code changes. |
+| `unlink`  | `task`, `target` | Retire a declaration that is no longer true — a symbol gone for good, or an anchor wrongly declared. Also takes `mem:<id>` to retire a memory's `concerns` or `grounded_by` ref. No mind-change is recorded. |
+| `reanchor` | `target`, `old`, `new` | Move ONE of a memory's anchors to where its subject moved. A locus repair, **not** a mind-change — no supersedes edge is written. |
+
+**Write — capture the why**
+
+| Tool | Args | Does |
+|------|------|------|
+| `remember`| `statement`, `why?`, `serves?`, `concerns?`, `governs?`, `rejected?`, `type?`, `grounding?`, `evidence?`, `rejected_valid_when?`, `rejected_invalidated_when?` | Persist a decision/rationale as a memory node; a `concerns` locus is anchored, so editing that code re-surfaces the decision. `governs` anchors a *usage policy* instead and never drifts. |
+| `note_constraint` | `rule`, `concerns?`, `governs?`, `why?`, `serves?`, `rejected?`, `grounding?`, `evidence?`, `rejected_valid_when?`, `rejected_invalidated_when?` | Capture a constraint/rule governing code, flagged as a candidate to promote into an enforced check. |
+| `propose` | `statement`, `from_`, `concerns?`, `rejected?`, `why?`, `serves?`, `type?`, `origin?`, `grounding?`, `evidence?`, … | Land a *candidate* belief from an outside source (a review, a doc, a spike) rather than asserting it yourself. |
+| `supersede` | `old_id`, `statement`, `why?`, `serves?`, `concerns?`, `governs?`, `rejected?`, `type?`, `grounding?`, `evidence?`, … | Record a mind-change: a new node superseding an old one, never an edit in place. **Inherits** the old node's `concerns`/`governs`/`serves` unless you re-aim them. |
+
+**Write — re-verify and endorse**
+
+| Tool | Args | Does |
+|------|------|------|
+| `reaffirm` | `target`, `concerns?`, `grounding?`, `evidence?` | The honest counterpart to `supersede`: the belief is UNCHANGED, so re-stamp its anchor and clear the drift. Re-verify first — this verb is how rubber-stamping would happen. A locus (`sym:`/`file:`) instead of a `mem:` id reaffirms every live memory concerning it. |
+| `attest`   | `target` | Record that the *principal* endorsed this belief — a sticky trust floor that holds any later agent `supersede` of it pending a human. Never use it to bless your own call. |
+| `pin`      | `target`, `off?` | Inject this belief in full at every session start, for the few rules load-bearing on every task. Refused on a superseded node (it would inject nothing). |
+| `supersede_intent` | `old_slug`, `new_slug`, `statement`, `why?`, `scenario?`, `design?`, `type?` | Reverse a spec whose premise turned out false: creates the replacement, archives the old, writes a real `int→int` supersedes edge. |
 
 Read tools run **in-process** (warm graph + model across calls); write tools shell out to the matching
 CLI verb, so they reuse its dedup guard, anchoring, and exit-0 "did you mean" guidance unchanged — a bad
 locator comes back as guidance text, not an error.
+
+Two tools exit non-zero on purpose, mirroring the CLI so CI can gate on them: `conflicts` when conflicts
+stand, and the underlying `drift`. The report is on stdout either way, so a non-zero result is the
+answer, not a failure.
 
 ## Prerequisites
 
@@ -69,7 +101,7 @@ servers use `command`/`args` (remote servers would use `serverUrl`, not `url`):
 
 Notes: Antigravity's IDE has **no hook system**, so MCP (plus a written `.agents/rules` / `SKILL.md`) is
 the integration path there. Env-var substitution in this file is unreliable — prefer the `--repo` arg
-with an absolute path. The IDE caps total MCP tools at 100 (yigraf adds 2).
+with an absolute path. The IDE caps total MCP tools at 100 (yigraf adds 15).
 
 ### Cursor / Windsurf — `~/.cursor/mcp.json` (or `.cursor/mcp.json`); Windsurf `~/.codeium/windsurf/mcp_config.json`
 

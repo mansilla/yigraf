@@ -134,8 +134,17 @@ maturity signal. You clear drift honestly, with the verb that matches what actua
 | What happened | Verb |
 |---|---|
 | The task's implementation is still correct against the new code | `yigraf link` (re-anchor) |
-| A decision still holds; the code it concerns just moved | `yigraf reaffirm` (re-stamp in place) |
+| A decision still holds; the code it concerns *changed under it* | `yigraf reaffirm` (re-stamp in place) |
+| A decision still holds; its subject **moved** to another locus | `yigraf reanchor` (repoint, no mind-change) |
 | The decision itself changed | `yigraf supersede` (new node, edge back to the old) |
+| The anchor never belonged in the first place | `yigraf unlink` (retire the declaration) |
+
+**`reaffirm` and `reanchor` are not interchangeable**, and the distinction is the whole point: `reaffirm`
+re-stamps an anchor at the *same* locus, so it has nothing to say when that locus is gone. Routing a
+moved subject through `supersede` instead files a mind-change nobody had — which writes a false entry
+into the supersedes trail, the most valuable structure in the graph. One meaning per verb: the locus
+moved → `reanchor` · the unchanged locus drifted → `reaffirm` · your mind changed → `supersede` · the
+anchor was wrong → `unlink`.
 
 **Reaffirm what you actually re-read** — not a reflexive sweep. Rubber-stamping drift you didn't
 verify is the failure mode yigraf is built to prevent.

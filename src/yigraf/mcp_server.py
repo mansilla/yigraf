@@ -158,11 +158,12 @@ def run_remember(repo: str | None, statement: str, why: str = "", serves: list[s
                  concerns: list[str] | None = None, rejected: str | None = None,
                  type: str = "decision", grounding: str | None = None,
                  evidence: list[str] | None = None, rejected_valid_when: list[str] | None = None,
-                 rejected_invalidated_when: list[str] | None = None) -> str:
+                 rejected_invalidated_when: list[str] | None = None,
+                 governs: list[str] | None = None) -> str:
     args = [statement, "--type", type]
     if why:
         args += ["--why", why]
-    args += _multi("--serves", serves) + _multi("--concerns", concerns)
+    args += _multi("--serves", serves) + _multi("--concerns", concerns) + _multi("--governs", governs)
     if rejected:
         args += ["--rejected", rejected]
     args += _rejection_premise_args(rejected_valid_when, rejected_invalidated_when)
@@ -176,8 +177,9 @@ def run_note_constraint(repo: str | None, rule: str, concerns: list[str] | None 
                         why: str = "", serves: list[str] | None = None,
                         rejected: str | None = None, grounding: str | None = None,
                         evidence: list[str] | None = None, rejected_valid_when: list[str] | None = None,
-                        rejected_invalidated_when: list[str] | None = None) -> str:
-    args = [rule] + _multi("--concerns", concerns)
+                        rejected_invalidated_when: list[str] | None = None,
+                        governs: list[str] | None = None) -> str:
+    args = [rule] + _multi("--concerns", concerns) + _multi("--governs", governs)
     if why:
         args += ["--why", why]
     args += _multi("--serves", serves)
@@ -218,11 +220,12 @@ def run_supersede(repo: str | None, old_id: str, statement: str, why: str = "",
                   rejected: str | None = None, type: str = "decision",
                   grounding: str | None = None, evidence: list[str] | None = None,
                   rejected_valid_when: list[str] | None = None,
-                  rejected_invalidated_when: list[str] | None = None) -> str:
+                  rejected_invalidated_when: list[str] | None = None,
+                  governs: list[str] | None = None) -> str:
     args = [old_id, statement, "--type", type]
     if why:
         args += ["--why", why]
-    args += _multi("--serves", serves) + _multi("--concerns", concerns)
+    args += _multi("--serves", serves) + _multi("--concerns", concerns) + _multi("--governs", governs)
     if rejected:
         args += ["--rejected", rejected]
     args += _rejection_premise_args(rejected_valid_when, rejected_invalidated_when)
@@ -381,7 +384,8 @@ def build_server(default_repo: str | None = None):
                  concerns: list[str] | None = None, rejected: str | None = None,
                  type: str = "decision", grounding: str | None = None,
                  evidence: list[str] | None = None, rejected_valid_when: list[str] | None = None,
-                 rejected_invalidated_when: list[str] | None = None, repo: str | None = None) -> str:
+                 rejected_invalidated_when: list[str] | None = None, governs: list[str] | None = None,
+                 repo: str | None = None) -> str:
         """Persist a non-obvious decision/rationale as a durable memory node — the *why* a reset loses.
 
         Capture at a conclusion (a chosen approach, a worked-around constraint), not mid-thinking. A
@@ -408,9 +412,15 @@ def build_server(default_repo: str | None = None):
             rejected_invalidated_when: conditions that WITHDRAW the rejection once true (same locator
                 forms), e.g. rejected "no Redis in deploy" + rejected_invalidated_when
                 ["file:infra/redis.tf"] — the rejection vanishes the moment that file appears.
+            governs: loci whose *use* this belief governs rather than their contents, e.g.
+                ["file:docs/status.md"] for "status.md holds ONLY status". Surfaces at the edit hook
+                exactly like `concerns` but carries no content hash, so it NEVER drifts — use it when
+                a content anchor would demand a rubber-stamp reaffirm on every edit that obeys the
+                policy. The locus must already exist.
         """
         return run_remember(repo or default_repo, statement, why, serves, concerns, rejected, type,
-                            grounding, evidence, rejected_valid_when, rejected_invalidated_when)
+                            grounding, evidence, rejected_valid_when, rejected_invalidated_when,
+                            governs)
 
     @server.tool()
     def note_constraint(rule: str, concerns: list[str] | None = None, why: str = "",
@@ -418,7 +428,7 @@ def build_server(default_repo: str | None = None):
                         grounding: str | None = None, evidence: list[str] | None = None,
                         rejected_valid_when: list[str] | None = None,
                         rejected_invalidated_when: list[str] | None = None,
-                        repo: str | None = None) -> str:
+                        governs: list[str] | None = None, repo: str | None = None) -> str:
         """Capture a constraint/rule governing code (flagged as a candidate to promote to a check).
 
         Args:
@@ -431,9 +441,12 @@ def build_server(default_repo: str | None = None):
             evidence: what grounds it — REQUIRED for grounding=empirical; see `remember`.
             rejected_valid_when / rejected_invalidated_when: applicability premises for the rejection
                 (int:/mem:/sym:/file: locators) — see `remember`.
+            governs: loci whose *use* the rule governs rather than their contents — never drifts; see
+                `remember`. The natural anchor for a house rule about a document.
         """
         return run_note_constraint(repo or default_repo, rule, concerns, why, serves, rejected,
-                                   grounding, evidence, rejected_valid_when, rejected_invalidated_when)
+                                   grounding, evidence, rejected_valid_when,
+                                   rejected_invalidated_when, governs)
 
     @server.tool()
     def propose(statement: str, from_: str, concerns: list[str] | None = None,
@@ -474,19 +487,26 @@ def build_server(default_repo: str | None = None):
                   concerns: list[str] | None = None, rejected: str | None = None,
                   type: str = "decision", grounding: str | None = None,
                   evidence: list[str] | None = None, rejected_valid_when: list[str] | None = None,
-                  rejected_invalidated_when: list[str] | None = None, repo: str | None = None) -> str:
+                  rejected_invalidated_when: list[str] | None = None,
+                  governs: list[str] | None = None, repo: str | None = None) -> str:
         """Record a mind-change: a new memory node that supersedes an old one (never edit in place).
+
+        The successor INHERITS the superseded node's concerns/governs/serves unless you re-aim them
+        (each arg overrides its own kind) — a correction that lands with no anchor never resurfaces at
+        the edit hook on the symbol it warns about.
 
         Args:
             old_id: the memory being superseded, e.g. "mem:007".
             statement: the new decision in one line.
             why: what changed.
-            serves/concerns/rejected/type/grounding/evidence: as for `remember`.
+            serves/concerns/rejected/type/grounding/evidence: as for `remember`; omit to inherit.
             rejected_valid_when / rejected_invalidated_when: applicability premises for the rejection
                 (int:/mem:/sym:/file: locators) — see `remember`.
+            governs: policy loci that never drift — see `remember`; omit to inherit.
         """
         return run_supersede(repo or default_repo, old_id, statement, why, serves, concerns, rejected,
-                            type, grounding, evidence, rejected_valid_when, rejected_invalidated_when)
+                            type, grounding, evidence, rejected_valid_when,
+                            rejected_invalidated_when, governs)
 
     @server.tool()
     def reaffirm(target: str, concerns: list[str] | None = None, grounding: str | None = None,
