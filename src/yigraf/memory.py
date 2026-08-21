@@ -125,6 +125,17 @@ _WHY = re.compile(r"^\*\*Why:\*\*\s*(.*)$")
 _REJECTED = re.compile(r"^\*\*Rejected:\*\*\s*(.*)$")
 _SLUG_STOP = re.compile(r"[^a-z0-9]+")
 
+#: The frontmatter keys :func:`render_memory` OWNS — recomputed from the dataclass on every write. A
+#: key that is not listed here is one this version of yigraf does not recognize: it rides through a
+#: re-stamp untouched on :attr:`Memory.extra_meta` instead of being dropped. The memory store is
+#: committed and shared across machines, so version skew is normal, and an older engine re-stamping
+#: one anchor must not silently strip a field a newer one wrote.
+_MANAGED_META = frozenset({
+    "id", "family", "type", "status", "maturity", "grounding", "attestation", "serves", "concerns",
+    "evidence", "supersedes", "superseded_by", "pending_supersedes", "equivalent_to",
+    "rejected_valid_when", "rejected_invalidated_when", "promotable", "pinned", "provenance",
+})
+
 
 # --------------------------------------------------------------------------------------------------
 # Frontmatter helpers (mirrors artifacts.py; kept local so the modules stay decoupled)
@@ -233,6 +244,22 @@ class Memory:
     #: content-addressed (``<slug>-<hash>.md``) file be rewritten/projected by its true path instead of
     #: a name reconstructed from ``seq``; ``None`` on a freshly-built node → derive from seq/slug.
     source_file: str | None = None
+    #: The body EXACTLY as read from disk (``None`` on a node built in memory — a fresh capture).
+    #: The frontmatter is machine-written, but the body is AUTHORED, and a human extends it by hand:
+    #: a second instance of the same trap, the escape that only shows up on a real input device, a
+    #: caveat the canonical ``## statement`` / ``**Why:**`` / ``**Rejected:**`` shape does not model.
+    #: Every metadata verb (``reaffirm``/``reanchor``/``attest``/``pin``/``supersede``/``unlink``)
+    #: round-trips the artifact through :func:`render_memory`, so re-deriving the body from
+    #: (statement, why, alternatives) silently DELETED everything else — a re-stamped anchor
+    #: truncating the very record it was vouching for, and doing it in the one verb whose whole job is
+    #: to say "still true". Kept verbatim and re-emitted instead. Deliberately outside
+    #: :func:`memory_id`'s payload, for mem:7ac9f8fae656db5f's reason: prose the canonical shape does
+    #: not model changes nothing about what the belief asserts, so it must never re-identify the node
+    #: or fork it from a teammate's byte-identical capture.
+    body: str | None = None
+    #: Frontmatter keys this version does not recognize, carried through a re-stamp untouched — see
+    #: :data:`_MANAGED_META`. Never read by yigraf; the point is only that a re-stamp is not a strip.
+    extra_meta: dict = field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------------------------------
@@ -308,12 +335,49 @@ def read_memory(path: Path) -> Memory:
         promotable=bool(meta.get("promotable", False)),
         pinned=bool(meta.get("pinned", False)),
         provenance=dict(meta.get("provenance") or {}),
+        body=body,
+        extra_meta={k: v for k, v in meta.items() if k not in _MANAGED_META},
     )
 
 
+def _render_body(memory: Memory) -> str:
+    """The body to write: the authored one verbatim, or the canonical shape for a node with none yet.
+
+    :func:`_parse_body` recognizes exactly ``## statement`` / ``**Why:**`` / ``**Rejected:**``, so
+    anything else in the file is text this function must CARRY, never text it may re-derive. It
+    re-derives only when there is nothing to carry — a fresh capture composing its first body.
+    """
+    if memory.body is not None:
+        if _parse_body(memory.body) != (memory.statement, memory.why, memory.alternatives):
+            # No verb edits a standing artifact's statement/why/rejected: a changed belief is a new
+            # node that ``supersedes`` this one, never an edit (the law artifacts.py states for an
+            # intent's SHALL contract, and the whole point of the reaffirm/supersede split for a
+            # belief). So a caller reaching here has broken it, and both ways out lose something the
+            # caller wanted — drop the authored prose, or drop the edit. Refuse both, before any
+            # write_text: the artifact on disk stays intact and says why.
+            raise ValueError(
+                f"{memory.id}: refusing to re-render an authored body whose statement/why/rejected "
+                f"changed — that would delete whatever else the body says. A changed belief is a new "
+                f"node that supersedes this one, not an edit; an amend verb must splice its new lines "
+                f"into Memory.body itself.")
+        return memory.body
+    lines = [f"## {memory.statement}"]
+    if memory.why:
+        lines += ["", f"**Why:** {memory.why}"]
+    if memory.alternatives:
+        lines += ["", f"**Rejected:** {memory.alternatives}"]
+    return "\n".join(lines) + "\n"
+
+
 def render_memory(memory: Memory) -> str:
-    """Render the markdown for a memory artifact (frontmatter machine-written, body authored)."""
-    meta: dict[str, Any] = {
+    """Render the markdown for a memory artifact (frontmatter machine-written, body authored).
+
+    Lossless by construction: unrecognized frontmatter keys ride through (:data:`_MANAGED_META`) and
+    the authored body is re-emitted verbatim (:func:`_render_body`), so a verb re-stamping one field
+    cannot delete anything else in the artifact.
+    """
+    meta: dict[str, Any] = dict(memory.extra_meta)  # unrecognized keys first; the owned ones overwrite
+    meta.update({
         "id": memory.id,
         "family": MEMORY_FAMILY,
         "type": memory.type,
@@ -326,7 +390,7 @@ def render_memory(memory: Memory) -> str:
             {"sym": c.sym, "anchor": c.anchor, "anchor_algo": c.anchor_algo} for c in memory.concerns
         ],
         "supersedes": list(memory.supersedes),
-    }
+    })
     if memory.superseded_by:  # stamped by the successor's applied supersede — see the field's docstring
         meta["superseded_by"] = memory.superseded_by
     if memory.evidence:  # written only when present, like pending_supersedes (keeps the artifact terse)
@@ -348,12 +412,7 @@ def render_memory(memory: Memory) -> str:
     if memory.provenance:
         meta["provenance"] = dict(memory.provenance)
 
-    lines = [f"## {memory.statement}"]
-    if memory.why:
-        lines += ["", f"**Why:** {memory.why}"]
-    if memory.alternatives:
-        lines += ["", f"**Rejected:** {memory.alternatives}"]
-    return _compose(meta, "\n".join(lines) + "\n")
+    return _compose(meta, _render_body(memory))
 
 
 # --------------------------------------------------------------------------------------------------
