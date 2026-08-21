@@ -760,6 +760,22 @@ def _dedup_guard(repo: Path, config: dict, graph, statement: str, why: str,
         )
 
 
+def _premise_already_holds(repo: Path, graph, ref: str) -> bool:
+    """Does a rejection premise hold at CAPTURE time? (:func:`retrieval.premise_holds`, pre-build.)
+
+    Read-time liveness is the graph's answer, but capture runs against the graph as it was BEFORE this
+    artifact existed — and a ``file:`` node outside an extractable language (``console.html``,
+    ``redis.tf``, a Dockerfile) is projected only by the references to it, including this very
+    capture's. Asking that graph would report every such premise absent, i.e. never warn on the one
+    mis-fill this check exists to catch. So for a ``file:`` ref, ask the filesystem instead — files are
+    truth (design law #6), and ``file_content_hash`` already resolves the ``:L<a>-L<b>`` region form.
+    Every other family (``int:``/``mem:``/``sym:``) is projected independently of who points at it.
+    """
+    if ref.startswith("file:"):
+        return file_content_hash(repo, ref) is not None
+    return retrieval.premise_holds(graph, ref)
+
+
 def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, why: str,
                     serves: list[str], concern_syms: list[str], rejected: str | None,
                     supersedes: list[str], promotable: bool, force_new: bool = False,
@@ -827,10 +843,18 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
     warnings += ev_warnings
     warnings += _serves_warnings(graph, serves)
     # A valid-when premise that doesn't resolve NOW would hide the rejection until it does — usually a
-    # typo. An invalidated-when premise legitimately names something not-yet-present (that's the point),
-    # so it is never warned on. Soft-warn only (D#3): the edge is still captured.
+    # typo. Soft-warn only (D#3): the edge is still captured.
     warnings += [f"⚠ --rejected-valid-when {p} doesn't resolve to a known node — the rejection stays "
                  f"hidden until it does (typo?)." for p in rejected_valid_when if p not in graph]
+    # The mirror failure, and the more expensive one, because it is silent in the other direction: an
+    # invalidated-when premise legitimately names something NOT YET true (that's the point) — but one
+    # that ALREADY holds withdraws the rejection from the moment of capture, so the clause is born
+    # invisible and no later event can reveal it. Measured in the field on `--rejected-invalidated-when
+    # file:<a file that already exists>`: a locator is not a condition unless it can still become true.
+    warnings += [f"⚠ --rejected-invalidated-when {p} ALREADY holds — the rejection is withdrawn from "
+                 f"the moment of capture and will never surface. Name the condition that would RETIRE "
+                 f"it (something not true yet), or drop the premise and let the rejection stand."
+                 for p in rejected_invalidated_when if _premise_already_holds(repo, graph, p)]
     # A supersede (applied or pending) is a deliberate mind-change → skip the near-duplicate guard.
     if not supersedes and not pending_supersedes and not force_new:
         _dedup_guard(repo, config, graph, statement, why, concerns, serves)

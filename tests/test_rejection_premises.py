@@ -193,6 +193,39 @@ def test_premise_without_a_rejection_is_guided_not_crashed(tmp_path: Path):
     assert memory.iter_memories(root) == []  # nothing written
 
 
+def test_an_already_true_invalidated_when_premise_is_warned_at_capture(tmp_path: Path):
+    """The mirror of the valid-when typo warning, and the failure that cost more in the field.
+
+    A premise that ALREADY holds withdraws the rejection from the moment of capture: the clause is born
+    invisible and no later event can reveal it. The mis-fill was `--rejected-invalidated-when
+    file:<a file that already exists>` — reaching for a locator naming the thing the belief is about
+    instead of a condition that could still become true. Soft-warn (D#3): the capture still lands.
+    """
+    root = _repo(tmp_path)
+    (root / "infra").mkdir()
+    (root / "infra" / "redis.tf").write_text('resource "redis" {}\n')
+    result = _run(["remember", "compute cache misses in-process", "--repo", str(root),
+                   "--concerns", SYM, "--rejected", "no Redis in the deploy",
+                   "--rejected-invalidated-when", "file:infra/redis.tf"])
+    assert "ALREADY holds" in result.output
+    assert "Captured " in result.output                      # warned, not blocked
+    # And the warning told the truth: the rejection really is invisible from birth.
+    assert "no Redis in the deploy" not in _text(root, "compute cache misses in-process")
+
+
+def test_a_not_yet_true_invalidated_when_premise_is_silent(tmp_path: Path):
+    """The legitimate case — the whole point of the field — must not be nagged (design law #4)."""
+    root = _repo(tmp_path)
+    result = _run(["remember", "compute cache misses in-process", "--repo", str(root),
+                   "--concerns", SYM, "--rejected", "no Redis in the deploy",
+                   "--rejected-invalidated-when", "file:infra/redis.tf"])
+    assert "ALREADY holds" not in result.output
+    # A live intent, however, holds now — an int: premise is warned on the same way a file: one is.
+    result = _run(["remember", "keep the cache in-process", "--repo", str(root), "--concerns", SYM,
+                   "--rejected", "a Redis-backed cache", "--rejected-invalidated-when", "int:cache-policy"])
+    assert "ALREADY holds" in result.output
+
+
 def test_non_locator_premise_is_guided_not_crashed(tmp_path: Path):
     root = _repo(tmp_path)
     result = runner.invoke(app, ["remember", "x", "--repo", str(root), "--rejected", "y",
