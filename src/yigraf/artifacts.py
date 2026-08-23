@@ -230,6 +230,58 @@ def _read_impl(entry: Any) -> Implements:
     return Implements(sym=entry["sym"], anchor=entry.get("anchor"), anchor_algo=entry.get("anchor_algo"))
 
 
+def set_task_state(path: Path, num: int, done: bool) -> bool:
+    """Flip one task's checkbox in the committed plan file; ``False`` if it was already in that state.
+
+    R6 says the FILE is truth for the authored families — it does not say a verb may not write the
+    file, and yigraf already ships exactly such a verb for the sibling authored family
+    (``intent <slug> --status``). Tasks were the only authored family whose mutable state had no verb
+    that writes it, so an agent that had correctly internalised "never hand-edit an artifact" was
+    structurally unable to close a task: the field measured an open count that was 67% false, on the
+    line ``yigraf status`` makes the pre-done authority (feedback-v4 #1).
+
+    Only the checkbox moves. The description, the edges, and every other line are re-emitted verbatim —
+    a state change is not a rewrite, the same rule ``memory.render_memory`` follows for a body.
+    """
+    path = Path(path)
+    text = path.read_text(encoding="utf-8")
+    out, changed = [], False
+    for line in text.splitlines(keepends=True):
+        m = _TASK_LINE.match(line.strip())
+        if m is not None and int(m.group(2)) == num:
+            was_done = m.group(1).lower() == "x"
+            if was_done != done:
+                out.append(line.replace(f"- [{m.group(1)}]", "- [x]" if done else "- [ ]", 1))
+                changed = True
+                continue
+        out.append(line)
+    if changed:
+        path.write_text("".join(out), encoding="utf-8")
+    return changed
+
+
+def append_tasks(path: Path, descriptions: list[str]) -> list[int]:
+    """Append todo tasks to a live plan's ``## Tasks`` list; returns the numbers assigned.
+
+    Numbers continue past the highest existing one and are never reused, so an id already recorded on
+    a ``link`` edge or a memory can't come to mean a different task (feedback-v4 #1).
+    """
+    path = Path(path)
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    nums = [int(m.group(2)) for m in (_TASK_LINE.match(ln.strip()) for ln in lines) if m]
+    last = max((i for i, ln in enumerate(lines) if _TASK_LINE.match(ln.strip())), default=None)
+    if last is None:  # no task list yet — start one at the end
+        lines += ["", "## Tasks"] if "## Tasks" not in text else []
+        last = len(lines) - 1
+    start = max(nums, default=0) + 1
+    assigned = list(range(start, start + len(descriptions)))
+    new_lines = [f"- [ ] {{#{n}}} {d}" for n, d in zip(assigned, descriptions)]
+    lines[last + 1:last + 1] = new_lines
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return assigned
+
+
 def render_plan(slug: str, title: str, tasks: list[str]) -> str:
     """Render the markdown for a new plan with todo tasks (no edges yet)."""
     meta = {"id": f"plan:{slug.casefold()}", "family": PLAN_FAMILY, "edges": {}}

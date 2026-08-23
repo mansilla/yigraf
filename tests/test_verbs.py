@@ -323,3 +323,76 @@ def test_open_task_with_live_implements_surfaces_reconcile(tmp_path: Path):
     graph, _ = build_graph(root, default_config())
     text = retrieval.context(graph, "refresh", default_config()).text
     assert "Task reconcile:" in text and "task:auth/1 is open but its implementing symbol" in text
+
+
+# --------------------------------------------------------------------------------------------------
+# feedback-v4: fields a mutating verb must not forget, and flags a sibling verb has
+# --------------------------------------------------------------------------------------------------
+
+def test_supersede_inherits_type_and_promotable(tmp_path: Path):
+    """A correction to a constraint is still a constraint (feedback-v4 #12).
+
+    `--type` defaulted to `decision` while its three siblings on the same verb said "default:
+    inherited", so a bare supersede quietly demoted one — and `promotable` (the mark that makes a rule
+    a candidate for an enforced check) was dropped with no flag anywhere to restore it, by a verb that
+    ADVERTISES what it carried.
+    """
+    root = _repo(tmp_path)
+    out = runner.invoke(app, ["note-constraint", "both write paths must emit the same field set",
+                              "--why", "one cost 25 minutes of GPU time", "--repo", str(root)])
+    assert out.exit_code == 0, out.output
+    old_id = re.search(r"mem:[0-9a-f]+", out.output).group(0)
+    old = memory.read_memory(memory.find_memory(root, old_id))
+    assert old.type == "constraint" and old.promotable
+
+    out = runner.invoke(app, ["supersede", old_id,
+                              "both write paths must emit the same field set, checked by a replay test",
+                              "--why", "the test now exists", "--repo", str(root)])
+    assert out.exit_code == 0, out.output
+    new = memory.read_memory(memory.find_memory(root, re.findall(r"mem:[0-9a-f]+", out.output)[0]))
+    assert new.type == "constraint", "a bare supersede must not demote a constraint to a decision"
+    assert new.promotable, "the promotable mark is authored state, not a capture-time default"
+    assert "type=constraint" in out.output and "promotable" in out.output  # and it says what carried
+
+
+def test_an_explicit_type_still_overrides_the_inheritance(tmp_path: Path):
+    root = _repo(tmp_path)
+    out = runner.invoke(app, ["note-constraint", "sessions expire at 30m", "--repo", str(root)])
+    old_id = re.search(r"mem:[0-9a-f]+", out.output).group(0)
+    out = runner.invoke(app, ["supersede", old_id, "sessions expiring at 30m was a product call",
+                              "--type", "rationale", "--repo", str(root)])
+    assert out.exit_code == 0, out.output
+    new = memory.read_memory(memory.find_memory(root, re.findall(r"mem:[0-9a-f]+", out.output)[0]))
+    assert new.type == "rationale"
+
+
+def test_propose_accepts_governs_like_its_three_siblings(tmp_path: Path):
+    """`remember`, `note-constraint` and `supersede` all take `--governs`; the fourth capture verb was
+    simply missed (feedback-v4 #11). A proposed policy belief has the same never-drifts argument."""
+    root = _repo(tmp_path)
+    (root / "docs").mkdir(exist_ok=True)
+    (root / "docs" / "policy.md").write_text("the policy\n")
+    out = runner.invoke(app, ["propose", "policy.md holds only policy, never status",
+                              "--from", "review", "--governs", "file:docs/policy.md",
+                              "--repo", str(root)])
+    assert out.exit_code == 0, out.output
+    node = memory.read_memory(memory.find_memory(root, re.search(r"mem:[0-9a-f]+", out.output).group(0)))
+    assert [c.anchor_algo for c in node.concerns] == [memory.GOVERNS_ALGO]
+    assert "governs file:docs/policy.md" in out.output  # echoed under its own label, not as `concerns`
+
+
+def test_the_capture_echo_never_calls_a_policy_anchor_a_concern(tmp_path: Path):
+    """The echo is the moment a mis-filled locator is cheap to catch — and on a supersede it printed
+    `concerns` one line above "Carried 1 governs", two lines of one run disagreeing (feedback-v4 #10)."""
+    root = _repo(tmp_path)
+    (root / "docs").mkdir(exist_ok=True)
+    (root / "docs" / "policy.md").write_text("the policy\n")
+    out = runner.invoke(app, ["remember", "policy.md holds only policy", "--governs",
+                              "file:docs/policy.md", "--concerns", SYM, "--repo", str(root)])
+    assert out.exit_code == 0, out.output
+    assert f"concerns {SYM}" in out.output and "governs file:docs/policy.md" in out.output
+    old_id = re.search(r"mem:[0-9a-f]+", out.output).group(0)
+    out = runner.invoke(app, ["supersede", old_id, "policy.md holds only policy and owners",
+                              "--repo", str(root)])
+    assert "governs file:docs/policy.md" in out.output
+    assert "concerns file:docs/policy.md" not in out.output

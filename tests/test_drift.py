@@ -180,7 +180,7 @@ def test_drift_stale_lists_what_the_count_counts(tmp_path: Path):
     result = runner.invoke(app, ["drift", "--stale", str(root)])
     assert result.exit_code == 0  # a stale completion is not the CI gate; only live drift is
     assert "STALE completions" in result.output and "task:auth/1" in result.output
-    assert "reopen the task if the change undid it" in result.output
+    assert "`close task:auth/1 --reopen` if the change undid it" in result.output
 
 
 def test_the_drift_report_names_the_relation_the_claim_and_the_verb(tmp_path: Path):

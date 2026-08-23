@@ -26,7 +26,10 @@ Every tool also takes `repo?` (the call's repo override); it's omitted below for
 
 | Tool | Args | Does |
 |------|------|------|
+| `plan`    | `slug`, `title?`, `tasks?`, `append_tasks?` | Create a plan of tasks, or add tasks to a live one. `title` is required to create; `append_tasks` continues numbering past the highest and never reuses an id. |
+| `tasks`   | `plan?`, `state?` | List tasks and their state — "what is outstanding", without depending on a semantic query matching. `state` is `open` \| `done` \| `stale`. |
 | `link`    | `task`, `target` | Bind a finished task to the `sym:` it implements (or the `int:` it tracks), anchored to current content. Re-call to re-anchor after the code changes. |
+| `close`   | `task`, `reopen?`, `force?` | Mark a task done by writing its checkbox in the plan file — the second half of finishing one, right after `link`. Refuses a task that implements nothing (an unanchored completion can never go STALE) unless `force`; `reopen` undoes it. |
 | `unlink`  | `task`, `target` | Retire a declaration that is no longer true — a symbol gone for good, or an anchor wrongly declared. Also takes `mem:<id>` to retire a memory's `concerns` or `grounded_by` ref. No mind-change is recorded. |
 | `reanchor` | `target`, `old`, `new` | Move ONE of a memory's anchors to where its subject moved. A locus repair, **not** a mind-change — no supersedes edge is written. |
 
@@ -36,8 +39,8 @@ Every tool also takes `repo?` (the call's repo override); it's omitted below for
 |------|------|------|
 | `remember`| `statement`, `why?`, `serves?`, `concerns?`, `governs?`, `rejected?`, `type?`, `grounding?`, `evidence?`, `rejected_valid_when?`, `rejected_invalidated_when?` | Persist a decision/rationale as a memory node; a `concerns` locus is anchored, so editing that code re-surfaces the decision. `governs` anchors a *usage policy* instead and never drifts. |
 | `note_constraint` | `rule`, `concerns?`, `governs?`, `why?`, `serves?`, `rejected?`, `grounding?`, `evidence?`, `rejected_valid_when?`, `rejected_invalidated_when?` | Capture a constraint/rule governing code, flagged as a candidate to promote into an enforced check. |
-| `propose` | `statement`, `from_`, `concerns?`, `rejected?`, `why?`, `serves?`, `type?`, `origin?`, `grounding?`, `evidence?`, … | Land a *candidate* belief from an outside source (a review, a doc, a spike) rather than asserting it yourself. |
-| `supersede` | `old_id`, `statement`, `why?`, `serves?`, `concerns?`, `governs?`, `rejected?`, `type?`, `grounding?`, `evidence?`, … | Record a mind-change: a new node superseding an old one, never an edit in place. **Inherits** the old node's `concerns`/`governs`/`serves` unless you re-aim them. |
+| `propose` | `statement`, `from_`, `concerns?`, `governs?`, `rejected?`, `why?`, `serves?`, `type?`, `origin?`, `grounding?`, `evidence?`, … | Land a *candidate* belief from an outside source (a review, a doc, a spike) rather than asserting it yourself. |
+| `supersede` | `old_id`, `statement`, `why?`, `serves?`, `concerns?`, `governs?`, `rejected?`, `type?`, `grounding?`, `evidence?`, … | Record a mind-change: a new node superseding an old one, never an edit in place. **Inherits** the old node's `concerns`/`governs`/`serves`/`type` and its `promotable` mark unless you re-aim them. |
 
 **Write — re-verify and endorse**
 

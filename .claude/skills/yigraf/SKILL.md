@@ -1,6 +1,6 @@
 ---
 name: yigraf
-description: Keep intent, code, and the reasoning behind them in sync when changing code in this repo. Read this skill before driving the CLI — the wrong verb rubber-stamps or destroys a trail. Before you report done, run `yigraf status`: up to date means no drift AND no stale, not the same as no open tasks.
+description: "Keep intent, code, and the reasoning behind them in sync when changing code in this repo. Read this skill before driving the CLI — the wrong verb rubber-stamps or destroys a trail. Before you report done, run `yigraf status`: up to date means no drift AND no stale, not the same as no open tasks."
 ---
 
 # yigraf — the intent↔code spine
@@ -33,10 +33,17 @@ Two companions to `context`, for the two questions it structurally cannot answer
 `status` is the only surface that reports both counts unconditionally. `yigraf drift` explains any
 drift; `yigraf drift --stale` lists the stale completions (that's what `⚠ n stale` counts).
 
-## 1. Link when a task is done (the seam)
-When you finish a task, name the symbols that implement it:
-`yigraf link task:<plan>/<n> sym:<path>#<name>` — this anchors the link to the symbol's current
-content. Linking once per completed task (not per edit) is enough.
+## 1. Link, then close, when a task is done (the seam)
+Two steps, in this order, once per completed task (not per edit):
+1. `yigraf link task:<plan>/<n> sym:<path>#<name>` — names what the task built and anchors it to the
+   symbol's current content.
+2. `yigraf close task:<plan>/<n>` — marks it done by writing the checkbox in the plan file.
+
+**Closing is a verb, not a hand-edit.** `close` refuses a task that implements nothing, so "done" and
+"anchored" land together — a completion with no anchor can never go STALE, which is the whole point of
+recording it. Use `--force` only when the task genuinely shipped no symbol, `--reopen` to undo.
+`yigraf tasks [<plan>] [--open|--done|--stale]` lists what is outstanding without depending on a
+semantic query matching; `yigraf plan <slug> --append-task "…"` adds work to a live plan.
 
 ## 2. Capture the *why* (decisions & constraints)
 When you make a non-obvious choice — picked an approach over a named alternative, set a constraint,
@@ -87,7 +94,7 @@ reason to have yigraf at all.
 ## 3. Author specs as you plan
 - `yigraf intent <slug> -s "The system SHALL …" --scenario "Given …, When …, Then …" [--design "…"]`
 - `yigraf plan <slug> -t "<title>" --task "<description>"` then `yigraf link task:<plan>/1 int:<slug>`
-  to track the intent.
+  to track the intent. Add to a live plan with `--append-task`; never hand-edit the artifact.
 
 ## 4. The three re-verify signals: drift, stale, conflict
 `yigraf context` and the hooks push these at you as you work, so you rarely have to go looking —
@@ -121,7 +128,8 @@ A pure rename auto-re-anchors and never surfaces. Re-verify the code still satis
 
 **Stale completion** — a task marked **done** whose implementing symbol drifted. The completion isn't
 false, it's *unverified*: the evidence for "done" moved. Re-verify, then `yigraf link task:<id> sym:…`
-to re-anchor — or reopen the task if the change actually regressed it. Never flip it to `todo`
+to re-anchor — or `yigraf close task:<id> --reopen` if the change actually regressed it. Never flip
+it to `todo`
 automatically. You won't see these at the edit hook (a closed task must not nag mid-edit); they surface
 in `yigraf context`, at SessionStart, and to your principal at the turn boundary. This is what
 `status`'s `⚠ n stale` counts — `yigraf drift --stale` lists them. (Plain `yigraf drift` says "No

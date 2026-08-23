@@ -21,7 +21,7 @@ from pathlib import Path
 import networkx as nx
 from typer.testing import CliRunner
 
-from yigraf import counters, retrieval
+from yigraf import counters, memory, retrieval
 from yigraf.cli import app
 from yigraf.config import default_config, load_config
 from yigraf.extract import build_graph
@@ -620,3 +620,49 @@ def test_build_warns_when_the_floor_is_armed_but_unmeasurable(tmp_path: Path):
 def test_build_is_quiet_when_the_floor_is_off(tmp_path: Path):
     root = _repo(tmp_path)
     assert "maturity_survival_floor" not in _run(["build", str(root)]).output
+
+
+def test_gc_backfills_the_superseded_stamp_an_existing_store_never_gets(tmp_path: Path):
+    """`status: superseded` / `superseded_by:` is written forward-only, at two call sites, with no
+    migration — so 87 of 89 retired beliefs in the field's store still read `active` (feedback-v4).
+
+    Nothing MIS-RANKS: `superseded_in` is recomputed from the edges on every build, so retrieval,
+    `drift.is_reverifiable`, `gc` and `show` already treat them as retracted. The gap is confined to a
+    reader of the artifact FILES, which is exactly how it bit — both twins read `active`, so the wrong
+    one got pinned.
+    """
+    root = _repo(tmp_path)
+    out = _run(["remember", "refresh uses optimistic locking", "--concerns", SYM, "--repo", str(root)]).output
+    old_id = re.search(r"Captured (mem:[0-9a-f]{16})", out).group(1)
+    _run(["supersede", old_id, "refresh uses pessimistic locking", "--concerns", SYM, "--repo", str(root)])
+
+    # simulate the pre-1.5.0 store: strip the stamp the successor's edge already asserts
+    old_path = memory.find_memory(root, old_id)
+    node = memory.read_memory(old_path)
+    node.status, node.superseded_by = "active", None
+    old_path.write_text(memory.render_memory(node), encoding="utf-8")
+
+    dry = _run(["gc", str(root)]).output
+    assert "still read `status: active`" in dry and old_id in dry
+    assert memory.read_memory(old_path).status == "active", "dry run must write nothing"
+
+    applied = _run(["gc", str(root), "--apply"]).output
+    assert "Stamped 1 artifact" in applied
+    # The same run then archives it as superseded churn, so the artifact moves — the stamp lands first
+    # precisely so the file kept as history reads correctly.
+    archived = root / "yigraf" / "memory" / "archive" / old_path.name
+    restamped = memory.read_memory(archived if archived.exists() else old_path)
+    assert restamped.status == "superseded" and restamped.superseded_by
+    assert restamped.statement == node.statement, "a stamp is metadata, never a rewrite"
+    assert "still read `status: active`" not in _run(["gc", str(root)]).output  # idempotent
+
+
+def test_gc_does_not_stamp_a_held_pending_supersede(tmp_path: Path):
+    """A pending supersede has retired nothing — stamping it would assert the resolution it awaits."""
+    root = _repo(tmp_path)
+    out = _run(["remember", "refresh uses optimistic locking", "--concerns", SYM, "--repo", str(root)]).output
+    old_id = re.search(r"Captured (mem:[0-9a-f]{16})", out).group(1)
+    _run(["attest", old_id, "--repo", str(root)])  # a human trust floor ⇒ the next supersede is held
+    _run(["supersede", old_id, "refresh uses pessimistic locking", "--repo", str(root)])
+    assert memory.read_memory(memory.find_memory(root, old_id)).status == "active"
+    assert "still read `status: active`" not in _run(["gc", str(root)]).output

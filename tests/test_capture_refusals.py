@@ -68,3 +68,36 @@ def test_pin_refuses_a_superseded_belief_and_names_the_successor(tmp_path: Path)
 
     assert runner.invoke(app, ["pin", new_id, "--repo", str(root)]).exit_code == 0
     assert memory.read_memory(memory.find_memory(root, new_id)).pinned is True
+
+
+def test_both_rejection_premises_ask_the_same_oracle(tmp_path: Path):
+    """`--rejected-valid-when` asked bare graph membership while its sibling asked the filesystem for a
+    `file:` ref — and the docstring giving the reason sat on the half that HAD it (feedback-v4 #8).
+
+    A `file:` node outside an extractable language is projected only by the references to it, including
+    this very capture's, so the graph reports every such premise absent. That made the warning
+    self-falsifying: it fires on the FIRST capture for a path and never again, an artifact of
+    projection order rather than of store state — and its advice was false besides, since `show` then
+    reports the premise holding.
+    """
+    root = _repo(tmp_path)
+    (root / "notes.txt").write_text("the note\n")
+    out = runner.invoke(app, ["remember", "use approach A for the loader", "--repo", str(root),
+                              "--rejected", "approach B — too slow",
+                              "--rejected-valid-when", "file:notes.txt"])
+    assert out.exit_code == 0, out.output
+    assert "doesn't resolve to a known node" not in out.output
+    mem_id = re.search(r"mem:[0-9a-f]+", out.output).group(0)
+    assert "the rejection still applies" in runner.invoke(
+        app, ["show", mem_id, "--repo", str(root)]).output
+
+
+def test_a_valid_when_premise_that_really_is_missing_still_warns(tmp_path: Path):
+    """The scoping fix must not silence the mis-fill the check exists to catch."""
+    root = _repo(tmp_path)
+    out = runner.invoke(app, ["remember", "use approach A for the loader", "--repo", str(root),
+                              "--rejected", "approach B — too slow",
+                              "--rejected-valid-when", "file:no/such/path.txt"])
+    assert out.exit_code == 0
+    assert "doesn't resolve to a known node" in out.output
+    assert "isn't indexed" in out.output, "say what the other explanation is, not just 'typo?'"

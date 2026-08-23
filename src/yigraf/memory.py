@@ -119,6 +119,10 @@ MEMORY_TYPES = (
     "preference",
 )
 
+#: The type a bare capture lands as. Named so ``supersede`` can tell "the caller inherited a
+#: non-default type" from "nothing to report" when it echoes what carried (feedback-v4 #12).
+DEFAULT_MEMORY_TYPE = "decision"
+
 _FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n?(.*)\Z", re.DOTALL)
 _HEADING = re.compile(r"^##\s+(.*?)\s*$")
 _WHY = re.compile(r"^\*\*Why:\*\*\s*(.*)$")

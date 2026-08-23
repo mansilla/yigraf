@@ -382,7 +382,7 @@ def test_done_task_drift_surfaces_as_stale_in_the_context_query(tmp_path: Path):
     _done_and_drifted(root)
     text = _ctx(root, "session expiry").text
     assert "Stale" in text and "task:auth/1" in text and "completion STALE" in text
-    assert "reopen the task" in text  # STALE is re-verifiable (relink or reopen), never auto-false
+    assert "--reopen" in text  # STALE is re-verifiable (relink or reopen), never auto-false
 
 
 def test_done_task_drift_stays_silent_at_the_edit_hook(tmp_path: Path):

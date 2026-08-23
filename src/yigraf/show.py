@@ -100,7 +100,20 @@ def _edges_out(graph: nx.DiGraph, node_id: str, relation: str) -> list[str]:
 
 
 def _edges_in(graph: nx.DiGraph, node_id: str, relation: str) -> list[str]:
-    return sorted(s for s, _, a in graph.in_edges(node_id, data=True) if a.get("relation") == relation)
+    """Sources pointing at ``node_id`` over ``relation``, a held-pending supersede marked as such.
+
+    The outbound list has always marked ``pending`` (the successor knows it is waiting); the inbound
+    one built a plain string and never checked (feedback-v4 #3). That is the wrong half to leave
+    silent: the still-authoritative predecessor is the node someone auditing the belief *in force*
+    inspects, and it could not tell them a replacement was sitting there awaiting their endorsement.
+    """
+    out = []
+    for src, _, a in graph.in_edges(node_id, data=True):
+        if a.get("relation") != relation:
+            continue
+        out.append(f"{src}   (PENDING — {src} awaits `yigraf attest`; this node still holds)"
+                   if a.get("pending") else src)
+    return sorted(out)
 
 
 def _memory_detail(graph: nx.DiGraph, node_id: str, attrs: dict) -> list[str]:

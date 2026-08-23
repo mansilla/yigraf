@@ -41,6 +41,7 @@ import networkx as nx
 
 from yigraf.contradiction import detect_conflicts
 from yigraf.drift import compute_drift, is_surfaced, stale_completions
+from yigraf.retrieval import drift_verbs
 
 #: Obligation kinds, in the order they are announced — most-actionable first. ``conflict`` leads
 #: because it is the only signal that structurally **requires** the principal: the agent can clear a
@@ -117,8 +118,11 @@ def _stale(item) -> Obligation:
         subject=item.task_id, locator=item.locator,
         detail=("implementing symbol is gone — the completion has no evidence"
                 if gone else "implementing symbol changed after the task was marked done"),
-        verb=(f"reopen the task, or re-link once re-verified: "
-              f"yigraf link {item.task_id} <sym>" if gone
+        # Both branches name a real command. This field's contract is to hand the caller the resolving
+        # verb, and for a gone locus it used to read "reopen the task, or …" — an instruction with no
+        # verb behind it, echoed on to three other surfaces (feedback-v4 #1). `close --reopen` exists now.
+        verb=(f"yigraf link {item.task_id} <sym>   — re-link once re-verified, or "
+              f"yigraf close {item.task_id} --reopen if the change undid the work" if gone
               else f"re-verify, then: yigraf link {item.task_id} {item.locator}"),
     )
 
@@ -193,11 +197,14 @@ def _drift(item, graph: nx.DiGraph | None = None) -> Obligation:
         verb = (f"their belief, your edit — ask before you clear it, or nominate it: "
                 f"yigraf dispute {item.task_id} <yours> --why \"…\"")
     else:
-        verb = {
-            "implements": f"re-verify, then: yigraf link {item.task_id} {item.locator}",
-            "concerns": f"yigraf reaffirm {item.task_id}   — or supersede it if your mind changed",
-            "grounded_by": f"yigraf reaffirm {item.task_id} --grounding empirical   — or downgrade to inferred",
-        }.get(item.relation, f"yigraf reaffirm {item.task_id}")
+        # One wording, three surfaces (feedback-v4 #7). This channel used to key its verb on
+        # ``item.relation`` alone and ignore ``item.kind``, so hard and soft drift got the same line —
+        # and on hard drift BOTH verbs it named are refused (`reaffirm` cannot re-anchor a locus that
+        # is gone; `supersede` inherits the dead anchor) while BOTH that clear it, `reanchor` and
+        # `unlink`, were absent. Its sibling :func:`_stale` twelve lines up already branched on kind.
+        # ``drift_verbs`` is the single owner of that fork and its docstring is the argument for it,
+        # so this defers to it rather than keeping a third, drifting copy of the wording.
+        verb = drift_verbs(item)
     return Obligation(
         kind="drift", key=f"drift::{item.relation}::{item.task_id}::{item.locator}",
         subject=f"{item.task_id}{foreign}", locator=item.locator,

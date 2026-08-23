@@ -65,8 +65,9 @@ def test_show_names_which_anchor_list_drifted(tmp_path: Path):
     assert runner.invoke(app, ["build", str(root)]).exit_code == 0
     out = runner.invoke(app, ["show", mem_id, "--repo", str(root)]).output
     assert "concerns" in out and "grounded_by" in out
-    assert "the evidence grounding this ·empirical belief" in out  # the grounded_by advice, verbatim
+    assert "the evidence grounding this belief" in out  # the grounded_by advice, verbatim
     assert "`reaffirm" in out  # ids pre-filled, same wording the hook and `yigraf drift` carry
+    assert "`reanchor" in out  # the one exit that keeps both the tier and the evidence (v4 #2)
 
 
 def test_show_resolves_a_bare_hash_prefix(tmp_path: Path):

@@ -154,20 +154,59 @@ def _nominated_conflicts(graph: nx.DiGraph) -> list[Conflict]:
     return out
 
 
-def detect_conflicts(graph: nx.DiGraph, root: Path, config: dict, index=None) -> list[Conflict]:
-    """The standing reconcile sweep: nominated disputes, plus co-anchored live belief pairs above the
-    cosine gate (mem:060/062).
+def _pending_supersede_conflicts(graph: nx.DiGraph) -> list[Conflict]:
+    """Every held-pending supersede, enumerated from the EDGES (int:memory-attestation).
 
-    Two independent sources, unioned. **Nominations** are asserted verdicts and always surface — no
-    index required. The **cosine sweep** is derived and fail-open: no index ⇒ it contributes nothing
-    (silence over noise, design law #4), rather than the whole function returning ``[]``. It loads only
-    the persisted vectors — pairwise cosine is a dot product of two normalized rows, so no model is
-    loaded (cheap enough for the status path). The status surface already holds a loaded index; it
-    passes it in to avoid a second read. A pair sharing several anchors is reported once (first anchor
-    by sort), and a nominated pair is never also reported by the sweep.
+    An agent's ``supersede`` of a human-attested belief is captured but not applied: the predecessor
+    stays authoritative and the edge is marked ``pending`` until a principal decides. That is an open
+    conflict by construction — nothing needs measuring — but until now ``pending`` was only a *label*
+    that :func:`_pending` stuck on a pair one of the other two sources had already found, so a pending
+    supersede reached the human-facing surfaces only if the two statements happened to sit above
+    ``conflict_cosine``. A supersede states a CHANGED belief, so normally they do not: the field
+    measured 0.6457 and 0.5583 on realistic corrections, both invisible to ``status``, ``status
+    --json``, ``conflicts``, ``show`` and the Stop-hook notice, while the SessionStart packet rendered
+    the pending block in the same breath as a ``no drift · fresh`` status line (feedback-v4 #3).
+
+    So the better-written the correction, the less likely the attestation trust floor was to be
+    enforced — the exact inverse of what ``supersede``'s own promise ("stays authoritative until a
+    human resolves the conflict") says. This source is index-free for the same reason nominations are:
+    the state is asserted, not derived, and every replica must reach the same open set.
+    """
+    out: list[Conflict] = []
+    for new_id, old_id, attrs in graph.edges(data=True):
+        if attrs.get("relation") != "supersedes" or not attrs.get("pending"):
+            continue
+        left, right = sorted((new_id, old_id))
+        shared = sorted(_anchors_of(graph, left) & _anchors_of(graph, right))
+        out.append(Conflict(
+            anchor=shared[0] if shared else "",
+            left=left, right=right, cosine=0.0, pending=True,
+            dominant=revision.dominant_id(left, graph.nodes[left], right, graph.nodes[right])
+            if left in graph and right in graph else None))
+    return out
+
+
+def detect_conflicts(graph: nx.DiGraph, root: Path, config: dict, index=None) -> list[Conflict]:
+    """The standing reconcile sweep: nominated disputes, held-pending supersedes, and co-anchored live
+    belief pairs above the cosine gate (mem:060/062).
+
+    Three independent sources, unioned. **Nominations** are asserted verdicts and always surface — no
+    index required. **Pending supersedes** are likewise asserted state, enumerated from the edges
+    rather than labelled onto whatever the sweep found (:func:`_pending_supersede_conflicts`). The **cosine
+    sweep** is derived and fail-open: no index ⇒ it contributes nothing (silence over noise, design
+    law #4), rather than the whole function returning ``[]``. It loads only the persisted vectors —
+    pairwise cosine is a dot product of two normalized rows, so no model is loaded (cheap enough for
+    the status path). The status surface already holds a loaded index; it passes it in to avoid a
+    second read. A pair sharing several anchors is reported once (first anchor by sort), and a pair
+    already found by an earlier source is never re-reported by a later one.
     """
     conflicts: list[Conflict] = _nominated_conflicts(graph)
     seen: set[tuple[str, str]] = {(c.left, c.right) for c in conflicts}
+    for c in _pending_supersede_conflicts(graph):
+        if (c.left, c.right) in seen or _reconciled(graph, c.left, c.right):
+            continue
+        seen.add((c.left, c.right))
+        conflicts.append(c)
 
     if index is None:
         index = load_index(root, config)
@@ -209,8 +248,15 @@ def detect_conflicts(graph: nx.DiGraph, root: Path, config: dict, index=None) ->
 
 
 def _finding_order(c: Conflict) -> tuple:
-    """Nominations first (a principal already judged them worth attention), then by descending cosine."""
-    return (not c.nominated, -c.cosine, c.anchor, c.left, c.right)
+    """Nominations first (a principal already judged them worth attention), then held-pending
+    supersedes, then by descending cosine.
+
+    Pending outranks the sweep because it is asserted rather than measured, and because it carries no
+    cosine — ordering by ``-cosine`` alone would sort every pending finding to the BOTTOM, under a cap
+    (``obligations.DEFAULT_MAX``) that then drops the one item only a principal can clear. That is the
+    same shape as the 1.5.0 stale-before-conflict bug, one level down (feedback-v4 #3).
+    """
+    return (not c.nominated, not c.pending, -c.cosine, c.anchor, c.left, c.right)
 
 
 def open_conflict_count(graph: nx.DiGraph, root: Path, config: dict, index=None) -> int:

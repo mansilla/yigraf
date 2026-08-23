@@ -107,3 +107,62 @@ def test_unlink_refusal_names_both_anchor_lists(tmp_path: Path):
     assert result.exit_code == 0
     assert "any anchor list" in result.output
     assert OLD_SYM in result.output                       # the concern is named, not hidden
+
+
+def test_reanchor_keeps_a_policy_anchor_a_policy_anchor(tmp_path: Path):
+    """`--governs` exists so a policy never drifts; `reanchor` silently converted it (feedback-v4 #5).
+
+    It built a fresh Concern from `_anchor` without checking the *replaced* concern's `anchor_algo`, so
+    moving a policy stamped a content hash — reintroducing the recurring never-real ⚠ the flag exists
+    to prevent, while printing "The claim and its history are unchanged", true of the claim and false
+    of what the anchor MEANS. `GOVERNS_ALGO`'s docstring named `reaffirm` as the only re-stamper that
+    must leave it alone and overlooked this one. It composes badly too: the hard-drift line for a
+    deleted governed locus recommends `reanchor`.
+    """
+    root = _repo(tmp_path)
+    (root / "docs").mkdir(exist_ok=True)
+    (root / "docs" / "status.md").write_text("today: green\n")
+    (root / "docs" / "board.md").write_text("today: green\n")
+    mem = _remember(root, "status.md holds only status lines", "--governs", "file:docs/status.md")
+    assert [c.anchor_algo for c in _mem(root, mem).concerns] == [memory.GOVERNS_ALGO]
+
+    out = runner.invoke(app, ["reanchor", mem, "file:docs/status.md", "file:docs/board.md",
+                              "--repo", str(root)])
+    assert out.exit_code == 0, out.output
+    moved = _mem(root, mem).concerns[0]
+    assert moved.sym == "file:docs/board.md"
+    assert moved.anchor is None and moved.anchor_algo == memory.GOVERNS_ALGO
+    assert "policy anchor" in out.output  # and it says the kind survived
+
+    (root / "docs" / "board.md").write_text("wholesale rewrite, nothing in common\n")
+    assert runner.invoke(app, ["build", str(root)]).exit_code == 0
+    assert "No drift." in runner.invoke(app, ["drift", str(root)]).output
+
+
+def test_reanchor_validates_the_new_locus_as_a_policy_locus(tmp_path: Path):
+    """A policy governs a whole locus that exists — the same two rules `--governs` enforces at capture,
+    so a move cannot smuggle in a line range or a path that isn't there."""
+    root = _repo(tmp_path)
+    (root / "docs").mkdir(exist_ok=True)
+    (root / "docs" / "status.md").write_text("today: green\n")
+    mem = _remember(root, "status.md holds only status lines", "--governs", "file:docs/status.md")
+    out = runner.invoke(app, ["reanchor", mem, "file:docs/status.md", "file:docs/status.md:L1-L1",
+                              "--repo", str(root)])
+    assert out.exit_code == 0 and "line range" in out.output
+    assert _mem(root, mem).concerns[0].sym == "file:docs/status.md"  # unchanged
+
+
+def test_reanchor_gives_evidence_a_content_anchor_even_on_a_governs_node(tmp_path: Path):
+    """A ref carried on BOTH lists resolves twice: grounding cites contents, policy cites use."""
+    root = _repo(tmp_path)
+    (root / "docs").mkdir(exist_ok=True)
+    (root / "docs" / "status.md").write_text("today: green\n")
+    (root / "docs" / "board.md").write_text("today: green\n")
+    mem = _remember(root, "status.md holds only status lines",
+                    "--governs", "file:docs/status.md",
+                    "--grounding", "empirical", "--evidence", "file:docs/status.md")
+    assert runner.invoke(app, ["reanchor", mem, "file:docs/status.md", "file:docs/board.md",
+                               "--repo", str(root)]).exit_code == 0
+    node = _mem(root, mem)
+    assert node.concerns[0].anchor is None and node.concerns[0].anchor_algo == memory.GOVERNS_ALGO
+    assert node.evidence[0].anchor is not None, "evidence is never a policy anchor"

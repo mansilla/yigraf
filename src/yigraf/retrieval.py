@@ -19,7 +19,7 @@ from pathlib import Path
 import networkx as nx
 
 from yigraf import counters
-from yigraf.drift import compute_drift, is_surfaced
+from yigraf.drift import compute_drift, is_stale_completion, is_surfaced
 from yigraf.scaffold import WORKSPACE_DIRNAME
 
 #: Edges that count toward a node's incoming "importance" (refs_in). Shared with the GC/relevance
@@ -281,6 +281,67 @@ VERB_FORK = ("↳ Which verb: `reaffirm` = the belief is UNCHANGED (re-anchor on
              "verb clears the ⚠ on its own · never re-`remember` (it duplicates).")
 
 
+def drift_verbs(item) -> str:
+    """The exits that resolve one drift item, ids pre-filled — the half after the cause clause.
+
+    Split out of :func:`drift_tail` so the principal's Stop-hook notice can reuse the fork without
+    repeating a cause it already renders on its own ``detail`` line (feedback-v4 #7). That notice used
+    to carry a *third* copy of this wording, keyed on relation alone, and had gone stale against both
+    kind-aware forks. One owner, three surfaces.
+    """
+    if item.relation == "concerns":
+        # Hard drift names `reanchor` FIRST, because "the locus is gone" most often means the subject
+        # MOVED, and routing that through `supersede` files a mind-change nobody had — the false-trail
+        # cost that earned the verb (feedback-v3 #2). `supersede` stays for an actual mind-change and
+        # `unlink` for an anchor that never belonged.
+        return (f"re-verify this decision, then `reaffirm {item.task_id}` or "
+                f'`supersede {item.task_id} "<restated>"`.' if item.kind == "soft" else
+                f"the locus is gone, so `reaffirm` can't re-anchor it — if the subject moved, "
+                f"`reanchor {item.task_id} {item.locator} <new locus>` (no mind-change recorded); if "
+                f'the decision itself changed, `supersede {item.task_id} "<restated>"`; if the anchor '
+                f"never belonged, `unlink {item.task_id} {item.locator}`.")
+    if item.relation == "grounded_by":
+        # Kind-aware for the same reason the concerns fork is (mem:05f50ec0daf05115): on hard drift the
+        # observation is GONE, so "re-verify it still holds" names something unreadable and `--evidence`
+        # can only upsert *beside* the dead ref, never remove it.
+        #
+        # Both branches now lead with `reanchor` and each exit carries the condition that selects it —
+        # the shape the concerns fork got in 1.5.0 and these lines did not (feedback-v4 #2). It matters
+        # more here than there, because none of the exits these lines USED to name repairs a drifting
+        # evidence anchor: `--evidence <fresh>` is refused unless it re-names the drifting locator
+        # itself, the "honest downgrade" to `inferred` leaves the ⚠ standing (grounds-drift is computed
+        # from the anchor, not the tier), and `unlink` is refused while the belief is empirical with
+        # that as its only grounding. `reanchor` is the one command that keeps both the tier and the
+        # evidence link, and it was named in neither line. Documentary evidence is where the field's
+        # churn concentrates — one commit drifted eight `grounded_by` anchors at once.
+        return (f"if the observation MOVED or was replaced, "
+                f"`reanchor {item.task_id} {item.locator} <fresh>` (keeps the tier; no mind-change "
+                f"recorded); if you re-ran it in place, `reaffirm {item.task_id} --grounding empirical "
+                f"--evidence {item.locator}` (re-name the SAME locator — that is what clears it); if it "
+                f"no longer grounds the claim, downgrade `reaffirm {item.task_id} --grounding inferred` "
+                f"and then `unlink {item.task_id} {item.locator}`."
+                if item.kind == "soft" else
+                f"nothing is left to re-verify, so if the observation lives somewhere else now, "
+                f"`reanchor {item.task_id} {item.locator} <where it lives>` (keeps the tier, one "
+                f"command); if nothing replaces it, downgrade honestly, `reaffirm {item.task_id} "
+                f"--grounding inferred`, *then* retire the dead ref: "
+                f"`unlink {item.task_id} {item.locator}`.")
+    return (f"re-verify it still holds, then `link {item.task_id} {item.locator}` to re-anchor."
+            if item.kind == "soft" else
+            f"the symbol is gone — `link {item.task_id} <new locus>` if it moved, "
+            f"`unlink {item.task_id} {item.locator}` if the task no longer implements it, "
+            f"or `close {item.task_id} --reopen` if the work was undone.")
+
+
+def drift_cause(item) -> str:
+    """What changed, in one clause: the half a surface with its own ``detail`` line already has."""
+    changed = "changed since anchored" if item.kind == "soft" else "no longer found"
+    if item.relation == "grounded_by":
+        return (f"the evidence grounding this belief {changed}" if item.kind == "soft"
+                else "the evidence grounding this belief is gone")
+    return changed
+
+
 def drift_tail(item) -> str:
     """What drifted and which verb resolves it, for one drift item — unframed, ids pre-filled.
 
@@ -294,42 +355,14 @@ def drift_tail(item) -> str:
     (``cli.reaffirm`` refuses it), so offering it there would send the agent down a dead end. Each line
     carries the ids already filled in — the agent should not have to retype what yigraf just told it.
 
-    Returned **unframed** so the two drift surfaces can present it their own way from one wording. They
+    Returned **unframed** so the drift surfaces can present it their own way from one wording. They
     disagreed until this split: the injected ⚠ block named the relation and both verbs while ``yigraf
     drift`` printed a bare ``soft drift: mem:X → sym:Y (body changed since anchored)`` that named
     neither — so the CLI, which is what an agent reaches for once it knows the verbs, was the surface
     with no advice on it. The relation label is the load-bearing half: a memory can carry the *same*
     symbol under both ``concerns`` and ``evidence``, and each list is cleared by a different call.
     """
-    verb = "changed since anchored" if item.kind == "soft" else "no longer found"
-    if item.relation == "concerns":
-        # Hard drift names `reanchor` FIRST, because "the locus is gone" most often means the subject
-        # MOVED, and routing that through `supersede` files a mind-change nobody had — the false-trail
-        # cost that earned the verb (feedback-v3 #2). `supersede` stays for an actual mind-change and
-        # `unlink` for an anchor that never belonged.
-        return (f"{verb} — re-verify this decision, then `reaffirm {item.task_id}` or "
-                f'`supersede {item.task_id} "<restated>"`.' if item.kind == "soft" else
-                f"{verb} — the locus is gone, so `reaffirm` can't re-anchor it — if the subject moved, "
-                f"`reanchor {item.task_id} {item.locator} <new locus>` (no mind-change recorded); if "
-                f'the decision itself changed, `supersede {item.task_id} "<restated>"`; if the anchor '
-                f"never belonged, `unlink {item.task_id} {item.locator}`.")
-    if item.relation == "grounded_by":
-        # Kind-aware for the same reason the concerns fork is (mem:05f50ec0daf05115): on hard drift the
-        # observation is GONE, so "re-verify it still holds" names something unreadable and `--evidence`
-        # can only upsert *beside* the dead ref, never remove it. `unlink` is the verb that reaches it.
-        return (f"the evidence grounding this ·empirical belief {verb} — re-verify the observation "
-                f"still holds, then `reaffirm {item.task_id} --grounding empirical --evidence <fresh>`, "
-                f"or honestly downgrade: `reaffirm {item.task_id} --grounding inferred`."
-                if item.kind == "soft" else
-                f"the evidence grounding this ·empirical belief is gone, so there is nothing left to "
-                f"re-verify — name what replaces it, `reaffirm {item.task_id} --grounding empirical "
-                f"--evidence <fresh>`, or downgrade, `reaffirm {item.task_id} --grounding inferred`, "
-                f"then retire the dead ref: `unlink {item.task_id} {item.locator}`.")
-    return (f"{verb} — re-verify it still holds, then `link {item.task_id} {item.locator}` to re-anchor."
-            if item.kind == "soft" else
-            f"{verb} — the symbol is gone — `link {item.task_id} <new locus>` if it moved, "
-            f"`unlink {item.task_id} {item.locator}` if the task no longer implements it, "
-            f"or reopen {item.task_id} if the work was undone.")
+    return f"{drift_cause(item)} — {drift_verbs(item)}"
 
 
 def _drift_line(item) -> str:
@@ -374,7 +407,8 @@ def _stale_line(item) -> str:
     """
     what = "changed since it was checked off" if item.kind == "soft" else "is gone"
     return (f"  ⚠ {item.task_id}: completion STALE — {item.locator} {what}; re-verify it still holds, "
-            f"then re-`link` {item.task_id} to re-anchor, or reopen the task if the change undid it.")
+            f"then re-`link` {item.task_id} to re-anchor, or `close {item.task_id} --reopen` if the "
+            f"change undid it.")
 
 
 def _stale_block(items: list, config: dict | None = None) -> list[str]:
@@ -580,7 +614,8 @@ def _implemented_open_tasks(graph: nx.DiGraph, drifted_edges: set[tuple[str, str
         impl = [d for _, d, a in graph.out_edges(node_id, data=True) if a.get("relation") == "implements"]
         if impl and not any((node_id, d) in drifted_edges for d in impl):
             lines.append(f"  ⚠ {node_id} is open but its implementing symbol(s) exist and are current "
-                         f"({', '.join(sorted(impl))}) — if the work is done, check its box.")
+                         f"({', '.join(sorted(impl))}) — if the work is done, "
+                         f"`yigraf close {node_id}`.")
     return sorted(lines)
 
 
@@ -1198,9 +1233,9 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
         if item.kind == "renamed":
             continue
         drifted_edges.add((item.task_id, item.locator))  # full set — _verified_reconcile needs it
-        if not is_surfaced(graph, item):  # done-task implements drift → STALE completion (int:drift-as-stale)
-            stale_items.append(item)  # principal-facing dashboard, never the edit hook (mem:056)
-        else:
+        if is_stale_completion(graph, item):  # int:drift-as-stale — principal-facing, never the edit hook
+            stale_items.append(item)  # (mem:056)
+        elif is_surfaced(graph, item):
             drift_items.append(item)
 
     reconcile = _verified_reconcile(graph, drifted_edges)
@@ -1333,9 +1368,11 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
         # Scoped, unlike SessionStart: a topic query answers a topic, and the global obligation
         # dashboard is what session start is *for*. Same split _capture_gaps has always made.
         in_view = item.task_id in in_scope or item.locator in in_scope
-        if not is_surfaced(graph, item):  # done-task implements drift → STALE completion (int:drift-as-stale)
+        if is_stale_completion(graph, item):  # int:drift-as-stale
             if in_view:  # principal-facing here (a query), never the edit hook — mem:056/mem:81edb
                 stale_items.append(item)
+            continue
+        if not is_surfaced(graph, item):
             continue
         if in_view:
             surfaced.append(item)

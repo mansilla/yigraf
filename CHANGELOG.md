@@ -4,6 +4,107 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.5.2] — 2026-08-22
+
+**A guidance string that names a verb the state refuses is a dead end wearing a helpful face.**
+
+The fourth field report, from eight days of daily use on `ezgo-isaacsim` (2850 symbols, 366 memory
+artifacts, 91 supersedes edges), with every claim re-checked by an independent pass instructed to
+refute it. Almost all of it lands in one place: **design law #1 stakes the product on the guidance
+being right** — a recoverable condition exits 0 *because* the message teaches the retry — and nothing
+tested that the taught retry works. Six surfaces named a verb that is provably refused in that state,
+omitted the one that works, described a command the caller had not sent, or reported a success that
+had not happened. `tests/test_guidance_is_executable.py` now closes the class: put the tool in a
+state, read the verbs its own output names, run them, assert the ⚠ is gone.
+
+### Added
+- **`yigraf close task:<plan>/<n>` and `--reopen`** — tasks were the only authored family whose
+  mutable state had no verb that writes it. R6 says the *file* is truth; it does not say a verb may
+  not write the file, and yigraf already shipped exactly that verb for the sibling authored family
+  (`intent <slug> --status`). So an agent that had correctly internalised "never hand-edit an
+  artifact" was structurally unable to close a task: the field measured an open count that was **67%
+  false** — 8 of 12 already done, some for a day — on the line `yigraf status` makes the pre-done
+  authority. Closing refuses a task that implements nothing (unless `--force`), so "done" and
+  "anchored" land together: a completion with no anchor can never go STALE.
+- **`yigraf tasks [<plan>] [--open|--done|--stale]`** — "what is outstanding" with no dependence on a
+  semantic query matching. `context "what is outstanding" --family plan` returned 0 nodes; `status`
+  gave a bare count; `show plan:<slug>` listed ids without state.
+- **`yigraf plan <slug> --append-task "…"`** — the CLI could not add to a live plan at all. One
+  campaign ran 125 cells across four stages and created zero tasks. Numbers continue past the highest
+  and are never reused, so an id already on a `link` edge keeps its meaning.
+- **`plan`, `close` and `tasks` over MCP** — of 15 tools it exposed `link` and `unlink`, so an
+  MCP-only host could anchor tasks it had no way to create, and none to close.
+- **`propose --governs`** (CLI and MCP) — the fourth capture verb was the one missed.
+- **`gc` backfills `status: superseded` / `superseded_by:`** on a store built before 1.5.0 wrote them.
+  Nothing mis-ranked (`superseded_in` is recomputed from the edges every build), but 87 of 89 retired
+  beliefs still read `active` to a reader of the *files* — which is how it bit: both twins read
+  `active`, so the wrong one got pinned. Dry-run by default, like the rest of `gc`.
+
+### Fixed
+- **`reanchor` silently converted a `--governs` policy anchor into a content anchor**, so a locus
+  repair reintroduced the recurring never-real ⚠ that `--governs` exists to prevent — while printing
+  "The claim and its history are unchanged", true of the claim and false of what the anchor *means*.
+  `GOVERNS_ALGO`'s docstring named `reaffirm` as the only re-stamper that must leave it alone and
+  overlooked this one. It composed badly too: the hard-drift line for a deleted governed locus
+  recommends `reanchor`.
+- **No named exit repaired a drifting `grounded_by` anchor.** `--evidence <fresh>` was refused for
+  every value except the drifting locator itself; the "honest downgrade" to `inferred` cleared
+  nothing and the line then still called the node an "·empirical belief" and re-offered the downgrade
+  just performed; `unlink` was refused while the belief was empirical. `reanchor` — which does the
+  whole job in one command — was named in none of the four surfaces. All four now carry the same
+  four-exit sentence the `concerns` fork got in 1.5.0, the downgrade genuinely clears soft
+  grounds-drift (the tier it defends has been withdrawn), and hard drift still surfaces at any tier.
+- **"grounds-drift cleared" was printed unconditionally**, so it was false in two reachable cases —
+  worst on *deleted* evidence, where the only accepted `--evidence` form reported success, exited 0,
+  emitted no warning tail, and left hard drift standing. A success line a following `drift`
+  contradicts is the one message an agent is most likely to believe and stop on.
+- **The empirical guard explained a command nobody ran.** It refused an invocation that *had*
+  `--evidence` by describing what `--grounding empirical` **without** `--evidence` would do, never
+  stating the condition it was actually enforcing (every drifting locator must be re-named), and named
+  only one of two drifting refs — so following it verbatim refused again on the other.
+- **The Stop-hook notice keyed its verb on the relation alone**, so hard and soft drift got an
+  identical line and on hard drift both verbs it named are refused while both that clear it were
+  absent. It carried a third copy of wording `retrieval.drift_tail` owns; it now calls it.
+- **`supersede` inherited a dead anchor and then advised the one verb the drift surface had already
+  ruled out**, making repeated supersedes a closed loop that manufactures exactly the
+  "LOCUS REPAIR ONLY" nodes `reanchor` was built to stop producing. It now distinguishes a locus that
+  *died* (advise `reanchor`) from a genuine forward reference (`reaffirm` stays right), and the
+  `<mem-id>` placeholder — printed literally, one line before the id existed — is filled.
+- **`supersede` dropped `promotable` and defaulted `--type` to `decision` instead of inheriting**, so
+  a bare supersede quietly demoted a constraint — while the flag's three siblings on the same verb
+  said "default: inherited", and the verb *advertises* what it carried.
+- **A pending supersede surfaced only if it happened to clear the paraphrase gate.** `pending` was a
+  label applied to a pair the cosine sweep or a dispute had already found; nothing enumerated the
+  edges. A supersede states a *changed* belief, so normally the two sit below the gate — the field
+  measured 0.6457 and 0.5583, invisible to `status`, `status --json`, `conflicts`, `show` and the Stop
+  notice, while `supersede`'s own promise is that the predecessor stays authoritative *until a human
+  resolves the conflict*. The better-written the correction, the less likely the trust floor was
+  enforced. `detect_conflicts` now enumerates pending edges directly, index-free, ranked above the
+  sweep. `show` on the still-authoritative side marks it too.
+- **`--rejected-valid-when` asked the graph while its sibling asked the filesystem**, so a `file:`
+  premise that exists but is not indexed warned "typo?" — self-falsifying (it fires on the first
+  capture for a path and never again) and false besides, since `show` then reports the premise holding.
+- **`reaffirm <locus>` advised capturing a second memory** about a locus a live `grounded_by` anchor
+  already reasons about. It now names the node and the call that reaches it.
+- **The capture echo reported `--governs` as `concerns`** on all three verbs that accept it — and on a
+  supersede printed that one line above "Carried 1 governs", two lines of one run disagreeing.
+- **The `SKILL.md` description `install` writes was invalid YAML by spec** — an unquoted plain scalar
+  containing `` `yigraf status`: ``, where `: ` terminates the scalar. Claude Code's loader tolerates
+  it; a stricter host would drop the skill.
+- **`install` now names the host directories a HOME-dir marker is about to create in this repo**, and
+  how to narrow. Detection is unchanged — wiring two hosts is right for someone who drives the repo
+  from two — but "installed on this machine" is not "used here", and those directories arrive
+  untracked in a tree where every yigraf artifact is deliberately git-excluded.
+
+### Not changed, deliberately
+- **Auto-detecting every installed host.** Narrowing to repo markers would silently stop serving a
+  developer who really does drive one repo from two hosts. The fix is the announcement, not the
+  detection.
+- **Retracted by the reporters, and confirmed here:** soft drift does *not* fire on docstring-only
+  edits. `astnorm` strips comments in every language yigraf ships and docstrings in Python, and the
+  `ANCHOR_ALGO` tag has not moved. What they watched drift was a `file:` **line range**, whose
+  sensitivity to a non-behavioural edit is genuinely different from a `sym:` anchor's.
+
 ## [1.5.1] — 2026-08-20
 
 **A verb that re-stamps one field must not rewrite the rest of the artifact.**

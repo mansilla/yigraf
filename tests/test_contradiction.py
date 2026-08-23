@@ -140,3 +140,75 @@ def test_open_conflict_count_matches(tmp_path):
     _save_index(tmp_path, {"mem:1": CLOSE_A, "mem:2": CLOSE_B})
     g = _graph("mem:1", "mem:2")
     assert open_conflict_count(g, tmp_path, _cfg()) == 1
+
+
+# -- held-pending supersedes: asserted state, not a label on a measurement (feedback-v4 #3) ----------
+
+
+def _pending_graph(*, close: bool, anchors=None):
+    """mem:2 pending-supersedes human-attested mem:1, optionally reading nothing like it."""
+    g = _graph("mem:1", "mem:2", anchors=anchors)
+    g.add_edge("mem:2", "mem:1", relation="supersedes", pending=True)
+    return g
+
+
+def test_a_pending_supersede_surfaces_even_when_the_two_read_nothing_alike(tmp_path):
+    """`pending` used to be only a LABEL applied to a pair the cosine sweep or a dispute had already
+    found — and a supersede states a CHANGED belief, so normally the two sit below the gate.
+
+    The field measured 0.6457 and 0.5583 on realistic corrections, both invisible to `status`,
+    `status --json`, `conflicts`, `show` and the Stop-hook notice, while `supersede`'s own promise is
+    that the predecessor "stays authoritative until a human resolves the conflict". So the
+    better-written the correction, the less likely the trust floor was to be enforced.
+    """
+    _save_index(tmp_path, {"mem:1": CLOSE_A, "mem:2": FAR})  # far apart — the sweep finds nothing
+    conflicts = detect_conflicts(_pending_graph(close=False), tmp_path, _cfg())
+    assert len(conflicts) == 1
+    assert conflicts[0].pending is True and (conflicts[0].left, conflicts[0].right) == ("mem:1", "mem:2")
+
+
+def test_a_pending_supersede_surfaces_with_no_index_at_all(tmp_path):
+    """Asserted state must not depend on who happens to hold an index — the same reason a nomination
+    doesn't. The sweep still fails open to silence (design law #4)."""
+    conflicts = detect_conflicts(_pending_graph(close=False), tmp_path, _cfg())
+    assert len(conflicts) == 1 and conflicts[0].pending is True
+
+
+def test_a_pending_supersede_needs_no_shared_anchor(tmp_path):
+    """The sweep requires co-anchoring; a held supersede is a conflict by construction, so it reports
+    with an empty anchor rather than not reporting."""
+    g = _pending_graph(close=False, anchors={"mem:1": [ANCHOR], "mem:2": [ANCHOR2]})
+    conflicts = detect_conflicts(g, tmp_path, _cfg())
+    assert len(conflicts) == 1 and conflicts[0].anchor == ""
+
+
+def test_a_pending_pair_is_reported_once_not_twice(tmp_path):
+    """Above the gate the sweep would also find it — the union must not double-report."""
+    _save_index(tmp_path, {"mem:1": CLOSE_A, "mem:2": CLOSE_B})
+    conflicts = detect_conflicts(_pending_graph(close=True), tmp_path, _cfg())
+    assert len(conflicts) == 1 and conflicts[0].pending is True
+
+
+def test_pending_outranks_the_sweep_in_the_finding_order(tmp_path):
+    """Pending carries no cosine, so ordering by -cosine alone sorted every one of them BELOW every
+    swept pair — under a cap that then drops the item only a principal can clear. Same shape as the
+    1.5.0 stale-before-conflict bug, one level down."""
+    _save_index(tmp_path, {"mem:1": CLOSE_A, "mem:2": FAR, "mem:3": CLOSE_A, "mem:4": CLOSE_B})
+    g = _graph("mem:1", "mem:2", "mem:3", "mem:4")
+    g.add_edge("mem:2", "mem:1", relation="supersedes", pending=True)
+    conflicts = detect_conflicts(g, tmp_path, _cfg())
+    assert [c.pending for c in conflicts][0] is True
+    assert any(not c.pending for c in conflicts), "the swept pair is still reported, just after"
+
+
+def test_the_status_count_sees_a_pending_supersede(tmp_path):
+    """`status` reading `no drift · fresh` above its own `⚠ Conflict (pending)` block was one render
+    contradicting itself — the count came from `detect_conflicts`, the block from a different source."""
+    assert open_conflict_count(_pending_graph(close=False), tmp_path, _cfg()) == 1
+
+
+def test_a_reconciled_pending_pair_is_closed(tmp_path):
+    """A principal's verdict closes it like any other finding — pending is not exempt from resolution."""
+    g = _pending_graph(close=False)
+    g.add_node("res:1", family="resolution", kind="reconcile", left="mem:1", right="mem:2")
+    assert detect_conflicts(g, tmp_path, _cfg()) == []

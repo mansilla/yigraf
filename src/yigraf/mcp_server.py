@@ -111,6 +111,23 @@ def _run_cli(verb: str, args: list[str], repo: str | None) -> str:
     return out
 
 
+def run_plan(repo: str | None, slug: str, title: str | None = None,
+             tasks: list[str] | None = None, append_tasks: list[str] | None = None) -> str:
+    args = [slug]
+    if title:
+        args += ["--title", title]
+    return _run_cli("plan", args + _multi("--task", tasks) + _multi("--append-task", append_tasks), repo)
+
+
+def run_close(repo: str | None, task: str, reopen: bool = False, force: bool = False) -> str:
+    return _run_cli("close", [task] + (["--reopen"] if reopen else []) + (["--force"] if force else []), repo)
+
+
+def run_tasks(repo: str | None, plan: str | None = None, state: str | None = None) -> str:
+    flag = {"open": ["--open"], "done": ["--done"], "stale": ["--stale"]}.get(state or "", [])
+    return _run_cli("tasks", ([plan] if plan else []) + flag, repo)
+
+
 def run_link(repo: str | None, task: str, target: str) -> str:
     return _run_cli("link", [task, target], repo)
 
@@ -197,11 +214,13 @@ def run_propose(repo: str | None, statement: str, from_: str, concerns: list[str
                 type: str | None = None, origin: str | None = None,
                 grounding: str | None = None, evidence: list[str] | None = None,
                 rejected_valid_when: list[str] | None = None,
-                rejected_invalidated_when: list[str] | None = None) -> str:
+                rejected_invalidated_when: list[str] | None = None,
+                governs: list[str] | None = None) -> str:
     args = [statement, "--from", from_]
     if type:
         args += ["--type", type]
-    args += _multi("--concerns", concerns) + _multi("--serves", serves)
+    args += (_multi("--concerns", concerns) + _multi("--governs", governs)
+             + _multi("--serves", serves))
     if rejected:
         args += ["--rejected", rejected]
     args += _rejection_premise_args(rejected_valid_when, rejected_invalidated_when)
@@ -217,12 +236,13 @@ def run_propose(repo: str | None, statement: str, from_: str, concerns: list[str
 
 def run_supersede(repo: str | None, old_id: str, statement: str, why: str = "",
                   serves: list[str] | None = None, concerns: list[str] | None = None,
-                  rejected: str | None = None, type: str = "decision",
+                  rejected: str | None = None, type: str | None = None,
                   grounding: str | None = None, evidence: list[str] | None = None,
                   rejected_valid_when: list[str] | None = None,
                   rejected_invalidated_when: list[str] | None = None,
                   governs: list[str] | None = None) -> str:
-    args = [old_id, statement, "--type", type]
+    # Omitted rather than defaulted, so the CLI inherits the superseded node's type (feedback-v4 #12).
+    args = [old_id, statement] + (["--type", type] if type else [])
     if why:
         args += ["--why", why]
     args += _multi("--serves", serves) + _multi("--concerns", concerns) + _multi("--governs", governs)
@@ -292,6 +312,49 @@ def build_server(default_repo: str | None = None):
         (code is never embedded; retrieval-design §10). So `sem` staying flat while `sym` grows is
         expected, not a stale index: it tracks decisions/intents, which change far less than code."""
         return run_status(repo or default_repo)
+
+    @server.tool()
+    def plan(slug: str, title: str | None = None, tasks: list[str] | None = None,
+             append_tasks: list[str] | None = None, repo: str | None = None) -> str:
+        """Create a plan of tasks, or add tasks to a live one.
+
+        The missing half of the task surface over MCP (feedback-v4 #1): this server exposed `link` and
+        `unlink`, so an MCP-only host could anchor tasks it had no way to create — and none to close.
+
+        Args:
+            slug: the plan slug, e.g. "auth-hardening" (its id becomes plan:auth-hardening).
+            title: one-line plan title. Required to CREATE; omit when appending.
+            tasks: task descriptions for a NEW plan.
+            append_tasks: task descriptions to add to an EXISTING plan — numbers continue past the
+                highest and are never reused, so an id already on a link edge keeps its meaning.
+        """
+        return run_plan(repo or default_repo, slug, title, tasks, append_tasks)
+
+    @server.tool()
+    def close(task: str, reopen: bool = False, force: bool = False, repo: str | None = None) -> str:
+        """Mark a task done (or, with reopen=True, not done) by writing its checkbox in the plan file.
+
+        Call it right after `link`, as the second half of finishing a task. Closing refuses a task that
+        implements nothing unless force=True: a completion with no anchor can never go STALE, so the
+        drift-as-stale mechanism silently would not apply to it.
+
+        Args:
+            task: the task locator, e.g. "task:auth-hardening/3".
+            reopen: re-open a done task instead of closing it (the change regressed the work).
+            force: close despite no implements link — for a task that shipped no symbol.
+        """
+        return run_close(repo or default_repo, task, reopen, force)
+
+    @server.tool()
+    def tasks(plan: str | None = None, state: str | None = None, repo: str | None = None) -> str:
+        """List tasks and their state — "what is outstanding", without depending on a query matching.
+
+        Args:
+            plan: only this plan's slug (default: every plan).
+            state: "open" | "done" | "stale" (default: all). "stale" = done, but its implementing
+                symbol drifted.
+        """
+        return run_tasks(repo or default_repo, plan, state)
 
     @server.tool()
     def link(task: str, target: str, repo: str | None = None) -> str:
@@ -453,7 +516,8 @@ def build_server(default_repo: str | None = None):
                 rejected: str | None = None, why: str = "", serves: list[str] | None = None,
                 type: str | None = None, origin: str | None = None, grounding: str | None = None,
                 evidence: list[str] | None = None, rejected_valid_when: list[str] | None = None,
-                rejected_invalidated_when: list[str] | None = None, repo: str | None = None) -> str:
+                rejected_invalidated_when: list[str] | None = None,
+                governs: list[str] | None = None, repo: str | None = None) -> str:
         """Land a distilled CANDIDATE memory in quarantine (the `proposed` tier) — near-zero weight.
 
         Two callers: (1) a code-/security-review finding you confirmed and chose to keep, and (2) the
@@ -477,23 +541,26 @@ def build_server(default_repo: str | None = None):
             evidence: what grounds it — REQUIRED for grounding=empirical; see `remember`.
             rejected_valid_when / rejected_invalidated_when: applicability premises for the anti-pattern
                 (int:/mem:/sym:/file: locators) — see `remember`.
+            governs: loci whose *use* the candidate governs rather than their contents — never drifts;
+                see `remember`.
         """
         return run_propose(repo or default_repo, statement, from_, concerns, rejected, why, serves,
                           type, origin, grounding, evidence, rejected_valid_when,
-                          rejected_invalidated_when)
+                          rejected_invalidated_when, governs)
 
     @server.tool()
     def supersede(old_id: str, statement: str, why: str = "", serves: list[str] | None = None,
                   concerns: list[str] | None = None, rejected: str | None = None,
-                  type: str = "decision", grounding: str | None = None,
+                  type: str | None = None, grounding: str | None = None,
                   evidence: list[str] | None = None, rejected_valid_when: list[str] | None = None,
                   rejected_invalidated_when: list[str] | None = None,
                   governs: list[str] | None = None, repo: str | None = None) -> str:
         """Record a mind-change: a new memory node that supersedes an old one (never edit in place).
 
-        The successor INHERITS the superseded node's concerns/governs/serves unless you re-aim them
-        (each arg overrides its own kind) — a correction that lands with no anchor never resurfaces at
-        the edit hook on the symbol it warns about.
+        The successor INHERITS the superseded node's concerns/governs/serves/type and its `promotable`
+        mark unless you re-aim them (each arg overrides its own kind) — a correction that lands with no
+        anchor never resurfaces at the edit hook on the symbol it warns about, and a correction to a
+        constraint is still a constraint.
 
         Args:
             old_id: the memory being superseded, e.g. "mem:007".

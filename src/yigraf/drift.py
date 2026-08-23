@@ -152,6 +152,15 @@ def is_surfaced(graph: nx.DiGraph, item: DriftItem) -> bool:
     if item.relation == "implements" and item.task_id in graph.nodes:
         if graph.nodes[item.task_id].get("state") == "done":
             return False
+    # SOFT ``grounded_by`` drift defends the *empirical tier* — "the evidence changed, so that certainty
+    # is now unearned" (mem:054). Once the author has honestly downgraded to `inferred`, the demotion it
+    # exists to trigger has already happened, so continuing to nag makes the downgrade — one of the two
+    # exits the line itself offers — a no-op, and trains the reader to clear a badge no verb can clear
+    # (feedback-v4 #2). HARD drift still surfaces at any tier: a citation pointing at something that no
+    # longer exists is broken regardless of how strongly it was claimed, and `unlink` reaches it.
+    if (item.relation == "grounded_by" and item.kind == "soft"
+            and graph.nodes.get(item.task_id, {}).get("grounding") != "empirical"):
+        return False
     return True
 
 
@@ -191,6 +200,19 @@ def is_reverifiable(graph: nx.DiGraph, node_id: str) -> bool:
     return True
 
 
+def is_stale_completion(graph: nx.DiGraph, item: DriftItem) -> bool:
+    """Whether ``item`` is a STALE completion: a done task's ``implements`` drift (int:drift-as-stale).
+
+    Named rather than derived as ``not is_surfaced(...)`` because those stopped being complements
+    (feedback-v4 #2): ``is_surfaced`` now also withholds soft ``grounded_by`` drift on a belief that is
+    no longer ``empirical`` — an item that belongs to *neither* list, the honest downgrade having
+    already resolved it. Three callers partitioned on the inversion and would have relabelled it
+    "stale", turning one fixed message into a wrong count on the surface that message points at.
+    """
+    return (item.relation == "implements" and item.kind in ("soft", "hard")
+            and graph.nodes.get(item.task_id, {}).get("state") == "done")
+
+
 def stale_completions(graph: nx.DiGraph) -> list[DriftItem]:
     """Done tasks whose implementing symbol drifted (int:drift-as-stale): the *completion* is STALE —
     the shipped work's evidence changed, so ``done`` is no longer verified.
@@ -203,6 +225,4 @@ def stale_completions(graph: nx.DiGraph) -> list[DriftItem]:
     not ``false`` — the completion is re-verifiable, cleared by re-``link`` re-anchoring (or reopened if
     the change regressed it), never auto-flipped to ``todo``.
     """
-    return [it for it in compute_drift(graph)
-            if it.relation == "implements" and it.kind in ("soft", "hard")
-            and not is_surfaced(graph, it)]
+    return [it for it in compute_drift(graph) if is_stale_completion(graph, it)]

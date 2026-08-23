@@ -24,13 +24,15 @@ from yigraf import (__version__, artifacts, counters, embeddings, graphdb, memor
 from yigraf import show as show_mod  # aliased: the module and the `show` command share a name
 from yigraf.astnorm import ANCHOR_ALGO, FILE_ANCHOR_ALGO, file_content_hash, parse_file_target
 from yigraf.config import TOKEN_ENV, load_config
-from yigraf.drift import compute_drift, is_reverifiable, is_surfaced
+from yigraf.drift import (compute_drift, is_reverifiable, is_stale_completion, is_surfaced,
+                          stale_completions)
 from yigraf.extract import build_graph, symbol_content_hash
 from yigraf.graph import from_node_link, write_graph  # legacy graph.json union-merge driver only
 from yigraf.languages import available_extractors, extension_map
 from yigraf.hooks import (AMBIENT_HOSTS, HOST_FIDELITY, SUPPORTED_HOSTS, TIER_AMBIENT, TIER_EVENT,
-                          _write_agents_block, detect_hosts, install_ambient_rule, install_antigravity,
-                          install_claude_hooks, install_codex_hooks, install_post_commit_hook)
+                          _HOST_MARKERS, _write_agents_block, detect_hosts, install_ambient_rule,
+                          install_antigravity, install_claude_hooks, install_codex_hooks,
+                          install_post_commit_hook)
 from yigraf.scaffold import WORKSPACE_DIRNAME, init_workspace
 
 _TASK_ID = re.compile(r"^task:(.+)/(\d+)$")
@@ -411,19 +413,178 @@ def supersede_intent(
 @app.command()
 def plan(
     slug: str = typer.Argument(..., help="Slug for the plan file (plans/active/<slug>.md)."),
-    title: str = typer.Option(..., "--title", "-t", help="Plan title."),
+    title: str = typer.Option(None, "--title", "-t", help="Plan title (required to create)."),
     task: list[str] = typer.Option(None, "--task", help="A task description (repeatable)."),
+    append_task: list[str] = typer.Option(None, "--append-task", help="Add a task to an EXISTING plan (repeatable) — numbers continue past the highest, never reused."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
-    """Create a plan artifact with todo tasks (link/track them with `yigraf link`)."""
+    """Create a plan artifact with todo tasks — or, with ``--append-task``, extend a live one.
+
+    Appending exists because the CLI could not add to a plan at all: a campaign that ran 125 cells
+    across four stages created ZERO tasks, partly because ``plan <existing-slug> --task`` refuses with
+    "already exists … Edit it directly", so the graph held that campaign's decisions and none of its
+    work (feedback-v4 #1). Task numbers continue past the highest and are never reused, so an id
+    already recorded on a ``link`` edge cannot come to mean a different task.
+    """
     workspace = _require_workspace(repo)
+    existing = _find_plan_file(workspace, slug.casefold())
+
+    if append_task:
+        if existing is None:
+            known = _known_plans(workspace)
+            _guidance(f"No plan plan:{slug.casefold()} to append to." +
+                      (f" Known plans: {', '.join(known)}." if known else "") +
+                      f' Create it with `yigraf plan {slug} -t "<title>" --task "…"`.')
+        assigned = artifacts.append_tasks(existing, list(append_task))
+        _rebuild(repo)
+        for num, desc in zip(assigned, append_task):
+            typer.echo(f"Added task:{slug.casefold()}/{num}: {desc}")
+        typer.echo(f"Anchor them as you land them — `yigraf link task:{slug.casefold()}/{assigned[0]} "
+                   f"sym:<path>#<name>` — then `yigraf close` when done.")
+        return
+
     dest = workspace / "plans" / "active" / f"{slug}.md"
-    if dest.exists():
-        _guidance(f"Plan plan:{slug.casefold()} already exists ({dest}). Edit it directly, or pick a new slug.")
+    if existing is not None:
+        _guidance(f"Plan plan:{slug.casefold()} already exists ({existing}). To add work to it, "
+                  f'`yigraf plan {slug} --append-task "<description>"`; to close a task, '
+                  f"`yigraf close task:{slug.casefold()}/<n>`; to list what's open, "
+                  f"`yigraf tasks {slug} --open`. Or pick a new slug for a separate plan.")
+    if not title:
+        _guidance(f'No plan plan:{slug.casefold()} yet, so --title is required to create it.')
     dest.parent.mkdir(parents=True, exist_ok=True)  # a bare workspace (subdir unscaffolded) passes _require_workspace
     dest.write_text(artifacts.render_plan(slug, title, task or []), encoding="utf-8")
     _rebuild(repo)
     typer.echo(f"Created plan plan:{slug.casefold()} with {len(task or [])} task(s) ({dest})")
+
+
+def _resolve_task(workspace: Path, task_id: str):
+    """``(plan_file, task)`` for a task locator, guiding on every way it can miss. Shared by the state
+    verbs and ``link``, so one wrong id gets one wording."""
+    match = _TASK_ID.match(task_id)
+    if match is None:
+        _guidance(f"{task_id} isn't a task locator (expected task:<plan>/<n>, e.g. task:auth/1). "
+                  f"List them with `yigraf tasks`.")
+    plan_file = _find_plan_file(workspace, match.group(1).casefold())
+    if plan_file is None:
+        known = _known_plans(workspace)
+        _guidance(f"No plan found for {task_id}." +
+                  (f" Known plans: {', '.join(known)}." if known else " Create one with `yigraf plan`."))
+    tasks = artifacts.read_plan(plan_file).tasks
+    task = next((t for t in tasks if t.id == task_id), None)
+    if task is None:
+        ids = ", ".join(t.id for t in tasks) or "(none)"
+        _guidance(f"{task_id} is not a task in {plan_file.name}. Tasks there: {ids}.")
+    return plan_file, task
+
+
+@app.command()
+def close(
+    task_id: str = typer.Argument(..., help="Task locator, e.g. task:<plan>/1."),
+    reopen: bool = typer.Option(False, "--reopen", help="Re-open a done task instead of closing it."),
+    force: bool = typer.Option(False, "--force", help="Close even with no implements link (an unanchored completion can never go stale)."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Mark a task done (or, with ``--reopen``, not done) by writing its checkbox in the plan file.
+
+    The checkbox has always BEEN the interface — ``plan``'s refusal and a ⚠ in ``context`` were the only
+    two places that said so, and no prose doc did — but nothing wrote it, so the one family whose truth
+    is a committed markdown file had no verb for its mutable state while its sibling (``intent <slug>
+    --status``) did. An agent that had internalised "never hand-edit an artifact" therefore could not
+    close a task at all, and open counts drifted until the number stopped being read (feedback-v4 #1).
+
+    R6 is untouched: the file is still truth, this verb just writes it — nothing about done-ness is
+    stored in the graph, which goes on deriving ``state`` from the checkbox on every build.
+
+    Closing refuses a task with no ``implements`` edge unless ``--force``, so "done" and "anchored" land
+    together. That is not bookkeeping: a completion with no anchor can never go STALE, so the whole
+    drift-as-stale mechanism silently does not apply to it.
+    """
+    workspace = _require_workspace(repo)
+    plan_file, task = _resolve_task(workspace, task_id)
+    if reopen:
+        if not artifacts.set_task_state(plan_file, task.num, done=False):
+            _guidance(f"{task_id} is already open — nothing to reopen.")
+        _rebuild(repo)
+        typer.echo(f"Reopened {task_id} — [ ] in {plan_file.name}. Its implements anchors are untouched; "
+                   f"if the work regressed, the symbols it named are where to look.")
+        return
+    if task.state == "done":
+        _guidance(f"{task_id} is already done. To re-open it, `yigraf close {task_id} --reopen`.")
+    if not task.implements and not force:
+        _guidance(f"{task_id} implements nothing, so closing it would record a completion with no "
+                  f"evidence — it could never go STALE when the code changes, which is the whole "
+                  f"point of marking it done. Name what it built first: "
+                  f"`yigraf link {task_id} sym:<path>#<name>`. If it genuinely shipped no symbol "
+                  f"(a doc, a config, a decision), `yigraf close {task_id} --force`.")
+    artifacts.set_task_state(plan_file, task.num, done=True)
+    _rebuild(repo)
+    anchored = ", ".join(i.sym for i in task.implements) or "nothing (forced)"
+    typer.echo(f"Closed {task_id} — [x] in {plan_file.name}, implementing {anchored}.")
+    typer.echo("Its anchors now carry the completion: if they drift, it surfaces as a STALE completion "
+               "(`yigraf drift --stale`), cleared by re-`link` once re-verified.")
+
+
+@app.command()
+def tasks(
+    plan_slug: str = typer.Argument(None, help="Only this plan's tasks (default: every plan)."),
+    open_only: bool = typer.Option(False, "--open", help="Only tasks whose box is unchecked."),
+    done_only: bool = typer.Option(False, "--done", help="Only tasks whose box is checked."),
+    stale: bool = typer.Option(False, "--stale", help="Only done tasks whose implementing symbol drifted."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Enumerate tasks and their state — the answer to "what is outstanding" that does not depend on a
+    query matching.
+
+    ``context`` already renders tasks with ``☑``/``☐``, but its seeder is semantic even under
+    ``--family plan``, so the literal question missed: ``context "what is outstanding" --family plan``
+    returned 0 nodes. ``status`` gave a bare count, ``show plan:<slug>`` listed ids without state, and
+    ``drift --stale`` listed only done-and-drifted ones. The surface existed and could not be addressed
+    deliberately (feedback-v4 #1).
+    """
+    workspace = _require_workspace(repo)
+    config = load_config(workspace / "config.yaml")
+    if open_only and done_only:
+        _guidance("--open and --done select disjoint sets — pass one, or neither for both.")
+    graph, _ = build_graph(repo, config)
+    stale_ids = {i.task_id for i in stale_completions(graph)}
+
+    plans = []
+    for sub in ("active", "completed"):
+        for path in sorted((workspace / "plans" / sub).glob("*.md")):
+            if plan_slug and path.stem.casefold() != plan_slug.casefold():
+                continue
+            plans.append(artifacts.read_plan(path))
+    if plan_slug and not plans:
+        known = _known_plans(workspace)
+        _guidance(f"No plan {plan_slug}." + (f" Known: {', '.join(known)}." if known else ""))
+
+    shown = 0
+    for plan in plans:
+        rows = []
+        for t in plan.tasks:
+            if open_only and t.state == "done":
+                continue
+            if done_only and t.state != "done":
+                continue
+            if stale and t.id not in stale_ids:
+                continue
+            mark = "⚠" if t.id in stale_ids else ("☑" if t.state == "done" else "☐")
+            impl = f"  ({', '.join(i.sym for i in t.implements)})" if t.implements else ""
+            rows.append(f"  {mark} {t.id}: {t.description}{impl}")
+        if rows:
+            typer.echo(f"{plan.id} — {plan.title}")
+            typer.echo("\n".join(rows))
+            typer.echo("")
+            shown += len(rows)
+    if not shown:
+        which = ("stale completions" if stale else "open tasks" if open_only
+                 else "done tasks" if done_only else "tasks")
+        typer.echo(f"No {which}.")
+        return
+    # The legend explains a mark; print it only when a mark is on screen (design law #4).
+    typer.echo(f"{shown} task(s)."
+               + (" ⚠ = done but its implementing symbol drifted — re-`link` once re-verified, or "
+                  "`yigraf close <task> --reopen` if the change undid the work." if stale_ids else ""))
 
 
 @app.command()
@@ -434,20 +595,7 @@ def link(
 ) -> None:
     """Declare an implements (→ symbol) or tracks (→ intent) edge from a task; stamps the anchor."""
     workspace = _require_workspace(repo)
-    match = _TASK_ID.match(task_id)
-    if match is None:
-        _guidance(f"{task_id} isn't a task locator (expected task:<plan>/<n>, e.g. task:auth/1). "
-                  f'Find tasks with `yigraf context "<plan>"`.')
-
-    plan_file = _find_plan_file(workspace, match.group(1).casefold())
-    if plan_file is None:
-        known = _known_plans(workspace)
-        _guidance(f"No plan found for {task_id}." +
-                  (f" Known plans: {', '.join(known)}." if known else " Create one with `yigraf plan`."))
-    tasks = artifacts.read_plan(plan_file).tasks
-    if not any(t.id == task_id for t in tasks):
-        ids = ", ".join(t.id for t in tasks) or "(none)"
-        _guidance(f"{task_id} is not a task in {plan_file.name}. Tasks there: {ids}.")
+    plan_file, _task = _resolve_task(workspace, task_id)
 
     if target.startswith("sym:") or target.startswith("file:"):
         config = load_config(workspace / "config.yaml")
@@ -622,35 +770,52 @@ def reanchor(
     graph, _ = build_graph(repo, config)
     if new.startswith("sym:") and "#" not in new:
         _refuse_bare_sym(graph, new, "reanchor")
-    anchor, algo = _anchor(repo, config, new)
-    if anchor is None:
-        # Unlike capture, no forward-reference here: a repair points at code that exists — a dangling
-        # "repair" would just trade hard drift on the old locus for hard drift on the new one.
-        _guidance(f"{new} doesn't resolve in the current source — a locus repair points at code that "
-                  f"exists (capture allows a forward-reference; a repair does not)."
-                  + _symbol_suggestion(graph, new))
+    # A POLICY anchor keeps its kind across the move (feedback-v4 #5): `_anchor` would stamp a content
+    # hash, silently turning "this belief governs how p.md is used" into "this belief depends on q.md's
+    # bytes" — reintroducing the recurring never-real ⚠ that `--governs` exists to prevent, while the
+    # success line says "the claim and its history are unchanged" (true of the claim, false of what the
+    # anchor MEANS). GOVERNS_ALGO's docstring named `reaffirm` as the only re-stamper that must leave it
+    # alone; `reanchor` is the second. The new locus is validated as a policy locus, not merely resolved.
+    governs_move = in_concerns and any(
+        c.sym == old and (c.anchor_algo or "") == memory.GOVERNS_ALGO for c in node.concerns)
+    # Evidence is never a policy anchor (grounding cites contents, not use), so a ref carried on BOTH
+    # lists resolves twice — the policy kind for the concern, a content hash for the evidence.
+    content_anchor = None
+    if governs_move:
+        _resolve_governs(repo, config, graph, [new])  # validates it IS a policy locus: exists, no line range
+    if in_evidence or not governs_move:
+        content_anchor = _anchor(repo, config, new)
+        if content_anchor[0] is None:
+            # Unlike capture, no forward-reference here: a repair points at code that exists — a dangling
+            # "repair" would just trade hard drift on the old locus for hard drift on the new one.
+            _guidance(f"{new} doesn't resolve in the current source — a locus repair points at code that "
+                      f"exists (capture allows a forward-reference; a repair does not)."
+                      + _symbol_suggestion(graph, new))
     moved = []
     if in_concerns:
+        anchor, algo = (None, memory.GOVERNS_ALGO) if governs_move else content_anchor
         if any(c.sym == new for c in node.concerns):
             node.concerns = [c for c in node.concerns if c.sym != old]  # already anchored there — drop the old
         else:
             node.concerns = [memory.Concern(sym=new, anchor=anchor, anchor_algo=algo)
                              if c.sym == old else c for c in node.concerns]
-        moved.append("concerns")
+        moved.append("governs" if governs_move else "concerns")
     if in_evidence:
         if any(e.ref == new for e in node.evidence):
             node.evidence = [e for e in node.evidence if e.ref != old]
         else:
-            node.evidence = [memory.Evidence(ref=new, anchor=anchor, anchor_algo=algo)
+            node.evidence = [memory.Evidence(ref=new, anchor=content_anchor[0], anchor_algo=content_anchor[1])
                              if e.ref == old else e for e in node.evidence]
         moved.append("grounded_by")
     path.write_text(memory.render_memory(node), encoding="utf-8")
     _rebuild(repo)
     typer.echo(f"Reanchored {target} ({' + '.join(moved)}): {old} ⇒ {new}. "
-               f"The claim and its history are unchanged — no supersede recorded.")
+               f"The claim and its history are unchanged — no supersede recorded."
+               + (" It stays a policy anchor (governs — never drifts)." if governs_move else ""))
 
 
-def _resolve_concerns(repo: Path, config: dict, graph, syms: list[str]) -> tuple[list[memory.Concern], list[str]]:
+def _resolve_concerns(repo: Path, config: dict, graph, syms: list[str],
+                      was_anchored: set[str] | None = None) -> tuple[list[memory.Concern], list[str]]:
     """Resolve each ``--concerns`` locator to a :class:`Concern`, soft-warning on a forward-reference.
 
     A malformed locator (not ``sym:``/``file:``) is still a hard guide — that's a wrong *form*, not a
@@ -658,9 +823,20 @@ def _resolve_concerns(repo: Path, config: dict, graph, syms: list[str]) -> tuple
     legitimate forward-reference (a decision governing code about to be written), so we create a
     *dangling* concern (anchor ``None``) and return a warning instead of blocking (D#3). The edge is
     live and traversable now; ``reaffirm`` stamps its anchor once the code lands.
+
+    ``was_anchored`` names the loci that were ALREADY anchored on the node this capture inherits from
+    (``supersede``), and it selects a different warning — because the two states are opposite and the
+    verbs that resolve them are disjoint (feedback-v4 #4). An unresolvable locus that was *never*
+    anchored is a forward reference and ``reaffirm`` stamps it when the code lands. One that *was*
+    anchored means the locus DIED between the two captures, and ``reaffirm`` is precisely the verb
+    ``drift_tail`` already rules out there ("the locus is gone, so `reaffirm` can't re-anchor it").
+    Sending the caller to it makes ``supersede`` a closed loop: the successor inherits the dead anchor,
+    the hard-drift count stays at 1 and walks to the newest node, and every pass adds a false entry to
+    the ``supersedes`` chain — the LOCUS-REPAIR-ONLY node ``reanchor`` was built to stop producing.
     """
     concerns: list[memory.Concern] = []
     warnings: list[str] = []
+    was_anchored = was_anchored or set()
     for sym in syms:
         if not (sym.startswith("sym:") or sym.startswith("file:")):
             _guidance(f"--concerns must be a symbol (sym:<path>#<name>) or a file "
@@ -669,7 +845,12 @@ def _resolve_concerns(repo: Path, config: dict, graph, syms: list[str]) -> tuple
             _refuse_bare_sym(graph, sym, "--concerns")
         anchor, algo = _anchor(repo, config, sym)
         concerns.append(memory.Concern(sym=sym, anchor=anchor, anchor_algo=algo))
-        if anchor is None:
+        if anchor is None and sym in was_anchored:
+            warnings.append(f"⚠ {sym} was anchored on the belief this replaces and no longer resolves — "
+                            f"the locus DIED, so the successor inherits hard drift and `reaffirm` "
+                            f"cannot re-anchor it. Move it instead: `yigraf reanchor <this mem-id> "
+                            f"{sym} <where it lives now>`." + _symbol_suggestion(graph, sym))
+        elif anchor is None:
             warnings.append(f"⚠ no such symbol {sym} in the current source — creating a dangling "
                             f"concerns edge (it governs once the code lands; `reaffirm <mem-id>` to "
                             f"anchor it)." + _symbol_suggestion(graph, sym))
@@ -785,6 +966,7 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
                     rejected_invalidated_when: list[str] | None = None,
                     pinned: bool = False,
                     governs_refs: list[str] | None = None,
+                    was_anchored: set[str] | None = None,
                     provenance: dict | None = None) -> memory.Memory:
     """Write a new memory artifact, then re-materialize the view. Shared by remember/supersede/note-constraint.
 
@@ -837,15 +1019,20 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
 
     config = load_config(workspace / "config.yaml")
     graph, _ = build_graph(repo, config)  # built once, reused for concern/serves resolution + dedup
-    concerns, warnings = _resolve_concerns(repo, config, graph, concern_syms)
+    concerns, warnings = _resolve_concerns(repo, config, graph, concern_syms, was_anchored)
     concerns += _resolve_governs(repo, config, graph, governs_refs or [])
     evidence, ev_warnings = _resolve_evidence(repo, config, graph, evidence_refs)
     warnings += ev_warnings
     warnings += _serves_warnings(graph, serves)
     # A valid-when premise that doesn't resolve NOW would hide the rejection until it does — usually a
-    # typo. Soft-warn only (D#3): the edge is still captured.
+    # typo. Soft-warn only (D#3): the edge is still captured. Asked of the SAME oracle as its sibling
+    # below (feedback-v4 #8): this half asked bare graph membership, so a `file:` premise outside an
+    # extractable language warned "typo?" on the first capture for that path and never again — an
+    # artifact of projection order, not of store state, and false besides (`show` reported the premise
+    # holding right after). `_premise_already_holds` carries the reason, and it always applied to both.
     warnings += [f"⚠ --rejected-valid-when {p} doesn't resolve to a known node — the rejection stays "
-                 f"hidden until it does (typo?)." for p in rejected_valid_when if p not in graph]
+                 f"hidden until it does (a typo, or a path that exists but isn't indexed?)."
+                 for p in rejected_valid_when if not _premise_already_holds(repo, graph, p)]
     # The mirror failure, and the more expensive one, because it is silent in the other direction: an
     # invalidated-when premise legitimately names something NOT YET true (that's the point) — but one
     # that ALREADY holds withdraws the rejection from the moment of capture, so the clause is born
@@ -880,16 +1067,28 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
     dest.write_text(memory.render_memory(node), encoding="utf-8")
     _rebuild(repo)
     for w in warnings:  # soft-warn AFTER capture — the edge is written; these guide, never block (D#3)
-        typer.echo(w)
+        # The id exists by now, so the placeholders these were composed with get filled: printing a
+        # literal `<mem-id>` one line before minting the id is a command the reader cannot run (v4 #4).
+        typer.echo(w.replace("<this mem-id>", node.id).replace("<mem-id>", node.id))
     return node
 
 
 def _report_capture(node: memory.Memory) -> None:
+    """The one-line capture echo — the moment a mis-filled locator is cheap to catch.
+
+    ``governs`` is reported under its own label (feedback-v4 #10): calling a policy anchor ``concerns``
+    hid the distinction at the only moment it is correctable, and on a ``supersede`` the echo and the
+    inheritance line ("Carried 1 governs from …") printed together and disagreed about the same edge.
+    """
     bits = [f"type={node.type}"]
     if node.serves:
         bits.append("serves " + ", ".join(node.serves))
-    if node.concerns:
-        bits.append("concerns " + ", ".join(c.sym for c in node.concerns))
+    regular = [c.sym for c in node.concerns if (c.anchor_algo or "") != memory.GOVERNS_ALGO]
+    policy = [c.sym for c in node.concerns if (c.anchor_algo or "") == memory.GOVERNS_ALGO]
+    if regular:
+        bits.append("concerns " + ", ".join(regular))
+    if policy:
+        bits.append("governs " + ", ".join(policy))
     if node.supersedes:
         bits.append("supersedes " + ", ".join(node.supersedes))
     if node.pinned:
@@ -1022,6 +1221,7 @@ def propose(
     from_: str = typer.Option(..., "--from", help=f"Where the candidate came from: {' | '.join(sorted(memory.PROPOSED_SOURCES))}. Both LAND at the `proposed` tier."),
     type: str = typer.Option(None, "--type", help=f"One of: {', '.join(memory.MEMORY_TYPES)} (default: constraint for review, decision for mined)."),
     concerns: list[str] = typer.Option(None, "--concerns", help="The locus this candidate governs, sym:<path>#<name> or file:<path> (repeatable, anchored — this is what re-surfaces it at the edit hook)."),
+    governs: list[str] = typer.Option(None, "--governs", help=_GOVERNS_HELP),
     rejected: str = typer.Option(None, "--rejected", help="The anti-pattern (review) / rejected alternative (mined) — the ruled-out shape the finding warns against."),
     rejected_valid_when: list[str] = typer.Option(None, "--rejected-valid-when", help="A premise the rejection depends on: int:<slug> | mem:<id> | sym:<path>#<name> | file:<path> (repeatable). The rejection surfaces ONLY while every one of these still holds."),
     rejected_invalidated_when: list[str] = typer.Option(None, "--rejected-invalidated-when", help="A condition that WITHDRAWS the rejection once true (same locator forms, repeatable)."),
@@ -1055,7 +1255,8 @@ def propose(
                            supersedes=[], promotable=(type_ == "constraint"), force_new=new,
                            grounding=grounding, evidence_refs=evidence or [], provenance=provenance,
                            rejected_valid_when=rejected_valid_when or [],
-                           rejected_invalidated_when=rejected_invalidated_when or [])
+                           rejected_invalidated_when=rejected_invalidated_when or [],
+                           governs_refs=governs or [])  # the 4th capture verb was the one missed (v4 #11)
     _report_capture(node)
 
 
@@ -1063,7 +1264,7 @@ def propose(
 def supersede(
     old_id: str = typer.Argument(..., help="The memory id being superseded, e.g. mem:001."),
     statement: str = typer.Argument(..., help="The new claim in one line."),
-    type: str = typer.Option("decision", "--type", help=f"One of: {', '.join(memory.MEMORY_TYPES)}."),
+    type: str = typer.Option(None, "--type", help=f"One of: {', '.join(memory.MEMORY_TYPES)} (default: inherited from the superseded node)."),
     why: str = typer.Option("", "--why", help="Why the mind changed."),
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable; default: inherited from the superseded node)."),
     concerns: list[str] = typer.Option(None, "--concerns", help="A symbol this governs (repeatable, anchored; default: inherited from the superseded node)."),
@@ -1101,12 +1302,19 @@ def supersede(
     concern_syms = concerns if concerns is not None else old_regular
     governs_refs = governs if governs is not None else old_governs
     serves_ids = serves if serves is not None else list(old_node.serves)
+    # `--type` and `promotable` inherit for the same reason the anchors do (feedback-v4 #12): a
+    # mind-change is about the same SUBJECT, so a correction to a constraint is still a constraint.
+    # Defaulting `--type` to `decision` silently demoted one — while the flag's three siblings on this
+    # very verb said "default: inherited" — and `promotable` (the candidate-for-an-enforced-check mark)
+    # was dropped with no flag anywhere to restore it, in a verb that ADVERTISES what it carried.
+    type_ = type if type is not None else old_node.type
     node = _capture_memory(
-        repo, workspace, statement=statement, type_=type, why=why,
+        repo, workspace, statement=statement, type_=type_, why=why,
         serves=serves_ids, concern_syms=concern_syms, rejected=rejected,
         supersedes=[] if human_attested else [old_id],
         pending_supersedes=[old_id] if human_attested else [],
-        promotable=False, grounding=grounding, evidence_refs=evidence or [],
+        promotable=old_node.promotable, grounding=grounding, evidence_refs=evidence or [],
+        was_anchored={c.sym for c in old_node.concerns if c.anchor is not None},
         rejected_valid_when=rejected_valid_when or [],
         rejected_invalidated_when=rejected_invalidated_when or [],
         governs_refs=governs_refs)
@@ -1118,6 +1326,10 @@ def supersede(
         carried.append(f"{len(old_governs)} governs")
     if serves is None and old_node.serves:
         carried.append(f"{len(old_node.serves)} serves")
+    if type is None and old_node.type != memory.DEFAULT_MEMORY_TYPE:
+        carried.append(f"type={old_node.type}")
+    if old_node.promotable:
+        carried.append("promotable")
     if carried:
         typer.echo(f"Carried {' and '.join(carried)} from {old_id} — the correction stays anchored "
                    f"where the old belief fired (pass --concerns/--serves to re-aim it).")
@@ -1371,6 +1583,18 @@ def _stale_grounds(repo: Path, config: dict, node: memory.Memory) -> list[str]:
     return out
 
 
+def _dead_grounds(repo: Path, config: dict, node: memory.Memory) -> list[str]:
+    """Evidence loci that no longer resolve at all — the HARD grounds-drift ``_stale_grounds`` cannot see.
+
+    A deleted locus stamps ``anchor: None``, which ``_stale_grounds`` skips (nothing to compare), and
+    the ref then projects as a *dangling* ``grounded_by`` edge — permanent hard drift. So the one
+    ``--evidence`` form the empirical guard accepts (re-naming the drifting locator) used to report
+    success on a path that does not exist, with no warning tail at all (feedback-v4 #2).
+    """
+    return [e.ref for e in node.evidence
+            if e.ref.startswith(("sym:", "file:")) and _anchor(repo, config, e.ref)[0] is None]
+
+
 @app.command()
 def reaffirm(
     target: str = typer.Argument(..., help="A memory id (mem:NNN → reaffirm its concerns) or a locus (sym:<path>#<name> or file:<path> → reaffirm every memory concerning it)."),
@@ -1406,6 +1630,11 @@ def reaffirm(
         node = memory.read_memory(path)
         # Upsert any --evidence first: re-anchor a locus already grounding this node (grounds-drift:
         # re-observed) or add a fresh observation. Done before the empirical gate so the gate sees it.
+        # Captured BEFORE the upsert: the guard below must report every locator drifting on DISK, not
+        # what is left after this call's in-memory re-stamps. Reporting the remainder sent the caller
+        # into a ping-pong — the refusal writes nothing, so re-running with only the ref it named then
+        # refuses naming the other one (feedback-v4 #2).
+        pre_stale = _stale_grounds(repo, config, node)
         added_evidence = _reaffirm_evidence(repo, config, node, evidence or [])
         # The empirical tier must NAME a live observation — the same gate as capture (int:memory-grounding).
         # This closes the reaffirm loophole: `--grounding empirical` no longer upgrades on the agent's word.
@@ -1420,10 +1649,19 @@ def reaffirm(
         # re-observe is the rubber-stamp the reaffirm/supersede split exists to prevent, so refuse it.
         stale_grounds = _stale_grounds(repo, config, node)
         if stale_grounds and grounding == "empirical":
-            _guidance(f"{target} has grounds-drift on {', '.join(stale_grounds)}, and --grounding "
-                      f"empirical without --evidence would re-assert the tier while leaving that ⚠ "
-                      f"standing. Re-observe, then `yigraf reaffirm {target} --grounding empirical "
-                      f"--evidence {stale_grounds[0]}` — or retire the dead ref: "
+            # Say the condition, not a rule about a command nobody ran (feedback-v4 #2). The guard is
+            # "every drifting locator must be re-named", and it refuses atomically — so naming one of
+            # two and following the message verbatim used to refuse again on the other. Both halves
+            # were the message's fault, not the guard's: the rule is right, it just never said itself.
+            _guidance(f"{target} has grounds-drift on {', '.join(pre_stale)}, and --grounding empirical "
+                      f"re-asserts the tier — so EVERY drifting locator must be re-observed and named "
+                      f"in this same call, by the exact string the node carries "
+                      f"({', '.join(stale_grounds)} still uncovered). Nothing was written. "
+                      f"Re-observe, then `yigraf reaffirm {target} --grounding empirical "
+                      + " ".join(f"--evidence {r}" for r in pre_stale) + "`. "
+                      f"If an observation MOVED, that is a locus repair, not a re-observation: "
+                      f"`yigraf reanchor {target} {stale_grounds[0]} <where it lives now>` keeps both "
+                      f"the tier and the evidence link. If it never belonged, "
                       f"`yigraf unlink {target} {stale_grounds[0]}`.")
         # A pure grounding upgrade is meaningful even for a memory with no concerns anchor (the claim is
         # unchanged; only its epistemic status advances) — so require concerns only when nothing else acts.
@@ -1451,7 +1689,15 @@ def reaffirm(
         if upgraded:
             typer.echo(f"Reaffirmed {target}: grounding {was} → {node.grounding}.")
         if added_evidence:
-            typer.echo(f"Reaffirmed {target}: grounded by {', '.join(added_evidence)} — grounds-drift cleared.")
+            # Only claim the ⚠ is gone when it is (feedback-v4 #2). `stale_grounds` is recomputed after
+            # the upsert, so it still lists whatever this call did not reach — and a ref whose file was
+            # DELETED stamps a null anchor, drops out of `stale_grounds` entirely, and goes on hard-
+            # drifting as a dangling edge. A success line a following `drift` contradicts is the one
+            # message an agent is most likely to believe and stop on.
+            left = ((stale_grounds if node.grounding == "empirical" else [])
+                    + _dead_grounds(repo, config, node))
+            typer.echo(f"Reaffirmed {target}: grounded by {', '.join(added_evidence)}"
+                       + ("." if left else " — grounds-drift cleared."))
         if restamped:
             typer.echo(f"Reaffirmed {target}: re-anchored {', '.join(restamped)} to current code — drift cleared.")
         elif not gone and not upgraded and not added_evidence:
@@ -1464,11 +1710,26 @@ def reaffirm(
         # Two clean exits that leave a ⚠ standing read as "done" (feedback-v3 #6/#9): when grounds-drift
         # survives this call (computed AFTER the --evidence upsert, so a re-stamped ref has already
         # dropped out), say so and name the two verbs that actually reach it.
-        if stale_grounds:
-            typer.echo(f"⚠ grounds-drift still stands on {', '.join(stale_grounds)} — reaffirm re-stamps "
-                       f"concerns, never evidence. Re-observe, then `yigraf reaffirm {target} "
-                       f"--grounding empirical --evidence {stale_grounds[0]}`, or retire the dead ref: "
-                       f"`yigraf unlink {target} {stale_grounds[0]}`.")
+        # Mirrors drift.is_surfaced: a SOFT grounds-drift on a belief that is no longer `empirical` is
+        # not an obligation — the tier it defended has been withdrawn (feedback-v4 #2). A DEAD ref is,
+        # at any tier: a citation to something that does not exist is broken however weakly it is held.
+        soft_unrepaired = stale_grounds if node.grounding == "empirical" else []
+        dead = _dead_grounds(repo, config, node)
+        unrepaired = soft_unrepaired + dead
+        if unrepaired:
+            first = unrepaired[0]
+            # A DEAD ref is not offered the re-observe exit: re-naming a locator whose file is gone is
+            # exactly the call that just "succeeded" and cleared nothing (feedback-v4 #2).
+            reobserve = ("" if not soft_unrepaired else
+                         f" if you re-ran it in place, `yigraf reaffirm {target} --grounding empirical "
+                         + " ".join(f"--evidence {r}" for r in soft_unrepaired) + "`;")
+            typer.echo(f"⚠ grounds-drift still stands on {', '.join(unrepaired)} — reaffirm re-stamps "
+                       f"concerns, never evidence. If the observation MOVED or was replaced, "
+                       f"`yigraf reanchor {target} {first} <fresh>` (keeps the tier, no supersede);"
+                       + reobserve
+                       + (f" if nothing replaces it, downgrade `yigraf reaffirm {target} --grounding "
+                          f"inferred` and then `yigraf unlink {target} {first}`." if dead else
+                          f" if it never belonged, `yigraf unlink {target} {first}`."))
         _record_reaffirm_uphold(repo, config, [target])  # an explicit re-verification → strong uphold
         return
 
@@ -1508,6 +1769,20 @@ def reaffirm(
             _guidance(f"Only superseded memories concern {target} ({', '.join(sorted(skipped))}) — "
                       f"a retired belief is not re-verified. If its successor should govern this locus, "
                       f"anchor the successor instead.")
+        # Before advising a SECOND memory about a locus the store already reasons about (feedback-v4
+        # #9): the locus form scans `concerns` by design, but a live `grounded_by` anchor on the same
+        # locus is reachable — by the mem: form — and pointing at `remember` there duplicates a claim
+        # the node two lines away in `show` already holds. Name what actually carries it.
+        grounding_it = [m.id for m in all_memories
+                        if target in {e.ref for e in m.evidence}
+                        and m.id not in superseded_ids and m.status == "active"]
+        if grounding_it:
+            _guidance(f"No memory *concerns* {target} — the locus form re-stamps `concerns` only. But "
+                      f"{', '.join(grounding_it)} {'is' if len(grounding_it) == 1 else 'are'} grounded "
+                      f"by it, and that anchor is reached per-node: "
+                      f"`yigraf reaffirm {grounding_it[0]} --evidence {target}` re-stamps it once you "
+                      f"have re-observed it. Don't capture a second memory about a locus the store "
+                      f"already reasons about.")
         _guidance(f"No memory concerns {target} — nothing to reaffirm. "
                   f'Anchor one with `yigraf remember "…" --concerns {target}`.')
     _rebuild(repo)
@@ -1863,7 +2138,7 @@ def drift(
     # not a re-verify prompt, so it's withheld (int:drift-done-suppression via drift.is_surfaced).
     all_items = compute_drift(graph)
     items = [i for i in all_items if is_surfaced(graph, i)]
-    stale_items = [i for i in all_items if i.kind in ("soft", "hard") and not is_surfaced(graph, i)]
+    stale_items = [i for i in all_items if is_stale_completion(graph, i)]
 
     if not items:
         # With --stale, say WHICH zero this is (feedback-v3 #13): "No drift." beside a status line
@@ -2496,6 +2771,31 @@ def _responsibility_notice(repo: Path, config: dict, graph, events, local_ids: s
         return ""
 
 
+def _unstamped_supersedes(repo: Path) -> dict[str, tuple[Path, str]]:
+    """Memories an APPLIED supersede retired that still read ``status: active`` in their own artifact.
+
+    The forward-only half of feedback-v3 #8, which no existing store ever reaches (feedback-v4). The
+    stamp is written at exactly two places — an applied ``supersede`` and the ``attest`` that applies a
+    held one — so a store built before those existed keeps 87-of-89 retired beliefs reading ``active``.
+    Nothing *mis-ranks*: ``superseded_in`` is recomputed from the edges on every build, so retrieval,
+    ``drift.is_reverifiable``, ``gc`` and ``show`` all already treat them as retracted. The gap is
+    confined to a reader of the artifact FILES — which is exactly how it bit the field: both twins read
+    ``active``, so the wrong one got pinned. Pending supersedes are excluded by construction: a held
+    supersede has not retired anything, and stamping it would assert the resolution it is waiting for.
+    """
+    out: dict[str, tuple[Path, str]] = {}
+    by_id = {m.id: m for m in memory.iter_memories(repo)}
+    for new_id in sorted(by_id):
+        for old_id in by_id[new_id].supersedes:  # applied only — `pending_supersedes` is a separate list
+            old = by_id.get(old_id)
+            if old is None or (old.status == "superseded" and old.superseded_by):
+                continue
+            path = memory.find_memory(repo, old_id)
+            if path is not None:
+                out.setdefault(old_id, (path, new_id))
+    return out
+
+
 @app.command()
 def gc(
     path: Path = typer.Argument(Path("."), help="Repo root (default: current dir)."),
@@ -2521,8 +2821,31 @@ def gc(
     _ranked_with_telemetry(path, graph, config)  # overlay upholds + resolve the maturity verdict (proposed→working)
     actions = counters.classify_gc(graph, config)
 
+    # Backfill first, and report it separately: it is a *repair* of legible state, not a collection, and
+    # a store can need it while having nothing to archive (feedback-v4). Same dry-run/--apply contract.
+    unstamped = _unstamped_supersedes(path)
+    if unstamped:
+        typer.echo(f"{len(unstamped)} superseded memory(ies) still read `status: active` in their own "
+                   f"artifact — the graph already treats them as retracted, but a reader of the files "
+                   f"cannot tell:")
+        for old_id in sorted(unstamped):
+            typer.echo(f"  {'✓' if apply else '·'} {old_id} → status: superseded, "
+                       f"superseded_by: {unstamped[old_id][1]}")
+        if apply:
+            for old_id, (mem_path, new_id) in unstamped.items():
+                node = memory.read_memory(mem_path)
+                node.status, node.superseded_by = "superseded", new_id
+                mem_path.write_text(memory.render_memory(node), encoding="utf-8")
+            _rebuild(path)
+            typer.echo(f"Stamped {len(unstamped)} artifact(s). Claims and bodies are untouched — this is "
+                       f"metadata the successor's edge already asserted.")
+        else:
+            typer.echo(f"Dry run — re-run with --apply to stamp them.")
+        typer.echo("")
+
     if not actions:
-        typer.echo("Nothing to collect (no superseded churn, no abandoned proposed candidates).")
+        if not unstamped:
+            typer.echo("Nothing to collect (no superseded churn, no abandoned proposed candidates).")
         return
 
     reasons = {
@@ -2941,6 +3264,18 @@ def install_cmd(
         targets = detect_hosts(path)
         typer.echo("\nDetected host(s): " + (", ".join(targets) if targets
                    else f"none ({', '.join(SUPPORTED_HOSTS)}) — the generic MCP channel covers you"))
+        # Say what is about to appear in the tree, and how to narrow it. Auto-detect is documented, and
+        # wiring two hosts is right for someone who drives this repo from two — but a host detected only
+        # by a HOME marker is "installed on this machine", not "used here", and those directories arrive
+        # untracked in a tree where every yigraf artifact is deliberately git-excluded, so they have to
+        # be excluded by hand before a commit can pick them up (feedback-v4). One line, before the fact.
+        from_home = [h for h in targets if h not in detect_hosts(path, home=path / "__no_home__")]
+        if from_home:
+            dirs = ", ".join(sorted({m for h in from_home for m in _HOST_MARKERS[h] if m}))
+            typer.echo(f"  {', '.join(from_home)} matched a marker in your HOME dir, not this repo — "
+                       f"wiring {'them' if len(from_home) > 1 else 'it'} creates {dirs} here. For one "
+                       f"host only, re-run with `--host <name>`; `yigraf install --plan` shows the "
+                       f"whole menu without applying any of it.")
     elif choice in SUPPORTED_HOSTS:
         targets = [choice]
     else:  # "mcp" or any unrecognized host name → generic MCP channel above is all that's needed

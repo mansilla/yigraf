@@ -4,7 +4,9 @@ This repo uses **yigraf** (a graph over code, intent, plan, and the *why*). Befo
 `yigraf context "<topic>"` — the one read command: it surfaces governing intents, prior decisions, and
 any drift to re-verify. Handed a node id by a warning, read it with `yigraf show <id>` (`context`
 searches by meaning and cannot match an id). After finishing a task, run
-`yigraf link task:<plan>/<n> sym:<path>#<name>`, and `yigraf remember` the non-obvious choices (with
+`yigraf link task:<plan>/<n> sym:<path>#<name>` then `yigraf close task:<plan>/<n>` (the checkbox is
+written by a verb, never by hand; `yigraf tasks --open` lists what is left), and `yigraf remember` the
+non-obvious choices (with
 `--why` and `--concerns <sym>`) — as the work lands, not as a closing ritual.
 
 Before you report done, run `yigraf status`: "up to date" means **no drift AND no stale**, which is not
