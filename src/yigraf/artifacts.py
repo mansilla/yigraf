@@ -304,12 +304,21 @@ def render_plan(slug: str, title: str, tasks: list[str]) -> str:
 
 def add_edge_to_plan(path: Path, task_id: str, relation: str, target: str,
                      anchor: str | None = None, anchor_algo: str | None = None,
-                     stamped_at: str | None = None) -> None:
+                     stamped_at: str | None = None, replaces: str | None = None) -> None:
     """Write a ``tracks`` or ``implements`` edge for ``task_id`` into the plan's frontmatter.
 
     ``tracks`` is a single intent id; ``implements`` appends a (deduplicated) ``sym:``/``file:`` entry
     carrying its stamped ``anchor`` + ``anchor_algo`` (astnorm for a symbol, file-sha256 for a file —
     friend-review #12). Re-linking the same target re-stamps its anchor.
+
+    ``replaces`` moves an existing entry's locator instead of appending a second one — passed only when
+    the caller can *prove* the subject moved rather than guessing. :func:`remove_edge_from_plan` argues
+    (correctly) that ``link`` must never auto-replace, because a task may legitimately implement several
+    symbols and yigraf cannot tell "this one moved" from "this is a second implementer". That argument
+    is about a *blind* link. It does not hold once :func:`yigraf.drift.resolve_renames` has matched the
+    old locator's anchor to exactly one symbol in its own scope — that is a proof, not a guess, and it
+    is the only thing this parameter accepts as one. Without it the settle path would leave the dead
+    locator behind as future hard drift, making its own guidance wrong.
     """
     # The edge grammar is enforced at this write boundary (relations.well_typed_ids): a mistyped plan
     # edge (e.g. implements→int:, tracks→sym:) is an internal routing bug, so it raises here — never
@@ -331,8 +340,14 @@ def add_edge_to_plan(path: Path, task_id: str, relation: str, target: str,
                  "anchor_algo": (anchor_algo or ANCHOR_ALGO) if anchor else None}
         if anchor and stamped_at:  # only meaningful alongside an anchor it dates (see Implements)
             entry["stamped_at"] = stamped_at
+        if replaces and replaces != target:
+            # Drop a pre-existing entry at the destination first, so a rename onto a locator the task
+            # already declares collapses to one edge rather than leaving a duplicate behind.
+            impls[:] = [e for e in impls if e.get("sym") != target]
+        keys = (replaces, target) if replaces else (target,)
         for existing in impls:
-            if existing.get("sym") == target:
+            if existing.get("sym") in keys:
+                existing.clear()
                 existing.update(entry)
                 break
         else:
@@ -353,9 +368,12 @@ def remove_edge_from_plan(path: Path, task_id: str, target: str) -> str | None:
     a move *plus* an edit is honest hard drift — and until now no verb could retire it, so a file move
     left permanent, unclearable drift that had to be fixed by hand-editing this frontmatter.
 
-    Deliberately NOT folded into ``link`` as an auto-replace: a task may legitimately implement several
-    symbols, so yigraf cannot tell "this one moved" from "this is a second implementer" — guessing would
-    silently delete a real edge. Retirement is an explicit act.
+    Deliberately NOT folded into ``link`` as an auto-replace *on a guess*: a task may legitimately
+    implement several symbols, so replacing whenever a link lands would silently delete a real edge.
+    Retirement is an explicit act. The one case that is not a guess is a rename
+    :func:`yigraf.drift.resolve_renames` already proved, which ``link`` settles through
+    ``add_edge_to_plan(replaces=...)`` — see :func:`yigraf.cli._renamed_predecessor` for why that proof
+    is admissible where a bare locator match is not.
     """
     path = Path(path)
     meta, body = _split_frontmatter(path.read_text(encoding="utf-8"))

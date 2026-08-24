@@ -736,14 +736,18 @@ def link(
 ) -> None:
     """Declare an implements (→ symbol) or tracks (→ intent) edge from a task; stamps the anchor."""
     workspace = _require_workspace(repo)
-    plan_file, _task = _resolve_task(workspace, task_id)
+    plan_file, task = _resolve_task(workspace, task_id)
 
     if target.startswith("sym:") or target.startswith("file:"):
         config = load_config(workspace / "config.yaml")
         anchor, algo = _anchor_or_guide(repo, config, target)
+        moved_from = _renamed_predecessor(repo, config, task, target, anchor)
         artifacts.add_edge_to_plan(plan_file, task_id, "implements", target, anchor=anchor,
-                                   anchor_algo=algo, stamped_at=counters._head_sha(repo))
-        typer.echo(f"Linked {task_id} —implements→ {target} (anchored {anchor[:12]})")
+                                   anchor_algo=algo, stamped_at=counters._head_sha(repo),
+                                   replaces=moved_from)
+        typer.echo(f"Linked {task_id} —implements→ {target} (anchored {anchor[:12]})"
+                   + (f" — settled the rename from {moved_from}, which the graph had re-anchored by "
+                      f"content hash and this artifact had not." if moved_from else ""))
     elif target.startswith("int:"):
         artifacts.add_edge_to_plan(plan_file, task_id, "tracks", target)
         typer.echo(f"Linked {task_id} —tracks→ {target}")
@@ -754,6 +758,35 @@ def link(
     _rebuild(repo)
 
 
+def _renamed_predecessor(repo: Path, config: dict, task, target: str, anchor: str) -> str | None:
+    """The locator ``target`` is a RENAME of, among the ones ``task`` already declares — or ``None``.
+
+    ``link`` keys ``implements`` by the exact locator string, so a moved symbol is a different string
+    and re-linking appends: the task ends up declaring both, and the one the subject LEFT becomes hard
+    drift the moment its body changes. :func:`yigraf.artifacts.remove_edge_from_plan` refused to fold
+    an auto-replace into ``link`` for a sound reason — a task may legitimately implement several
+    symbols, so replacing on a guess would silently delete a real edge.
+
+    This does not guess. It asks :func:`yigraf.drift.resolve_renames`, through ``compute_drift``, which
+    already carries every false-positive guard the rescue needs (a unique hit, scoped per
+    mem:e7b656321265b8d6, empty-body hashes excluded) — so a replacement happens only where the engine
+    has already *proved* the move, and every other link appends exactly as before.
+
+    The graph is built only when the cheap test passes: a rename is a content-hash MATCH, so an entry
+    the subject moved off carries the identical anchor. No matching anchor on the task, no build — which
+    is every ordinary ``link``, the most-used write verb in the loop.
+    """
+    candidates = {i.sym for i in task.implements if i.anchor == anchor and i.sym != target}
+    if not candidates:
+        return None
+    graph, _ = build_graph(repo, config)
+    for item in compute_drift(graph):
+        if (item.kind == "renamed" and item.task_id == task.id and item.new_locator == target
+                and item.locator in candidates):
+            return item.locator
+    return None
+
+
 @app.command()
 def unlink(
     source: str = typer.Argument(..., help="Task locator (task:<plan>/<n>) or memory id (mem:<id> → retire a concerns or grounded_by ref)."),
@@ -762,11 +795,13 @@ def unlink(
 ) -> None:
     """Retire a declared edge — the way out of drift on a declaration that is simply no longer true.
 
-    ``link`` keys ``implements`` by the exact locator, so a symbol that MOVES is a new string and
-    re-linking appends instead of replacing. A pure move needs nothing (``resolve_renames`` re-anchors
-    it by content hash), but a move *plus* an edit is hard drift on a locator that will never resolve
-    again — previously unclearable by any verb, because ``reaffirm`` re-anchors and ``supersede``
-    restates a *belief*, and this is neither: the declaration is simply no longer true.
+    ``link`` keys ``implements`` by the exact locator, so a symbol that MOVES is a new string; it
+    replaces the old entry only where ``resolve_renames`` has *proved* the move
+    (:func:`_renamed_predecessor`), and appends otherwise. A move *plus* an edit is past that proof —
+    hard drift on a locator that will never resolve again, unclearable by any other verb, because
+    ``reaffirm`` re-anchors and ``supersede`` restates a *belief*, and this is neither: the declaration
+    is simply no longer true. (Settle a rename BEFORE editing the body — `yigraf gc --apply` — and this
+    verb is never needed for it.)
 
     This is a graph edit, not a mind-change, so it leaves no supersedes trail — retiring a link asserts
     "this task never implemented that, or no longer does", which is exactly what a wrong or stale
@@ -2550,7 +2585,10 @@ def _report_drift_item(graph, item) -> None:
     of the three steps; ``yigraf show <id>`` covers the rest.
     """
     if item.kind == "renamed":
-        typer.echo(f"renamed (re-anchored): {item.task_id}  {item.locator} ⇒ {item.new_locator}")
+        # Re-anchored in the GRAPH, which is recomputed from the body hash every build — so this line
+        # names the verb that writes it into the artifact, before the next body edit ends the rescue.
+        typer.echo(f"renamed (re-anchored in the graph, not yet in the artifact): {item.task_id}  "
+                   f"{item.locator} ⇒ {item.new_locator} — settle with `yigraf gc --apply`")
         return
     typer.echo(f"{item.kind} drift · {item.relation}: {item.task_id} → {item.locator}")
     claim = (graph.nodes.get(item.task_id, {}).get("statement")
@@ -3237,6 +3275,61 @@ def _unstamped_supersedes(repo: Path) -> dict[str, tuple[Path, str]]:
     return out
 
 
+def _settle_renames(repo: Path, graph, apply: bool) -> list[tuple[str, str, str, str]]:
+    """Write every rename the graph resolved back into the artifact that still names the old locator.
+
+    :func:`yigraf.drift.resolve_renames` re-anchors a moved symbol or section in the **graph**, which
+    design law #6 makes a derived, recomputable projection — so the rescue is re-derived from the body
+    hash on every build and lasts exactly as long as that body does. Edit the body before the file is
+    told and the old locator is hard drift that will never resolve, with no record anywhere of where
+    the subject went. This is the verb that ends that window.
+
+    **Only the locator moves.** ``anchor``, ``anchor_algo`` and ``stamped_at`` are carried across
+    untouched: a rename is by definition a content-hash *match*, so re-hashing would compute the same
+    value, and re-stamping ``stamped_at`` would date the anchor to this commit when it was taken at an
+    older one — the exact wrong-*when* inference feedback-v4 #14 exists to foreclose.
+
+    Deliberately not done inside ``build_graph``. A read command (``context``, and the PostToolUse hook
+    on every single edit) would then mutate authored, committed files as a side effect of being asked a
+    question — and a task's ``implements`` anchors sit inside its revision-id body
+    (:func:`yigraf.filelog._plan_assertions`), so two workspaces noticing one rename at two different
+    HEADs would mint two revisions of one task: precisely the phantom divergence fa74839 removed and
+    ``plan:divergence-ledger`` is about. Settling is an authored act, so it takes a verb.
+
+    Returns ``(source_id, relation, old, new)`` per settled rename, whether or not ``apply``.
+    """
+    settled: list[tuple[str, str, str, str]] = []
+    workspace = repo / WORKSPACE_DIRNAME
+    for item in compute_drift(graph):
+        if item.kind != "renamed" or not item.new_locator:
+            continue
+        old, new = item.locator, item.new_locator
+        if item.relation == "implements":
+            match = _TASK_ID.match(item.task_id)
+            plan_file = _find_plan_file(workspace, match.group(1).casefold()) if match else None
+            if plan_file is None:
+                continue  # fail-open (R5): a task whose plan we cannot place is left as it was
+            if apply:
+                edge = graph.get_edge_data(item.task_id, new) or {}
+                artifacts.add_edge_to_plan(
+                    plan_file, item.task_id, "implements", new, anchor=edge.get("anchor"),
+                    anchor_algo=edge.get("anchor_algo"), stamped_at=edge.get("stamped_at"),
+                    replaces=old)
+        else:  # concerns | grounded_by — a memory's own frontmatter
+            mem_path = memory.find_memory(repo, item.task_id)
+            if mem_path is None:
+                continue
+            if apply:
+                node = memory.read_memory(mem_path)
+                node.concerns = [memory.Concern(sym=new, anchor=c.anchor, anchor_algo=c.anchor_algo)
+                                 if c.sym == old else c for c in node.concerns]
+                node.evidence = [memory.Evidence(ref=new, anchor=e.anchor, anchor_algo=e.anchor_algo)
+                                 if e.ref == old else e for e in node.evidence]
+                mem_path.write_text(memory.render_memory(node), encoding="utf-8")
+        settled.append((item.task_id, item.relation, old, new))
+    return sorted(settled)
+
+
 @app.command()
 def gc(
     path: Path = typer.Argument(Path("."), help="Repo root (default: current dir)."),
@@ -3253,6 +3346,13 @@ def gc(
       read-time maturity verdict (a confirmed candidate has graduated to ``working`` and is spared), so
       we overlay telemetry + resolve the verdict first. It expires *speculation* by silence; it NEVER
       touches a genuine ``working``/``settled`` decision (silence is not evidence there — mem:033).
+
+    It also runs the two **backfills** — repairs of legible state rather than collections, reported
+    separately and under the same dry-run/``--apply`` contract, because a store can need either while
+    having nothing to archive: a supersede that never stamped its predecessor, and a rename the graph
+    re-anchored but the file was never told about (:func:`_settle_renames`). Both are the same sentence
+    — the graph already knows, a reader of the files cannot tell — and the rename one is the urgent
+    half, because it stops being repairable the moment the renamed body is edited.
 
     Dry-run by default — pass ``--apply`` to move the artifacts (the source of truth).
     """
@@ -3282,6 +3382,23 @@ def gc(
                        f"metadata the successor's edge already asserted.")
         else:
             typer.echo(f"Dry run — re-run with --apply to stamp them.")
+        typer.echo("")
+
+    renames = _settle_renames(path, graph, apply)
+    if renames:
+        typer.echo(f"{len(renames)} anchor(s) whose subject was RENAMED: the graph re-anchored them by "
+                   f"content hash, the artifact still names the locator they left. That rescue is "
+                   f"re-derived from the body on every build — edit that body first and it becomes hard "
+                   f"drift with no record of where the subject went:")
+        for source_id, relation, old_locator, new_locator in renames:
+            typer.echo(f"  {'✓' if apply else '·'} {source_id} —{relation}→ {old_locator} ⇒ {new_locator}")
+        if apply:
+            _rebuild(path)
+            typer.echo(f"Settled {len(renames)} anchor(s). The anchor hash and the commit it was "
+                       f"stamped at are unchanged — a rename is a content-hash MATCH, so only the "
+                       f"locator moved; no claim, completion or history is touched.")
+        else:
+            typer.echo(f"Dry run — re-run with --apply to write them down.")
         typer.echo("")
 
     if not actions:

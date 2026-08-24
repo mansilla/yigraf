@@ -296,3 +296,102 @@ def test_ripple_withholds_a_superseded_memory(tmp_path: Path):
     assert runner.invoke(app, ["supersede", mem_id, "refresh may cache", "--repo",
                                str(root)]).exit_code == 0
     assert mem_id not in runner.invoke(app, ["drift", str(root)]).output
+
+
+# --- Rename PERSISTENCE: the graph re-anchors, the artifact must be told ---------------------------
+# resolve_renames rescues a moved subject in the graph, which is a derived, recomputable projection —
+# so the rescue is re-derived from the body hash on every build and lasts exactly as long as that body.
+# test_rename_plus_body_edit_is_honest_hard_drift (above) pins the cliff; these pin the way off it.
+
+
+def _plan_impls(root: Path) -> list[dict]:
+    import yaml
+    meta = yaml.safe_load((root / "yigraf" / "plans" / "active" / "auth.md")
+                          .read_text().split("---")[1])
+    return meta["edges"]["task:auth/1"]["implements"]
+
+
+def test_an_unsettled_rename_reaches_the_agent_at_the_edit_hook(tmp_path: Path):
+    """The limit was invisible, not honest: every agent-facing reader dropped `renamed` items, so the
+    only surface that ever mentioned one was `yigraf drift`, which the working loop never runs."""
+    root = _linked_repo(tmp_path)
+    (root / SRC).write_text("def renew(token):\n    return token\n")
+    graph, _ = build_graph(root, default_config())
+    result = retrieval.context_for_locus(graph, SRC, default_config(), root=root)
+    assert result is not None
+    assert "Unsettled rename" in result.text
+    assert SYM in result.text and "sym:auth/session.py#renew" in result.text
+    assert "yigraf link task:auth/1 sym:auth/session.py#renew" in result.text
+    assert retrieval.RENAME_CLIFF in result.text
+
+
+def test_gc_reports_a_rename_dry_and_settles_it_on_apply(tmp_path: Path):
+    root = _linked_repo(tmp_path)
+    (root / SRC).write_text("def renew(token):\n    return token\n")
+
+    dry = runner.invoke(app, ["gc", str(root)])
+    assert dry.exit_code == 0 and "RENAMED" in dry.output and "Dry run" in dry.output
+    assert [i["sym"] for i in _plan_impls(root)] == [SYM]  # dry-run wrote nothing
+
+    applied = runner.invoke(app, ["gc", str(root), "--apply"])
+    assert applied.exit_code == 0 and "Settled 1 anchor" in applied.output
+    assert [i["sym"] for i in _plan_impls(root)] == ["sym:auth/session.py#renew"]
+    assert _drift(root) == []  # nothing left to re-derive — the file says what the graph knew
+
+
+def test_settling_preserves_the_anchor_and_the_commit_it_was_stamped_at(tmp_path: Path):
+    """A rename is a content-hash MATCH, so re-hashing computes the same value and re-stamping would
+    date the anchor to this commit when it was taken at an older one (feedback-v4 #14)."""
+    root = _linked_repo(tmp_path)
+    before = _plan_impls(root)[0]
+    (root / SRC).write_text("def renew(token):\n    return token\n")
+    assert runner.invoke(app, ["gc", str(root), "--apply"]).exit_code == 0
+    after = _plan_impls(root)[0]
+    assert after["sym"] == "sym:auth/session.py#renew"
+    assert after["anchor"] == before["anchor"] and after["anchor_algo"] == before["anchor_algo"]
+    assert after.get("stamped_at") == before.get("stamped_at")
+
+
+def test_a_settled_rename_survives_the_body_edit_that_used_to_destroy_the_trail(tmp_path: Path):
+    """The payoff. Unsettled, rename-then-edit is hard drift on a locator that will never resolve and
+    no record of where the subject went; settled, the same edit is ordinary re-verifiable soft drift."""
+    root = _linked_repo(tmp_path)
+    (root / SRC).write_text("def renew(token):\n    return token\n")
+    assert runner.invoke(app, ["gc", str(root), "--apply"]).exit_code == 0
+    (root / SRC).write_text("def renew(token):\n    return token + 1\n")
+    items = _drift(root)
+    assert [i.kind for i in items] == ["soft"]
+    assert items[0].locator == "sym:auth/session.py#renew"
+
+
+def test_link_settles_a_proved_rename_instead_of_appending_a_second_entry(tmp_path: Path):
+    root = _linked_repo(tmp_path)
+    (root / SRC).write_text("def renew(token):\n    return token\n")
+    result = runner.invoke(app, ["link", "task:auth/1", "sym:auth/session.py#renew",
+                                 "--repo", str(root)])
+    assert result.exit_code == 0 and "settled the rename from" in result.output
+    assert [i["sym"] for i in _plan_impls(root)] == ["sym:auth/session.py#renew"]
+    assert _drift(root) == []
+
+
+def test_link_still_appends_a_genuine_second_implementer(tmp_path: Path):
+    """The guard remove_edge_from_plan's docstring argues for: replacing on a GUESS would silently
+    delete a real edge. Only a rename the engine proved replaces; every other link appends."""
+    root = _linked_repo(tmp_path)
+    (root / SRC).write_text("def refresh(token):\n    return token\n\n\ndef revoke(token):\n    return 0\n")
+    assert runner.invoke(app, ["link", "task:auth/1", "sym:auth/session.py#revoke",
+                               "--repo", str(root)]).exit_code == 0
+    assert [i["sym"] for i in _plan_impls(root)] == [SYM, "sym:auth/session.py#revoke"]
+
+
+def test_gc_settles_a_renamed_concerns_anchor_on_a_memory(tmp_path: Path):
+    """Same treatment for the memory families — concerns and grounded_by reach resolve_renames through
+    the identical machinery, so the settle path must not stop at plan artifacts."""
+    root = _linked_repo(tmp_path)
+    assert runner.invoke(app, ["remember", "refresh must stay pure", "--repo", str(root),
+                               "--new", "--concerns", SYM]).exit_code == 0
+    (root / SRC).write_text("def renew(token):\n    return token\n")
+    assert runner.invoke(app, ["gc", str(root), "--apply"]).exit_code == 0
+    bodies = "\n".join(p.read_text() for p in (root / "yigraf" / "memory").glob("*.md"))
+    assert "sym:auth/session.py#renew" in bodies and SYM not in bodies
+    assert _drift(root) == []

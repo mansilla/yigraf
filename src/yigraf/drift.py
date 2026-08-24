@@ -108,6 +108,10 @@ def resolve_renames(graph: nx.DiGraph) -> None:
     It also serves a **renamed markdown heading**, which reaches here the same way a renamed symbol
     does even though docs carry no index: ``artifacts.mint_locus_node`` puts the moved section into the
     graph under its new locator when the stored anchor still matches it, and the lookup below finds it.
+
+    The re-anchor is **in-memory only** and stays that way by design; :func:`yigraf.cli._settle_renames`
+    is what makes it durable, and the ``renamed_from`` tag this leaves behind is exactly the proof that
+    settle path (and ``link``'s) is allowed to act on.
     """
     index = _hash_index(graph)
     for node_id in list(graph.nodes):

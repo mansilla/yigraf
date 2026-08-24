@@ -440,6 +440,52 @@ def _drift_block(items: list, config: dict | None = None) -> list[str]:
     return lines
 
 
+#: Footer on the unsettled-rename block — the cliff that makes the notice worth its tokens. Without it
+#: the block reads as bookkeeping the agent can defer; the whole point is that deferring it past the
+#: next body edit is what destroys the trail.
+RENAME_CLIFF = ("↳ A rename holds only while the body does: it is re-derived from the content hash on "
+                "every build, so editing that body before you settle it leaves hard drift on a locator "
+                "that will never resolve, and nothing anywhere records where the subject went. "
+                "`yigraf gc --apply` settles every one of them at once.")
+
+
+def _rename_line(item) -> str:
+    """One ⚠ line for a rename the graph resolved and the file has not been told about.
+
+    Names the settle verb per relation, the same kind-aware fork ``drift_tail`` makes: an ``implements``
+    edge is re-anchored by re-``link``ing (a task's declaration), a memory's ``concerns``/``grounded_by``
+    ref by ``reanchor`` (a locus repair with no supersedes trail).
+    """
+    verb = (f"yigraf link {item.task_id} {item.new_locator}" if item.relation == "implements"
+            else f"yigraf reanchor {item.task_id} {item.locator} {item.new_locator}")
+    return f"  ⚠ {item.task_id} → {item.locator} ⇒ {item.new_locator} — `{verb}`"
+
+
+def _rename_block(items: list, config: dict | None = None) -> list[str]:
+    """The ⚠ Unsettled rename body: one line per resolved-but-unwritten rename, bounded, plus the cliff.
+
+    ``resolve_renames`` re-anchors a moved symbol/section in the **graph** — a derived, recomputable
+    projection — while the authored file still names the locator the subject left. Every reader that
+    shows the agent drift dropped these items (this module, ``show``, the drifted set ``cli.drift``
+    builds), so the only surface that ever mentioned a rename was ``yigraf drift``, which the working
+    loop never runs. That made the limit invisible rather than honest: the agent had no moment at which
+    it could act, and the one edit that ends the rescue window is the very edit this packet fires on.
+
+    Bounded by the same ``retrieval.max_drift_lines`` knob and for the same reason — a refactor renames
+    in bulk, and a block that scales with the refactor floods the packet it rides in. The tail names
+    ``yigraf gc``, which renders the complete list from its own path.
+    """
+    cap = ((config or {}).get("retrieval", {}) or {}).get("max_drift_lines", 4)
+    ordered = sorted(items, key=_rename_line)
+    shown = ordered[:cap] if cap and len(ordered) > cap else ordered
+    lines = [_rename_line(i) for i in shown]
+    if len(shown) < len(ordered):
+        lines.append(f"  … +{len(ordered) - len(shown)} more unsettled — `yigraf gc` for the full report.")
+    if lines:
+        lines.append(f"  {RENAME_CLIFF}")
+    return lines
+
+
 def _stale_line(item) -> str:
     """A STALE-completion line for a done task whose implementing symbol drifted (int:drift-as-stale).
 
@@ -868,6 +914,7 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
             conflict_lines: list[str] | None = None,
             obligation_groups: list[list[str]] | None = None,
             stale_lines: list[str] | None = None,
+            rename_lines: list[str] | None = None,
             parent: dict[str, tuple[str, str]] | None = None,
             signals_first: bool = False) -> ContextResult:
     capture_lines = capture_lines or []
@@ -875,6 +922,7 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
     conflict_lines = conflict_lines or []
     obligation_groups = obligation_groups or []
     stale_lines = stale_lines or []
+    rename_lines = rename_lines or []
     parent = parent or {}
     char_budget = budget_tokens * 3  # Graphify's ≈3:1 char:token estimate (retrieval-design §9)
     rcfg = (config or {}).get("retrieval", {})
@@ -885,7 +933,7 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
     # The ✔ obligation block scales with how governed the locus is, not with anything wrong, so it is
     # the one that floods; it takes a share of what the warnings leave (design law #2).
     warn_lines = (drift_lines + reconcile_lines + capture_lines + task_reconcile_lines
-                  + conflict_lines + stale_lines)
+                  + conflict_lines + stale_lines + rename_lines)
     warn_cost = sum(len(line) + 1 for line in warn_lines)
     obligation_cap = int(rcfg.get("obligation_share", 0.35) * max(0, char_budget - warn_cost))
     obligation_lines, obl_criteria, obl_intents = _fit_obligations(obligation_groups, obligation_cap)
@@ -915,6 +963,7 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
         ("⚠ Conflict (pending — needs human):", conflict_lines),
         ("⚠ Drift:", drift_lines),
         ("⚠ Stale (re-verify completion):", stale_lines),
+        ("⚠ Unsettled rename (the graph re-anchored it; the file did not):", rename_lines),
         ("⚠ Reconcile (R9c):", reconcile_lines),
         ("⚠ Capture gaps:", capture_lines),
         ("⚠ Task reconcile:", task_reconcile_lines),
@@ -1235,15 +1284,24 @@ def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict,
     )
 
     drift_items: list = []
+    rename_items: list = []
     drifted_edges: set[tuple[str, str]] = set()
     has_drift = False
     for item in compute_drift(graph):
+        in_view = (item.task_id in hops or item.locator in seedset or item.locator in hops
+                   or item.new_locator in seedset or item.new_locator in hops)
         if item.kind == "renamed":
+            # Not drift — the belief is correctly anchored — but the *file* is not, and this edit is
+            # the class of edit that ends the rescue window. It breaks silence for the same reason
+            # drift does: a real, bounded, expiring condition the agent can clear in one command.
+            if in_view:
+                has_drift = True
+                rename_items.append(item)
             continue
         drifted_edges.add((item.task_id, item.locator))  # full set — _verified_reconcile needs it
         if not is_surfaced(graph, item):  # a done task's implements drift is provenance, not a nag
             continue
-        if item.task_id in hops or item.locator in seedset or item.locator in hops:
+        if in_view:
             has_drift = True
             drift_items.append(item)
 
@@ -1255,7 +1313,8 @@ def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict,
     obligations = _proof_obligations(graph, seeds)  # what this edit must keep true (int:proof-obligations)
     return _render(graph, ranked, f"editing {file_relpath}", _drift_block(drift_items, config), reconcile, budget,
                    signals_first=True,  # a push packet leads with why it spoke at all (v4 #13)
-                   root=root, config=config, obligation_groups=obligations, parent=parent)
+                   root=root, config=config, obligation_groups=obligations, parent=parent,
+                   rename_lines=_rename_block(rename_items, config))
 
 
 def _plan_has_open_work(graph: nx.DiGraph, plan_id: str) -> bool:
@@ -1453,14 +1512,17 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
     in_scope = set(hops)
     surfaced: list = []
     stale_items: list = []
+    rename_items: list = []
     drifted_edges: set[tuple[str, str]] = set()
     for item in drift_items:
-        if item.kind == "renamed":
-            continue
-        drifted_edges.add((item.task_id, item.locator))  # full set — _verified_reconcile needs it
         # Scoped, unlike SessionStart: a topic query answers a topic, and the global obligation
         # dashboard is what session start is *for*. Same split _capture_gaps has always made.
         in_view = item.task_id in in_scope or item.locator in in_scope
+        if item.kind == "renamed":
+            if in_view or item.new_locator in in_scope:
+                rename_items.append(item)
+            continue
+        drifted_edges.add((item.task_id, item.locator))  # full set — _verified_reconcile needs it
         if is_stale_completion(graph, item):  # int:drift-as-stale
             if in_view:  # principal-facing here (a query), never the edit hook — mem:056/mem:81edb
                 stale_items.append(item)
@@ -1479,4 +1541,5 @@ def context(graph: nx.DiGraph, query: str, config: dict, family: str | None = No
                    root=root, config=config, capture_lines=capture_lines,
                    relevance_note=_relevance_note(sem_match, query, config), scores=scores,
                    task_reconcile_lines=task_reconcile, conflict_lines=conflicts,
-                   stale_lines=_stale_block(stale_items, config), parent=parent)
+                   stale_lines=_stale_block(stale_items, config), parent=parent,
+                   rename_lines=_rename_block(rename_items, config))

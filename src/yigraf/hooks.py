@@ -196,7 +196,7 @@ reason to have yigraf at all.
 - `yigraf plan <slug> -t "<title>" --task "<description>"` then `yigraf link task:<plan>/1 int:<slug>`
   to track the intent. Add to a live plan with `--append-task`; never hand-edit the artifact.
 
-## 4. The three re-verify signals: drift, stale, conflict
+## 4. The four re-verify signals: drift, stale, conflict, unsettled rename
 `yigraf context` and the hooks push these at you as you work, so you rarely have to go looking —
 **but they are scoped**: the hooks to the file you touched, `context` to the topic you asked about. At
 the end of a task that is not enough. `yigraf status` is the authority, and it is the one surface that
@@ -206,14 +206,16 @@ choosing — `yigraf show mem:<id>` prints it in full, and `yigraf drift` now pr
 
 **Drift** — a live link's anchor no longer matches: soft (the symbol's body changed) or hard (it's
 gone), on `implements` (task→code), `concerns` (decision→code), or `grounded_by` (decision→evidence).
-A pure rename auto-re-anchors and never surfaces. Re-verify the code still satisfies the thing, then:
+A pure rename is not drift — it re-anchors itself — but it is not free either; it is the fourth
+signal below. Re-verify the code still satisfies the thing, then:
 - a task's `implements` → `yigraf link task:<id> sym:…` (re-anchors; use this for a symbol that moved
   *and* changed — `link` on the new locus, never unlink-then-link)
 - a task's `implements` whose symbol is gone for good, or that was declared wrongly →
-  `yigraf unlink task:<id> <target>`. `link` keys by the exact locator, so a re-link after a move
-  *appends* rather than replaces; without `unlink` the old entry is drift no verb can clear. This is a
-  graph edit, not a mind-change — it leaves no supersedes trail, because the declaration was simply
-  never (or is no longer) true.
+  `yigraf unlink task:<id> <target>`. `link` keys by the exact locator, so it replaces the old entry
+  only where yigraf has *proved* the move (see the rename signal below) and appends otherwise; a move
+  yigraf could no longer prove — because you edited the body too — leaves an old entry `unlink` is the
+  only way out of. This is a graph edit, not a mind-change — it leaves no supersedes trail, because the
+  declaration was simply never (or is no longer) true.
 - a decision's `concerns` that still holds → `yigraf reaffirm mem:<id>` (never re-`remember` — that
   duplicates; never `supersede` unless your mind actually changed)
 - a decision's anchor whose subject MOVED → `yigraf reanchor mem:<id> <old> <new>` (a locus repair,
@@ -226,6 +228,16 @@ A pure rename auto-re-anchors and never surfaces. Re-verify the code still satis
 - an edit-heavy session that drifted many decisions on one locus → `yigraf reaffirm <sym|file>`
   reaffirms every memory concerning that locus at once. Scoped to a locus you *actually re-verified* —
   there is deliberately no blanket "clear all drift", because that is rubber-stamping.
+
+**Unsettled rename** — a symbol or heading you renamed *moved the subject, not the belief*: yigraf
+matches it by content hash and re-anchors the edge, so nothing drifts and nothing is lost. But that
+match is re-derived from the **body** on every build, and the artifact still names the locator the
+subject left. Edit that body before writing the move down and the rescue is gone: hard drift on a
+locator that will never resolve, with no record anywhere of where the subject went. So settle it while
+it is still free — `yigraf gc --apply` settles every pending one at once, or name the new locus
+yourself (`yigraf link task:<id> sym:…` / `yigraf reanchor mem:<id> <old> <new>`). Only the locator
+moves: the anchor hash and the commit it was stamped at are untouched, so no claim or completion is
+re-dated. This is the one signal with an expiry, which is why the edit hook interrupts for it.
 
 **Stale completion** — a task marked **done** whose implementing symbol drifted. The completion isn't
 false, it's *unverified*: the evidence for "done" moved. Re-verify, then `yigraf link task:<id> sym:…`

@@ -354,6 +354,38 @@ def test_the_skill_install_writes_matches_the_one_this_repo_reads():
     )
 
 
+# --------------------------------------------------------------------------------------------------
+# an unsettled rename — the graph re-anchored it, the artifact was never told
+# --------------------------------------------------------------------------------------------------
+
+def test_the_verb_the_unsettled_rename_line_names_actually_settles_it(tmp_path: Path):
+    """`renamed` is the one signal whose window CLOSES: the rescue is re-derived from the body hash on
+    every build, so the guidance has to name a verb that writes it down, and that verb has to work
+    before the next edit to that body. Both halves are the invariant this file exists for."""
+    root = _repo(tmp_path)
+    mem = _remember(root, "refresh must not renew past the absolute cap", "--concerns", SYM)
+    (root / "auth" / "session.py").write_text("def rotate(token):\n    return token\n")  # pure rename
+    assert runner.invoke(app, ["build", str(root)]).exit_code == 0
+    out = _drift(root)
+    assert "renamed" in out and "not yet in the artifact" in out
+    assert _run(root, "reanchor", mem, SYM, "sym:auth/session.py#rotate").exit_code == 0
+    assert "renamed" not in _drift(root)
+
+
+def test_the_batch_verb_the_rename_block_names_settles_every_one(tmp_path: Path):
+    """The packet's own footer offers `yigraf gc --apply`; a refactor renames in bulk, so the batch
+    exit has to reach a task's implements edge and a memory's concerns anchor in one pass."""
+    root = _repo(tmp_path)
+    _remember(root, "refresh must not renew past the absolute cap", "--concerns", SYM)
+    assert _run(root, "plan", "auth", "-t", "Auth", "--task", "do it").exit_code == 0
+    assert _run(root, "link", "task:auth/1", SYM).exit_code == 0
+    (root / "auth" / "session.py").write_text("def rotate(token):\n    return token\n")
+    assert runner.invoke(app, ["build", str(root)]).exit_code == 0
+    assert "renamed" in _drift(root)
+    assert runner.invoke(app, ["gc", str(root), "--apply"]).exit_code == 0
+    assert "No drift." in _drift(root)
+
+
 def test_the_agents_block_install_writes_matches_this_repo_own():
     """The same two-copy hazard for the host-agnostic channel: ``hooks._AGENTS_BLOCK`` is what
     ``install`` writes into a repo's AGENTS.md, and this repo carries its own copy between the fences."""
