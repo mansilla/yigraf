@@ -14,8 +14,9 @@ Go extractors; the other core grammars are bundled and light up as their extract
 from __future__ import annotations
 
 import os
+import re
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -145,6 +146,65 @@ def build_graph(root: Path, config: dict) -> tuple[nx.DiGraph, BuildStats]:
     return graph, stats
 
 
+#: ``task:<slug>/<n>`` → ``plan:<slug>``: the plan a task locator belongs to, by the id grammar the
+#: whole codebase already keys on (``artifacts.read_plan`` mints both from one file).
+_TASK_LOCATOR = re.compile(r"^task:(.+)/\d+$")
+
+
+def _plan_of(task_locator: str) -> str | None:
+    match = _TASK_LOCATOR.match(task_locator)
+    return f"plan:{match.group(1)}" if match else None
+
+
+def _retracted_tasks(local: Sequence[Assertion]) -> Callable[[Assertion], bool]:
+    """Is this replica assertion a task the local plan that owns it no longer lists?
+
+    ``defer_families`` answers "the local file wins" only where a local node EXISTS to win. Deleting a
+    task from a plan asserts nothing — absence is invisible to an append-only log — so the replica's
+    copy met no local claim, was folded rather than declined, and came back as a live ``state: todo``
+    node contained by nothing and reachable from nothing. Found on yigraf's own graph while retiring
+    ``plan:divergence-ledger``: five tasks removed from the artifact, zero in-edges, and ``yigraf
+    status`` still counting them as open while ``yigraf tasks --open`` (which reads the plan files) said
+    there were none. Two surfaces, one question, opposite answers — and the count was unclearable,
+    because nothing the principal could edit would ever reach it.
+
+    Files are truth for this family, and a plan artifact's ``contains`` set is that family's statement
+    of which tasks the plan HAS — the same reasoning
+    :meth:`~yigraf.onlinelog.pending_local_revisions` applies to a locator held with an unpushed edit.
+    So the scope is the guard: only a plan **this workspace holds** speaks for its own contents. A
+    teammate-only plan is not in ``local`` at all and arrives whole, exactly as
+    ``test_a_teammate_only_intent_still_arrives_over_the_log`` requires.
+
+    The loss is never silent where it could be real. If a teammate ADDED the task, their plan revision
+    disagrees with mine about the ``contains`` set, so ``plan:<slug>`` itself lands in ``diverged`` —
+    reported at the granularity the disagreement actually has. If I removed it, my revision is the
+    newest and mine, so no divergence is reported, which is correct: nobody disagrees.
+
+    Filtering here rather than inside :func:`~yigraf.fold.fold_assertions` is deliberate — mem:ea843907
+    settled that a family-shaped rule belongs to the CALLER, and the fold stays family-agnostic.
+    """
+    contained: set[str] = set()
+    held: set[str] = set()
+    for a in local:
+        body = a.body or {}
+        attrs = body.get("attrs") or {}
+        if body.get("family") != artifacts.PLAN_FAMILY or attrs.get("kind") != "plan":
+            continue
+        held.add(body["locator"])
+        contained.update(e["target"] for e in body.get("edges") or []
+                         if e.get("relation") == "contains")
+
+    def is_retracted(assertion: Assertion) -> bool:
+        body = assertion.body or {}
+        locator = body.get("locator") or ""
+        if body.get("family") != artifacts.PLAN_FAMILY or (body.get("attrs") or {}).get("kind") != "task":
+            return False
+        plan_id = _plan_of(locator)
+        return plan_id in held and locator not in contained
+
+    return is_retracted
+
+
 def _fold_replica(graph: nx.DiGraph, root: Path, config: dict,
                   local: Sequence[Assertion] = ()) -> int:
     """Fold the synced replica's assertions onto the same base the authored ones landed on.
@@ -217,8 +277,10 @@ def _fold_replica(graph: nx.DiGraph, root: Path, config: dict,
         store = SqliteAssertionStore(replica)
         log = replica_log(store, project)
         declined: list = []
-        folded = fold_assertions(log.iter_assertions_in_causal_order(), base=graph,
-                                 defer_families=FILE_TRUTH_FAMILIES, declined=declined)
+        is_retracted = _retracted_tasks(local)
+        folded = fold_assertions(
+            (a for a in log.iter_assertions_in_causal_order() if not is_retracted(a)),
+            base=graph, defer_families=FILE_TRUTH_FAMILIES, declined=declined)
         # THREE kinds of declined assertion are NOT divergence — for a revisioned family the id *is*
         # the revision, so an edit to an already-pushed artifact always leaves its previous revision in
         # the log matching the naive test exactly:

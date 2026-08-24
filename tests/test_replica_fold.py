@@ -317,17 +317,22 @@ def test_an_echo_of_my_own_revision_is_not_divergence(repo):
 
 def test_a_competing_revision_of_a_local_locator_is_reported(repo):
     """The same setup as test_the_replica_may_not_revert_a_locally_completed_task — the local file still
-    wins — but the declined revision is now named rather than silently dropped."""
+    wins — but the declined revision is now named rather than silently dropped. The two halves are the
+    point: reporting a competitor must not move the verdict.
+
+    The competitor is a TEAMMATE's revision, with this workspace's own name on record. It used to be
+    this repo's own prior revision, appended unattributed — which is not a competitor at all but the
+    anonymous fail-safe case, and `test_an_unpushed_edit_still_diverges_before_the_workspace_knows_its
+    _name` is where that belongs. `plan:divergence-ledger` read this test as proof that divergence
+    conflated a workspace's own past with a teammate, and the shape was indeed wrong; the classifier
+    3aa0313 built (three filters, keyed on the actor) is what fixed it, so what is left here is a name
+    that has to match what it builds."""
     _plan_repo(repo)
     config = _config(repo)
-    from yigraf import filelog
-
-    stale = [a for a in filelog.assertions_from_repo(repo)
-             if a.body.get("locator") == "task:greeting/1"][0]
-    plan_md = next((repo / "yigraf" / "plans").rglob("*.md"))
-    plan_md.write_text(plan_md.read_text().replace("- [ ]", "- [x]", 1))
-    OnlineLog(SqliteAssertionStore(repo / "yigraf" / "cache" / "replica.db"), PROJECT,
-              signer_key=None, require_signed_provenance=False).append(stale)
+    _replica(repo).append(_task_assertion(repo, actor="teammate@example.com",
+                                          id="task:greeting/1@theirs", parents=()))
+    _complete_the_task(repo)
+    _record_actor(repo)
 
     graph, _ = build_graph(repo, config)
     assert list(graph.graph.get("diverged")) == ["task:greeting/1"]
@@ -659,3 +664,87 @@ def test_freshness_and_the_cached_read_agree_about_the_view(repo):
     _record_actor(repo)
     assert _agree(), "the replica moved: not served, and honestly behind — then rebuilt by that read"
     assert _agree(), "and fresh again after it, rather than behind forever"
+
+
+# --- A task the plan no longer lists: absence is not an assertion --------------------------------
+# `defer_families` says "the local file wins" — but only where a local node EXISTS to win. Deleting a
+# task from a plan asserts nothing, so the replica's copy met no local claim, was folded rather than
+# declined, and came back as a live `state: todo` node contained by nothing (extract._retracted_tasks).
+
+
+def _drop_the_task(repo: Path) -> None:
+    """Remove task #1 from the plan artifact — the shape a re-scoped or retired plan takes on disk."""
+    plan_md = next((repo / "yigraf" / "plans").rglob("*.md"))
+    kept = [ln for ln in plan_md.read_text().splitlines() if "{#1}" not in ln]
+    plan_md.write_text("\n".join(kept) + "\n")
+
+
+def test_a_task_the_plan_no_longer_lists_does_not_come_back_from_the_replica(repo):
+    """Found on yigraf's own graph while retiring plan:divergence-ledger: five removed tasks, zero
+    in-edges, and `yigraf status` counting them open while `yigraf tasks --open` (which reads the plan
+    files) said there were none. Two surfaces, one question, opposite answers — and unclearable,
+    because nothing the principal could edit would ever reach it."""
+    _plan_repo(repo)
+    config = _config(repo)
+    _replica(repo).append(_task_assertion(repo))  # what an earlier session pushed
+    _drop_the_task(repo)
+    _record_actor(repo)
+
+    graph, _ = build_graph(repo, config)
+    assert "task:greeting/1" not in graph.nodes
+    assert _diverged(repo, config) == [], "my own removal is not a disagreement with anybody"
+
+
+def test_a_teammate_only_plan_still_arrives_whole(repo):
+    """The scope guard, and the reason this keys on the plan rather than the task: only a plan THIS
+    workspace holds speaks for its own contents. A plan that exists nowhere in local truth has no
+    `contains` set to be absent from, so every one of its tasks arrives — the plan-family sibling of
+    test_a_teammate_only_intent_still_arrives_over_the_log."""
+    _plan_repo(repo)
+    config = _config(repo)
+    log = _replica(repo)
+    log.append(Assertion(
+        id="plan:theirs@r1", kind="plan",
+        body={"family": "plan", "locator": "plan:theirs",
+              "attrs": {"kind": "plan", "label": "Theirs", "phase": "active"},
+              "edges": [{"relation": "contains", "target": "task:theirs/1"}]},
+        provenance=[{"actor": "teammate@example.com", "source": "cli"}]))
+    log.append(Assertion(
+        id="task:theirs/1@r1", kind="plan",
+        body={"family": "plan", "locator": "task:theirs/1",
+              "attrs": {"kind": "task", "label": "their work", "state": "todo", "order": 1},
+              "edges": []},
+        parents=("plan:theirs@r1",),
+        provenance=[{"actor": "teammate@example.com", "source": "cli"}]))
+    _record_actor(repo)
+
+    graph, _ = build_graph(repo, config)
+    assert graph.nodes["task:theirs/1"]["state"] == "todo"
+
+
+def test_a_teammates_added_task_is_not_lost_silently_but_reported_on_the_plan(repo):
+    """The honesty condition. Dropping a task the local plan does not list is only safe because a
+    teammate ADDING one means their plan revision disagrees with mine about the `contains` set — so the
+    disagreement surfaces at the granularity it actually has, on `plan:greeting`, not on the task."""
+    _plan_repo(repo)
+    config = _config(repo)
+    log = _replica(repo)
+    log.append(Assertion(
+        id="plan:greeting@theirs", kind="plan",
+        body={"family": "plan", "locator": "plan:greeting",
+              "attrs": {"kind": "plan", "label": "Greeting", "phase": "active"},
+              "edges": [{"relation": "contains", "target": "task:greeting/1"},
+                        {"relation": "contains", "target": "task:greeting/2"}]},
+        provenance=[{"actor": "teammate@example.com", "source": "cli"}]))
+    log.append(Assertion(
+        id="task:greeting/2@theirs", kind="plan",
+        body={"family": "plan", "locator": "task:greeting/2",
+              "attrs": {"kind": "task", "label": "their added task", "state": "todo", "order": 2},
+              "edges": []},
+        parents=("plan:greeting@theirs",),
+        provenance=[{"actor": "teammate@example.com", "source": "cli"}]))
+    _record_actor(repo)
+
+    graph, _ = build_graph(repo, config)
+    assert "task:greeting/2" not in graph.nodes, "my plan does not list it, so it is not live work here"
+    assert "plan:greeting" in _diverged(repo, config), "but the disagreement must not be silent"
