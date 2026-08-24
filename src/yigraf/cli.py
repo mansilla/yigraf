@@ -22,7 +22,8 @@ import typer
 from yigraf import (__version__, artifacts, counters, embeddings, graphdb, memory,
                     obligations, relations, resolution, retrieval, status, update)
 from yigraf import show as show_mod  # aliased: the module and the `show` command share a name
-from yigraf.astnorm import ANCHOR_ALGO, FILE_ANCHOR_ALGO, file_content_hash, parse_file_target
+from yigraf.astnorm import (ANCHOR_ALGO, DOC_SUFFIXES, locus_hash, parse_file_target,
+                            parse_section_target, section_slugs)
 from yigraf.config import TOKEN_ENV, load_config
 from yigraf.drift import (compute_drift, is_reverifiable, is_stale_completion, is_surfaced,
                           stale_completions)
@@ -51,8 +52,35 @@ def _guidance(message: str) -> NoReturn:
     raise typer.Exit(code=0)
 
 
-def _symbol_suggestion(graph, target: str) -> str:
-    """A 'did you mean' tail for an unresolved ``sym:`` locator, fuzzy-matched against the graph."""
+def _section_suggestion(repo: Path | None, target: str) -> str:
+    """A 'did you mean' tail for an unresolved ``file:<path>#<slug>`` locator, read off the file.
+
+    The graph cannot answer this one: docs are deliberately not indexed, so the only section nodes in
+    it are the ones some assertion already names (mem:a65f1ccad03b765e). The file itself is the index —
+    which is also why this can list every *available* heading, the one thing that turns a missed guess
+    into a single retry (design law #1).
+    """
+    relpath, slug = parse_section_target(target)
+    if repo is None or slug is None:
+        return ""
+    slugs = section_slugs(repo, relpath)
+    if not slugs:
+        return f" {relpath} has no addressable headings (or is not there yet)."
+    close = difflib.get_close_matches(slug, slugs, n=3, cutoff=0.6)
+    if close:
+        return " Did you mean: " + ", ".join(f"file:{relpath}#{c}" for c in close) + "?"
+    shown = ", ".join(slugs[:8]) + (" …" if len(slugs) > 8 else "")
+    return f" Headings in {relpath}: {shown}."
+
+
+def _symbol_suggestion(graph, target: str, repo: Path | None = None) -> str:
+    """A 'did you mean' tail for an unresolved locator, fuzzy-matched against the graph.
+
+    ``repo`` is optional only because a ``sym:`` suggestion never needs it; a section locator does, and
+    passing it is what lets one call site serve both locator families.
+    """
+    if parse_section_target(target)[1] is not None:
+        return _section_suggestion(repo, target)
     candidates = [n for n in graph.nodes if str(n).startswith("sym:")]
     close = difflib.get_close_matches(target, candidates, n=3, cutoff=0.6)
     if close:
@@ -62,6 +90,20 @@ def _symbol_suggestion(graph, target: str) -> str:
     if same_name:
         return " A symbol named that exists at: " + ", ".join(same_name[:3]) + "."
     return f' Run `yigraf context "{name}"` to find its locator.'
+
+
+def _locus_noun(target: str) -> tuple[str, str]:
+    """``(what the locator names, what "it lands" means for it)`` — so a dangling-edge warning about a
+    doc section neither calls it a symbol nor promises it governs "once the code lands".
+
+    Small, but it is the difference between a message an agent can act on and one that sends it looking
+    for a function in a markdown file (design law #1).
+    """
+    if parse_section_target(target)[1] is not None:
+        return "section", "that section is written"
+    if target.startswith("file:"):
+        return "file", "that file lands"
+    return "symbol", "the code lands"
 
 
 def _refuse_bare_sym(graph, sym: str, flag: str) -> None:
@@ -76,30 +118,68 @@ def _refuse_bare_sym(graph, sym: str, flag: str) -> None:
         shown = ", ".join(in_file[:6]) + (" …" if len(in_file) > 6 else "")
         _guidance(f"{sym} names a file, not a symbol — {flag} takes sym:<path>#<name>. "
                   f"Symbols there: {shown}. For a claim about the whole file, use file:<path> "
-                  f"(unindexed glue) or a line range.")
+                  f"(unindexed glue), a line range, or — in markdown — file:<path>#<section>.")
     _guidance(f"{sym} names a file, not a symbol — {flag} takes sym:<path>#<name>."
               + _symbol_suggestion(graph, sym))
 
 
-def _anchor(repo: Path, config: dict, target: str) -> tuple[str | None, str | None]:
+def _anchor(repo: Path, config: dict, target: str, *, guide: bool = True) -> tuple[str | None, str | None]:
     """Resolve ``(anchor, algo)`` for a ``sym:``/``file:`` target, or ``(None, None)`` if it isn't in
     the source *yet* (a legitimate forward-reference — the caller decides whether that's fatal).
 
     Still hard-guides (exit 0) on the whole-file-on-indexed-code misuse: that's a design error, not a
     forward-reference — the anchor would collide with the extractor's own file node and never drift.
-    A ``file:`` line-slice or an infra/glue file hashes bytes with ``FILE_ANCHOR_ALGO``; a ``sym:``
+    A ``file:`` line-slice or an infra/glue file hashes bytes with ``FILE_ANCHOR_ALGO``; a markdown
+    ``#<section>`` hashes that heading's normalized section under ``SECTION_ANCHOR_ALGO``; a ``sym:``
     keeps the astnorm anchor. The algo travels with the anchor so drift compares like against like.
+
+    ``guide=False`` turns every hard guide off, for a locus this call is *re-resolving* rather than being
+    handed. Those guides check a locator the caller **typed**; against a stored one they punish the wrong
+    person. A supersede inherits the predecessor's loci, so someone else adding a second ``## Drift`` to a
+    governed doc made ``#drift`` ambiguous and refused the supersede — losing a mind-change, with a
+    message about heading titles, to a caller who touched no docs and cannot fix it without editing one.
+    Unresolvable is the honest reading of a stored locus that no longer resolves: the capture lands, the
+    edge dangles, and drift says so.
     """
     if target.startswith("file:"):
         relpath, start, _end = parse_file_target(target)
-        if start is None and Path(relpath).suffix in extension_map(available_extractors(config)):
+        slug = parse_section_target(target)[1]
+        if not guide:
+            return locus_hash(repo, target)  # re-resolving a stored locus: report, never refuse
+        if slug is not None:
+            _guide_section_locus(repo, config, relpath, slug)
+        elif start is None and Path(relpath).suffix in extension_map(available_extractors(config)):
             _guidance(f"{relpath} is indexed as code, so a whole-file `file:` anchor would silently "
                       f"never drift. Anchor a symbol (sym:{relpath}#<name>) or a line range "
                       f"(file:{relpath}:L<a>-L<b>) instead. `file:` is for infra/glue with no symbols.")
-        anchor = file_content_hash(repo, target)
-        return (anchor, FILE_ANCHOR_ALGO) if anchor is not None else (None, None)
+        return locus_hash(repo, target)
     anchor = symbol_content_hash(repo, target, config)
     return (anchor, ANCHOR_ALGO) if anchor is not None else (None, None)
+
+
+def _guide_section_locus(repo: Path, config: dict, relpath: str, slug: str) -> None:
+    """Hard-guide (exit 0) the two ``file:<path>#<slug>`` errors that are design errors, not forward
+    references: a path with no addressable headings, and a slug that names more than one.
+
+    Everything else — a file that isn't written yet, a heading that isn't written yet — falls through
+    to the normal dangling-concern path, because a decision legitimately governs a section about to be
+    written (D#3), and :func:`_section_suggestion` lists the real headings in the warning.
+    """
+    if Path(relpath).suffix.casefold() not in DOC_SUFFIXES:
+        if Path(relpath).suffix in extension_map(available_extractors(config)):
+            _guidance(f"{relpath} is indexed as code, so `#{slug}` names a SYMBOL, not a heading — "
+                      f"did you mean sym:{relpath}#{slug}?")
+        _guidance(f"{relpath} is not markdown, so it has no addressable headings — "
+                  f"file:<path>#<section> reads markdown headings ({', '.join(sorted(DOC_SUFFIXES))}). "
+                  f"For a region of this file use file:{relpath}:L<a>-L<b>; for all of it, "
+                  f"file:{relpath}.")
+    slugs = section_slugs(repo, relpath)
+    if slugs.count(slug) > 1:
+        _guidance(f"#{slug} names {slugs.count(slug)} headings in {relpath}, so the locator cannot say "
+                  f"which — anchoring it would pin the belief to whichever comes first and go quiet "
+                  f"about the rest. Give one heading a distinct title (the slug is the title, "
+                  f"case-folded, with each run of other characters as a single `-`), or pin the region "
+                  f"positionally with file:{relpath}:L<a>-L<b>.")
 
 
 def _anchor_or_guide(repo: Path, config: dict, target: str) -> tuple[str, str]:
@@ -113,8 +193,10 @@ def _anchor_or_guide(repo: Path, config: dict, target: str) -> tuple[str, str]:
     if anchor is not None:
         return anchor, algo
     if target.startswith("file:"):
-        _guidance(f"Couldn't find the file for {target} — expected file:<path>[:L<a>-L<b>] relative to "
-                  f"the repo root. Check the path exists and is spelled relative to {repo}.")
+        _guidance(f"Couldn't find the file for {target} — expected "
+                  f"file:<path>[:L<a>-L<b>|#<section>] relative to the repo root. Check the path "
+                  f"exists and is spelled relative to {repo}."
+                  + _section_suggestion(repo, target))
     graph, _ = build_graph(repo, config)
     _guidance(f"Couldn't find {target} in the current source." + _symbol_suggestion(graph, target))
 
@@ -606,7 +688,7 @@ def link(
         artifacts.add_edge_to_plan(plan_file, task_id, "tracks", target)
         typer.echo(f"Linked {task_id} —tracks→ {target}")
     else:
-        _guidance("Target must be a symbol (sym:<path>#<name>) or file (file:<path>[:L<a>-L<b>]) → "
+        _guidance("Target must be a symbol (sym:<path>#<name>) or file (file:<path>[:L<a>-L<b>|#<section>]) → "
                   f"implements, or an intent (int:<slug>) → tracks. Got: {target}")
 
     _rebuild(repo)
@@ -734,7 +816,7 @@ def _carried_anchors(node: memory.Memory) -> str:
 def reanchor(
     target: str = typer.Argument(..., help="The memory id (mem:NNN) whose anchor moved."),
     old: str = typer.Argument(..., help="The anchor to move, exactly as the node carries it (concerns or grounded_by)."),
-    new: str = typer.Argument(..., help="Where the subject now lives: sym:<path>#<name> or file:<path>[:L<a>-L<b>]."),
+    new: str = typer.Argument(..., help="Where the subject now lives: sym:<path>#<name>, file:<path>[:L<a>-L<b>] or — in markdown — file:<path>#<section>."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
     """Move ONE anchor to the locus its subject moved to — a locus repair, not a mind-change.
@@ -766,7 +848,8 @@ def reanchor(
         _guidance(f"{target} doesn't carry {old} on any anchor list, so there's nothing to move. "
                   + _carried_anchors(node))
     if not (new.startswith("sym:") or new.startswith("file:")):
-        _guidance(f"the new locus must be sym:<path>#<name> or file:<path>[:L<a>-L<b>], got: {new}")
+        _guidance(f"the new locus must be sym:<path>#<name>, file:<path>[:L<a>-L<b>] or, in markdown, "
+                  f"file:<path>#<section>, got: {new}")
     graph, _ = build_graph(repo, config)
     if new.startswith("sym:") and "#" not in new:
         _refuse_bare_sym(graph, new, "reanchor")
@@ -815,7 +898,8 @@ def reanchor(
 
 
 def _resolve_concerns(repo: Path, config: dict, graph, syms: list[str],
-                      was_anchored: set[str] | None = None) -> tuple[list[memory.Concern], list[str]]:
+                      was_anchored: set[str] | None = None,
+                      *, typed: bool = True) -> tuple[list[memory.Concern], list[str]]:
     """Resolve each ``--concerns`` locator to a :class:`Concern`, soft-warning on a forward-reference.
 
     A malformed locator (not ``sym:``/``file:``) is still a hard guide — that's a wrong *form*, not a
@@ -839,21 +923,23 @@ def _resolve_concerns(repo: Path, config: dict, graph, syms: list[str],
     was_anchored = was_anchored or set()
     for sym in syms:
         if not (sym.startswith("sym:") or sym.startswith("file:")):
-            _guidance(f"--concerns must be a symbol (sym:<path>#<name>) or a file "
-                      f"(file:<path>[:L<a>-L<b>], for infra/glue with no symbol), got: {sym}")
+            _guidance(f"--concerns must be a symbol (sym:<path>#<name>), a file "
+                      f"(file:<path>[:L<a>-L<b>], for infra/glue with no symbol) or a markdown "
+                      f"section (file:<path>#<section>), got: {sym}")
         if sym.startswith("sym:") and "#" not in sym:
             _refuse_bare_sym(graph, sym, "--concerns")
-        anchor, algo = _anchor(repo, config, sym)
+        anchor, algo = _anchor(repo, config, sym, guide=typed)
         concerns.append(memory.Concern(sym=sym, anchor=anchor, anchor_algo=algo))
         if anchor is None and sym in was_anchored:
             warnings.append(f"⚠ {sym} was anchored on the belief this replaces and no longer resolves — "
                             f"the locus DIED, so the successor inherits hard drift and `reaffirm` "
                             f"cannot re-anchor it. Move it instead: `yigraf reanchor <this mem-id> "
-                            f"{sym} <where it lives now>`." + _symbol_suggestion(graph, sym))
+                            f"{sym} <where it lives now>`." + _symbol_suggestion(graph, sym, repo))
         elif anchor is None:
-            warnings.append(f"⚠ no such symbol {sym} in the current source — creating a dangling "
-                            f"concerns edge (it governs once the code lands; `reaffirm <mem-id>` to "
-                            f"anchor it)." + _symbol_suggestion(graph, sym))
+            noun, lands = _locus_noun(sym)
+            warnings.append(f"⚠ no such {noun} {sym} in the current source — creating a dangling "
+                            f"concerns edge (it governs once {lands}; `reaffirm <mem-id>` to "
+                            f"anchor it)." + _symbol_suggestion(graph, sym, repo))
     return concerns, warnings
 
 
@@ -878,13 +964,14 @@ def _resolve_evidence(repo: Path, config: dict, graph, refs: list[str]) -> tuple
                 warnings.append(f"⚠ no such locus {ref} in the current source — creating a dangling "
                                 f"grounded_by edge (it anchors once the evidence lands; "
                                 f"`reaffirm <mem-id> --grounding empirical --evidence {ref}`)."
-                                + _symbol_suggestion(graph, ref))
+                                + _symbol_suggestion(graph, ref, repo))
         else:
             evidence.append(memory.Evidence(ref=ref))  # opaque (commit:/url/text) — no anchor, no drift
     return evidence, warnings
 
 
-def _resolve_governs(repo: Path, config: dict, graph, refs: list[str]) -> list[memory.Concern]:
+def _resolve_governs(repo: Path, config: dict, graph, refs: list[str],
+                     *, typed: bool = True) -> list[memory.Concern]:
     """Resolve each ``--governs`` locus to a POLICY concern (feedback-v3 #5): surfaces at the edit hook
     exactly like ``--concerns``, but carries no content hash and never drifts — for a belief about how
     a locus is *used* ("status.md holds only status"), where a content anchor rubber-stamps forever.
@@ -896,21 +983,37 @@ def _resolve_governs(repo: Path, config: dict, graph, refs: list[str]) -> list[m
     """
     out: list[memory.Concern] = []
     for ref in refs:
+        if not typed:
+            # An INHERITED policy locus, not one this caller typed. A policy carries no hash either way,
+            # so the guards below can only ever *block* — and a governed locus that has since died is
+            # drift, not a mis-capture, so refusing the supersede that reacts to it is backwards. The
+            # missing node makes the edge dangle and hard drift says it (see `_anchor`'s ``guide``).
+            out.append(memory.Concern(sym=ref, anchor=None, anchor_algo=memory.GOVERNS_ALGO))
+            continue
         if not (ref.startswith("sym:") or ref.startswith("file:")):
-            _guidance(f"--governs must be sym:<path>#<name> or file:<path>, got: {ref}")
+            _guidance(f"--governs must be sym:<path>#<name>, file:<path> or file:<path>#<section>, got: {ref}")
         if ref.startswith("sym:"):
             if "#" not in ref:
                 _refuse_bare_sym(graph, ref, "--governs")
             if symbol_content_hash(repo, ref, config) is None:
                 _guidance(f"no such symbol {ref} in the current source — a policy governs a locus "
-                          f"that exists." + _symbol_suggestion(graph, ref))
+                          f"that exists." + _symbol_suggestion(graph, ref, repo))
         else:
             relpath, start, _end = parse_file_target(ref)
+            slug = parse_section_target(ref)[1]
             if start is not None:
-                _guidance(f"--governs takes a whole file, not a line range (got {ref}) — a policy "
-                          f"governs how the file is used, so there is no region to pin.")
+                _guidance(f"--governs takes a whole file or a #<section>, not a line range (got {ref}) "
+                          f"— a policy governs how a locus is used, so there is no region to pin.")
             if not (Path(repo) / relpath).is_file():
                 _guidance(f"no such file {relpath} — a policy governs a locus that exists.")
+            if slug is not None:
+                # A named section IS a locus a policy can govern ("this section holds only status"),
+                # unlike a line range: it is addressed by name, not by position. It must resolve now,
+                # for the reason every --governs ref must — a policy about nothing is a mis-capture.
+                _guide_section_locus(repo, config, relpath, slug)
+                if locus_hash(repo, ref)[0] is None:
+                    _guidance(f"no section {ref} — a policy governs a locus that exists."
+                              + _section_suggestion(repo, ref))
         out.append(memory.Concern(sym=ref, anchor=None, anchor_algo=memory.GOVERNS_ALGO))
     return out
 
@@ -949,11 +1052,12 @@ def _premise_already_holds(repo: Path, graph, ref: str) -> bool:
     ``redis.tf``, a Dockerfile) is projected only by the references to it, including this very
     capture's. Asking that graph would report every such premise absent, i.e. never warn on the one
     mis-fill this check exists to catch. So for a ``file:`` ref, ask the filesystem instead — files are
-    truth (design law #6), and ``file_content_hash`` already resolves the ``:L<a>-L<b>`` region form.
+    truth (design law #6), and ``astnorm.locus_hash`` already resolves the ``:L<a>-L<b>`` region and
+    ``#<section>`` forms.
     Every other family (``int:``/``mem:``/``sym:``) is projected independently of who points at it.
     """
     if ref.startswith("file:"):
-        return file_content_hash(repo, ref) is not None
+        return locus_hash(repo, ref)[0] is not None
     return retrieval.premise_holds(graph, ref)
 
 
@@ -967,6 +1071,7 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
                     pinned: bool = False,
                     governs_refs: list[str] | None = None,
                     was_anchored: set[str] | None = None,
+                    typed_loci: bool = True,
                     provenance: dict | None = None) -> memory.Memory:
     """Write a new memory artifact, then re-materialize the view. Shared by remember/supersede/note-constraint.
 
@@ -1019,8 +1124,9 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
 
     config = load_config(workspace / "config.yaml")
     graph, _ = build_graph(repo, config)  # built once, reused for concern/serves resolution + dedup
-    concerns, warnings = _resolve_concerns(repo, config, graph, concern_syms, was_anchored)
-    concerns += _resolve_governs(repo, config, graph, governs_refs or [])
+    concerns, warnings = _resolve_concerns(repo, config, graph, concern_syms, was_anchored,
+                                           typed=typed_loci)
+    concerns += _resolve_governs(repo, config, graph, governs_refs or [], typed=typed_loci)
     evidence, ev_warnings = _resolve_evidence(repo, config, graph, evidence_refs)
     warnings += ev_warnings
     warnings += _serves_warnings(graph, serves)
@@ -1100,7 +1206,8 @@ def _report_capture(node: memory.Memory) -> None:
 _GOVERNS_HELP = ("A locus this belief governs the USE of (repeatable): surfaces at the edit hook like "
                  "--concerns but carries no content hash, so it never drifts — for a policy like "
                  "'status.md holds ONLY status', where a content anchor would demand a reaffirm on "
-                 "every edit that obeys it. sym:<path>#<name> or file:<path>; must exist.")
+                 "every edit that obeys it. sym:<path>#<name>, file:<path> or file:<path>#<section>; "
+                 "must exist. Not a line range — that is addressed by position, not by name.")
 
 #: Shared help for the ``--pin`` capture flag and the ``pin`` verb — one wording, three surfaces.
 _PIN_HELP = ("Inject this belief IN FULL at every SessionStart, whatever the session turns out to be "
@@ -1114,7 +1221,7 @@ def remember(
     type: str = typer.Option("decision", "--type", help=f"One of: {', '.join(memory.MEMORY_TYPES)}."),
     why: str = typer.Option("", "--why", help="The reasoning (ReCAP's T) — what /clear loses."),
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
-    concerns: list[str] = typer.Option(None, "--concerns", help="A symbol this governs, sym:<path>#<name> (repeatable, anchored)."),
+    concerns: list[str] = typer.Option(None, "--concerns", help="The locus this governs: sym:<path>#<name>, file:<path>[:L<a>-L<b>] or — in markdown — file:<path>#<section> (repeatable, anchored)."),
     governs: list[str] = typer.Option(None, "--governs", help=_GOVERNS_HELP),
     rejected: str = typer.Option(None, "--rejected", help="The rejected alternative + why (the most perishable content)."),
     rejected_valid_when: list[str] = typer.Option(None, "--rejected-valid-when", help="A premise the rejection depends on: int:<slug> | mem:<id> | sym:<path>#<name> | file:<path> (repeatable). The rejection surfaces ONLY while every one of these still holds."),
@@ -1139,7 +1246,7 @@ def remember(
 @app.command(name="note-constraint")
 def note_constraint(
     rule: str = typer.Argument(..., help="The constraint in one line."),
-    concerns: list[str] = typer.Option(None, "--concerns", help="A symbol this constrains, sym:<path>#<name> (repeatable, anchored)."),
+    concerns: list[str] = typer.Option(None, "--concerns", help="The locus this constrains: sym:<path>#<name>, file:<path>[:L<a>-L<b>] or — in markdown — file:<path>#<section> (repeatable, anchored)."),
     governs: list[str] = typer.Option(None, "--governs", help=_GOVERNS_HELP),
     why: str = typer.Option("", "--why", help="Why the constraint holds (optional)."),
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
@@ -1220,7 +1327,7 @@ def propose(
     statement: str = typer.Argument(..., help="The candidate belief in one line (a review anti-pattern, or a distilled decision)."),
     from_: str = typer.Option(..., "--from", help=f"Where the candidate came from: {' | '.join(sorted(memory.PROPOSED_SOURCES))}. Both LAND at the `proposed` tier."),
     type: str = typer.Option(None, "--type", help=f"One of: {', '.join(memory.MEMORY_TYPES)} (default: constraint for review, decision for mined)."),
-    concerns: list[str] = typer.Option(None, "--concerns", help="The locus this candidate governs, sym:<path>#<name> or file:<path> (repeatable, anchored — this is what re-surfaces it at the edit hook)."),
+    concerns: list[str] = typer.Option(None, "--concerns", help="The locus this candidate governs: sym:<path>#<name>, file:<path>[:L<a>-L<b>] or — in markdown — file:<path>#<section> (repeatable, anchored — this is what re-surfaces it at the edit hook)."),
     governs: list[str] = typer.Option(None, "--governs", help=_GOVERNS_HELP),
     rejected: str = typer.Option(None, "--rejected", help="The anti-pattern (review) / rejected alternative (mined) — the ruled-out shape the finding warns against."),
     rejected_valid_when: list[str] = typer.Option(None, "--rejected-valid-when", help="A premise the rejection depends on: int:<slug> | mem:<id> | sym:<path>#<name> | file:<path> (repeatable). The rejection surfaces ONLY while every one of these still holds."),
@@ -1315,6 +1422,10 @@ def supersede(
         pending_supersedes=[old_id] if human_attested else [],
         promotable=old_node.promotable, grounding=grounding, evidence_refs=evidence or [],
         was_anchored={c.sym for c in old_node.concerns if c.anchor is not None},
+        # Only guide loci this caller actually typed. With neither flag given both lists are the
+        # predecessor's, and a stored locus that has since become unresolvable or ambiguous must not
+        # refuse the mind-change that reacts to it (see `_anchor`'s ``guide``).
+        typed_loci=concerns is not None or governs is not None,
         rejected_valid_when=rejected_valid_when or [],
         rejected_invalidated_when=rejected_invalidated_when or [],
         governs_refs=governs_refs)
@@ -1535,7 +1646,7 @@ def _reaffirm_concerns(repo: Path, config: dict, node: memory.Memory,
         if (c.anchor_algo or "") == memory.GOVERNS_ALGO:
             continue  # a policy anchor has no content hash — nothing to re-stamp, nothing to re-arm
         if c.sym.startswith("file:"):
-            fresh, algo = file_content_hash(repo, c.sym), FILE_ANCHOR_ALGO
+            fresh, algo = locus_hash(repo, c.sym)  # section | line range | whole file
         else:
             fresh, algo = symbol_content_hash(repo, c.sym, config), ANCHOR_ALGO
         if fresh is None:  # a gone symbol/file is hard drift, not a reaffirm — keep anchor for rename match
@@ -1638,8 +1749,16 @@ def reaffirm(
         added_evidence = _reaffirm_evidence(repo, config, node, evidence or [])
         # The empirical tier must NAME a live observation — the same gate as capture (int:memory-grounding).
         # This closes the reaffirm loophole: `--grounding empirical` no longer upgrades on the agent's word.
-        target_grounding = grounding if grounding is not None else node.grounding
-        if target_grounding == "empirical" and not node.evidence:
+        #
+        # Keyed on the flag the caller PASSED, never on the tier the node already carries. Falling back
+        # to `node.grounding` turned a gate on the *upgrade* into a gate on every reaffirm of a node that
+        # predates the evidence requirement — five in this repo's own store, all pre-1.5.0 — and the
+        # concerns re-stamp such a caller wants has nothing to do with grounding. Both exits the message
+        # names then miss: `--evidence` asks them to invent an observation, and the downgrade discards a
+        # tier that is probably true, to clear a drift on a different axis. That is design law #1's dead
+        # end — guidance whose taught retry cannot do what was asked. The sibling guard below already
+        # keyed on `grounding` alone, so the two disagreed about the same question.
+        if grounding == "empirical" and not node.evidence:
             _guidance(f"--grounding empirical requires naming the observation that confirms {target}: add "
                       f"--evidence sym:<path>#<test> | file:<path> | commit:<sha> | <url>. If you can no "
                       f"longer confirm it, downgrade honestly: `yigraf reaffirm {target} --grounding inferred`.")
@@ -1730,6 +1849,16 @@ def reaffirm(
                        + (f" if nothing replaces it, downgrade `yigraf reaffirm {target} --grounding "
                           f"inferred` and then `yigraf unlink {target} {first}`." if dead else
                           f" if it never belonged, `yigraf unlink {target} {first}`."))
+        # An `empirical` node carrying no evidence at all is a real gap — the tier claims an observation
+        # the artifact cannot name, so nothing can drift-check it and `grounds-drift` can never fire. It
+        # is said here, once, after the re-stamp it must not block: the caller asked to re-verify a
+        # decision, and refusing that to collect a citation would be the dead end above (design law #1
+        # cuts both ways — teach the fix, don't hold the work hostage to it).
+        if node.grounding == "empirical" and not node.evidence:
+            typer.echo(f"note: {target} claims the empirical tier but names no evidence, so nothing "
+                       f"drift-checks it. When you next confirm it, `yigraf reaffirm {target} "
+                       f"--grounding empirical --evidence <locus>`; if it was really an inference, "
+                       f"`yigraf reaffirm {target} --grounding inferred`.")
         _record_reaffirm_uphold(repo, config, [target])  # an explicit re-verification → strong uphold
         return
 
@@ -3416,11 +3545,15 @@ def _post_tool_use(data: dict) -> dict | None:
     # accepted, stored, and answered by `yigraf context` — and `context_for_locus` returns that decision
     # for the doc — but the hook discarded it unasked, because .md is not an extracted language. An
     # anchor the principal placed by hand is the strongest possible signal that this locus is governed;
-    # dropping it is design law #4 inverted (silence where there IS something worth saying). The graph
-    # is already loaded here, so the extra test is a dict lookup, and an un-anchored .md still returns
-    # None at the gate below — the hook stays silent on ordinary prose edits.
+    # dropping it is design law #4 inverted (silence where there IS something worth saying).
+    #
+    # `retrieval.locus_nodes` answers it, rather than the `f"file:{casefolded}" in graph` this line used
+    # to open-code: that form only ever matched a WHOLE-file anchor on an all-lowercase path, so a doc
+    # governed by a `#<section>` or a `:L<a>-L<b>`, or a `file:Dockerfile` (the example
+    # int:file-anchoring itself names), failed the gate and the hook stayed silent. An un-anchored .md
+    # still has no nodes and still returns None — the hook says nothing on ordinary prose edits.
     if (rel.suffix not in extension_map(available_extractors(config))
-            and f"file:{rel.as_posix().casefold()}" not in graph):  # casefold: context_for_locus's key
+            and not retrieval.locus_nodes(graph, rel.as_posix())):
         return None  # neither indexed nor anchored → nothing this hook could say
     _ranked_with_telemetry(root, graph, config)  # recency/popularity + maturity verdict (R1)
     result = retrieval.context_for_locus(graph, rel.as_posix(), config, root=root)
@@ -3499,7 +3632,7 @@ def _stop(data: dict) -> dict | None:
     # Fast path first: this runs on every turn, so an unchanged input fingerprint must cost a stat walk
     # and nothing more — no view load, no embedding index read.
     session = str(data.get("session_id") or "default")
-    fingerprint = graphdb.source_fingerprint(root, config)
+    fingerprint = graphdb.current_fingerprint(root, config)
     if obligations.is_unchanged(root, session, fingerprint):
         return None
 

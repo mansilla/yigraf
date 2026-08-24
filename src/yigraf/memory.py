@@ -35,7 +35,8 @@ from typing import Any
 import networkx as nx
 import yaml
 
-from yigraf.astnorm import ANCHOR_ALGO, FILE_ANCHOR_ALGO, file_content_hash, parse_file_target
+from yigraf import artifacts
+from yigraf.astnorm import ANCHOR_ALGO
 
 MEMORY_FAMILY = "memory"
 CONF = "EXTRACTED"  # agent-asserted at a commit boundary, not inferred
@@ -585,18 +586,17 @@ def _project_file_anchor_nodes(graph: nx.DiGraph, root: Path, memories: list[Mem
         # applicability premise (task 3), whose whole point is to track whether the file EXISTS: a
         # ``file:infra/redis.tf`` invalidated-when premise withdraws the rejection the moment that file
         # appears, so it needs the node so :func:`yigraf.retrieval.premise_holds` sees its presence.
-        loci = ([c.sym for c in memory.concerns] + [e.ref for e in memory.evidence]
-                + list(memory.rejected_valid_when) + list(memory.rejected_invalidated_when))
-        for locus in loci:
-            if not locus.startswith("file:") or locus in graph:
-                continue
-            current = file_content_hash(root, locus)
-            if current is None:
-                continue  # missing file → dangling edge → hard drift (handled downstream)
-            relpath, _start, _end = parse_file_target(locus)
-            graph.add_node(locus, family="structure", kind="file-anchor",
-                           label=locus[len("file:"):], confidence=CONF,
-                           content_hash=current, hash_algo=FILE_ANCHOR_ALGO, source_file=relpath)
+        #
+        # The stored anchor rides along because :func:`yigraf.artifacts.mint_locus_node` needs it to
+        # rescue a renamed heading. A premise has none — its whole question is whether the locus
+        # EXISTS, and a premise on a section that was renamed is honestly not-holding.
+        loci = ([(c.sym, c.anchor) for c in memory.concerns]
+                + [(e.ref, e.anchor) for e in memory.evidence]
+                + [(ref, None) for ref in memory.rejected_valid_when]
+                + [(ref, None) for ref in memory.rejected_invalidated_when])
+        for locus, anchor in loci:
+            if locus.startswith("file:"):
+                artifacts.mint_locus_node(graph, root, locus, anchor)
 
 
 def _project_memory_edges(graph: nx.DiGraph, memory: Memory) -> None:

@@ -300,7 +300,7 @@ def test_obligations_lead_with_the_intent_governing_most_of_the_locus(tmp_path: 
         assert runner.invoke(app, ["link", "task:cov/2", sym, "--repo", str(root)]).exit_code == 0
 
     graph, _ = build_graph(root, default_config())
-    groups = retrieval._proof_obligations(graph, retrieval._file_structure_nodes(graph, SRC))
+    groups = retrieval._proof_obligations(graph, retrieval.locus_nodes(graph, SRC))
     leading = [g[0] for g in groups if "int:aaa-narrow" in g[0] or "int:zzz-broad" in g[0]]
     assert "int:zzz-broad" in leading[0]   # governs 3 symbols
     assert "int:aaa-narrow" in leading[1]  # governs 1, and would lead under an alphabetical sort

@@ -14,11 +14,12 @@ import math
 import re
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import networkx as nx
 
 from yigraf import counters
+from yigraf.astnorm import DOC_SUFFIXES, parse_file_target
 from yigraf.drift import compute_drift, is_stale_completion, is_surfaced
 from yigraf.scaffold import WORKSPACE_DIRNAME
 
@@ -281,14 +282,46 @@ VERB_FORK = ("↳ Which verb: `reaffirm` = the belief is UNCHANGED (re-anchor on
              "verb clears the ⚠ on its own · never re-`remember` (it duplicates).")
 
 
+def positional_caveat(item) -> str:
+    """The extra sentence a **line-range** anchor needs, because it addresses by position, not by name.
+
+    A range does not move when text is inserted above it: the same ``L10-L40`` now covers different
+    lines, so the drift is real while its *subject* may be untouched — and ``reaffirm``, the exit the
+    soft-drift line names, then re-stamps the hash of the NEW region and reports success. After that an
+    edit to what the belief was actually about drifts nothing at all. That is a false negative rather
+    than a nag, so the caveat rides every line-range drift line instead of waiting to be discovered.
+
+    For markdown it also names the exit, because there is one: a ``#<section>`` anchor is addressed by
+    heading and relocates with it (mem:a65f1ccad03b765e). Empty for every other locator — a ``sym:`` or
+    whole-file anchor has no position to slip.
+    """
+    if not str(item.locator).startswith("file:"):
+        return ""
+    relpath, start, _end = parse_file_target(str(item.locator))
+    if start is None:
+        return ""
+    tail = (f" For prose there is a stable address: `reanchor {item.task_id} {item.locator} "
+            f"file:{relpath}#<section>` anchors a heading, which moves with it."
+            if Path(relpath).suffix.casefold() in DOC_SUFFIXES else "")
+    return (f" NOTE: a line range is positional — if lines were inserted above it, it now covers "
+            f"DIFFERENT text, and re-stamping would anchor this belief to that instead and go quiet "
+            f"about its real subject. Check {item.locator} still names what you meant.{tail}")
+
+
 def drift_verbs(item) -> str:
     """The exits that resolve one drift item, ids pre-filled — the half after the cause clause.
 
     Split out of :func:`drift_tail` so the principal's Stop-hook notice can reuse the fork without
     repeating a cause it already renders on its own ``detail`` line (feedback-v4 #7). That notice used
     to carry a *third* copy of this wording, keyed on relation alone, and had gone stale against both
-    kind-aware forks. One owner, three surfaces.
+    kind-aware forks. One owner, three surfaces — and :func:`positional_caveat` rides all three, since a
+    range that has silently slid off its subject makes every verb below it the wrong one to reach for.
     """
+    return _drift_verbs(item) + positional_caveat(item)
+
+
+def _drift_verbs(item) -> str:
+    """The relation/kind fork itself; see :func:`drift_verbs`."""
     if item.relation == "concerns":
         # Hard drift names `reanchor` FIRST, because "the locus is gone" most often means the subject
         # MOVED, and routing that through `supersede` files a mind-change nobody had — the false-trail
@@ -1111,11 +1144,34 @@ def _task_links(graph: nx.DiGraph, task_id: str) -> str:
 # --------------------------------------------------------------------------------------------------
 
 
-def _file_structure_nodes(graph: nx.DiGraph, pid: str) -> list[str]:
-    """The file/module/symbol nodes that belong to a casefolded relpath (the action-driven locus)."""
+def locus_nodes(graph: nx.DiGraph, file_relpath: str) -> list[str]:
+    """The file/module/symbol/anchor nodes that belong to a repo-relative path (the action-driven locus).
+
+    Public because two callers need the same answer and disagreed while each computed it: this one, and
+    ``cli._post_tool_use``'s gate deciding whether an unindexed file is governed at all. That gate
+    open-coded ``f"file:{relpath.casefold()}" in graph`` — commented "casefold: context_for_locus's key",
+    so it faithfully mirrored the key *and* its blind spot, and a doc governed by a section or a range
+    failed the gate before this function was ever reached. One owner of "which nodes are this path".
+
+    The extractor casefolds a path into its node ids (``base.extract_file``: "path casefolded for id
+    stability"), so its own file/module/symbol nodes are exact hits on ``pid``. A ``file:`` **anchor**
+    node cannot be: its id is the locator a human or agent typed, so it keeps that spelling *and* any
+    ``:L<a>-L<b>`` or ``#<section>`` suffix. Matching those on the path alone is what makes the edit hook
+    reach them — before this, a governed ``file:Dockerfile`` (mixed case, and the example
+    int:file-anchoring names) and every line-range anchor seeded nothing, so the one surface whose job is
+    to speak at the moment of the edit was silent for all but a lowercase whole-file anchor.
+
+    Casefolding the ids instead would have been the smaller change and the wrong one: the id is what the
+    assertion file records, so rewriting it would dangle every anchor already stored under the spelling
+    its author used.
+    """
+    pid = PurePosixPath(file_relpath).as_posix().casefold()
     ids = [nid for nid in (f"file:{pid}", f"module:{pid}") if nid in graph]
-    prefix = f"sym:{pid}#"
-    ids += sorted(n for n in graph.nodes if n.startswith(prefix))
+    ids += sorted(n for n in graph.nodes if str(n).startswith(f"sym:{pid}#"))
+    seen = set(ids)
+    ids += sorted(n for n in graph.nodes
+                  if str(n).startswith("file:") and n not in seen
+                  and parse_file_target(str(n))[0].casefold() == pid)
     return ids
 
 
@@ -1127,10 +1183,7 @@ def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict,
     ``tracks``/``concerns`` edge points at one of its symbols) or has drift, so the hook never nags on
     routine edits. Ranks on proximity + relevance (``match ≈ 0``) and renders in the tight hook budget.
     """
-    from pathlib import PurePosixPath
-
-    pid = PurePosixPath(file_relpath).as_posix().casefold()
-    seeds = _file_structure_nodes(graph, pid)
+    seeds = locus_nodes(graph, file_relpath)
     if not seeds:
         return None
 

@@ -4,6 +4,103 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.6.0] — 2026-08-23
+
+**A position is not an address. Prose moves.**
+
+`file:<path>#<section>` anchors a belief to one markdown heading and its body, under a new algo
+(`mdsec-v1`). The fourth field report asked for heading-level anchors and 1.5.2 deferred it, because a
+settled call from 2026-08-12 had already rejected them — doc support stops at file granularity,
+revisit only if a concrete workflow needs sub-file precision. Precision turned out to be the smaller
+half. Reproduced end to end: insert a paragraph **above** a governed section and its line-range anchor
+false-drifts though its text never changed; `reaffirm` — the exit the drift line names — reports
+success while re-stamping the hash of the **wrong** region; and rewriting the actual governed claim
+then drifts *nothing at all*. A positional address does not merely nag, it slides off its subject and
+goes quiet about it. That is a false negative in the moat, and it is what met the revisit condition
+(mem:a65f1ccad03b765e supersedes mem:fb0d9658b0d56075).
+
+The three costs the old call named are paid by mechanisms `astnorm-v1` already had, not by new design.
+A section's **own heading text is excluded** from its hash — exactly the `exclude` rule that keeps a
+symbol rename from drifting, and exactly what lets a renamed heading re-anchor instead of hard-drifting.
+A **nested subsection collapses to a `<sec:slug>` marker** and is not descended into, exactly as a
+nested symbol becomes `<def:NAME>` — so editing prose under `### Soft drift` never drifts `## Drift`,
+while adding, renaming or removing a subsection does. And **each block is hashed as one
+whitespace-collapsed token**, the prose analogue of quote canonicalization: a rewrap is to text what a
+`black` reflow is to code. Inside a fenced or indented code block every byte is kept, because
+indentation is semantic in a sample. Still **no markdown extractor and docs still stay out of the
+semantic index** — a node exists only for a section some assertion actually names, so a repo whose docs
+nobody governs pays nothing.
+
+Building it surfaced five older defects underneath, none in the model and all in the delivery: the
+edit hook reaching almost no `file:` anchor at all, the cache not noticing a governed file change,
+two guidance dead ends, and the shipped skill having quietly stopped being the skill this repo
+reads. Three of them were only reachable by *composing* features, which is where the tests were
+thin — each is now pinned.
+
+### Added
+- **`file:<path>#<section>`** on `--concerns`, `--governs`, `--evidence`, the rejection premises,
+  `link` and `reanchor` (CLI and MCP). The slug is the heading title, case-folded, with each run of
+  other characters collapsed to a single `-` — deliberately not GitHub's rule, which keeps one `-` per
+  punctuation character: the audience is an agent typing a locator, not a browser following an anchor
+  link. A slug naming two headings is **refused** rather than pinned to whichever came first, and a
+  missed guess gets the file's real headings printed back.
+- **A renamed heading re-anchors instead of drifting** (int:drift-detection: SHALL NOT flag a pure
+  rename). Symbols get this free because the extractor indexes the renamed one; docs are not indexed,
+  so `artifacts.mint_locus_node` resolves the move from the *stored* anchor and mints the node under the
+  heading's new locator, which `drift.resolve_renames` then finds by the same hash — no doc-wide index.
+- **A positional caveat on every drifting line range**, naming the section form when the path is
+  markdown. A range's drift line used to offer only `reaffirm`, which is the call that silently
+  re-stamps the wrong region.
+
+### Fixed
+- **The edit hook reached only a whole-file anchor on an all-lowercase path.** The extractor casefolds
+  a path into its node ids, but a `file:` anchor node is minted from the assertion, so it keeps the
+  spelling its author typed *and* any `:L<a>-L<b>` or `#<section>` suffix. Two surfaces compared the
+  casefolded path against the whole id — `retrieval` looked up `file:<pid>` exactly, and the hook's gate
+  open-coded the same test under a comment saying it mirrored that key, so it inherited the blind spot
+  faithfully. Measured: a governed `file:Dockerfile` — mixed case, and the example `int:file-anchoring`
+  itself names — and **every** line-range anchor seeded nothing, so the one surface whose job is to
+  speak at the moment of the edit was silent about the file it had just been called for. There was no
+  test because the Dockerfile case only ever asserted `compute_drift`, never the hook.
+  `retrieval.locus_nodes` is now the single owner of "which nodes are this path".
+- **Editing a governed non-code file did not invalidate the cached view.** A Dockerfile, buildspec or
+  doc is neither an extractable source file nor a yigraf artifact, so nothing in the fingerprint moved:
+  `context` and the PostToolUse hook served the *old* hash for the very file just changed and reported
+  no drift, while `status`, which always rebuilds, reported it — two surfaces disagreeing about one
+  file, with the quiet one on the hot path. The governed loci now ride the view as `governed_files` and
+  are stat'd with the rest; `DB_SCHEMA_VERSION` goes to 2 per its own contract (one rebuild on upgrade).
+  The correctness claim that justified the whole cache said the graph is a pure function of *(source
+  files + assertion files + config)*, which was false for exactly the loci `int:file-anchoring` exists
+  to govern — so it is superseded, not patched (mem:9d39e40507126bf6).
+- **A bare `reaffirm` of a pre-1.5.0 `empirical` node with no `evidence:` was refused** by a message
+  about `--grounding empirical`, a flag the caller never passed: the gate read
+  `grounding if grounding is not None else node.grounding`, turning a guard on the *upgrade* into a
+  guard on every reaffirm of such a node (five in yigraf's own store). Both exits it named miss what was
+  asked — `--evidence` wants an observation invented, the downgrade discards a probably-true tier — to
+  clear a `concerns` drift on a different axis. So that drift was unreachable by the verb its own drift
+  line names. The gate now keys on the flag passed, matching the sibling guard two lines below that
+  always had, and the tier-without-evidence gap is stated as a note *after* the re-stamp rather than
+  enforced before it.
+- **A `sym:` locator's `#` is no longer read as a doc fragment** — without that guard every `sym:`
+  guidance surface answered about headings, and a `did you mean` went silent.
+- **A dangling-edge warning names what the locator names**: "no such *section*", not "no such symbol",
+  and "governs once that section is written", not "once the code lands".
+- **An inherited locus that stopped resolving refused the `supersede` reacting to it.** A capture-time
+  hard guide is about a locator the caller *typed*; against one carried from the predecessor it punishes
+  the wrong person — a third party adding a second `## Drift` to a governed doc made `#drift` ambiguous
+  and lost a mind-change to a message about heading titles, for a caller who touched no docs. The same
+  shape predates sections: a `--governs` whose file had been deleted blocked the supersede that reacted
+  to the deletion, and a `--governs` guard can only ever *block*, since a policy carries no hash either
+  way. Guides now apply only to loci named on this call; a stored one that no longer resolves lands as a
+  dangling edge and drift says the rest.
+- **The guidance `install` writes had silently stopped being the guidance this repo reads.**
+  `hooks.SKILL_MD` and `.claude/skills/yigraf/SKILL.md` are two copies of one document and nothing
+  asserted they agree — and the divergence runs one way: yigraf self-hosts, so the checked-in file is
+  what a contributor edits, while every user who runs `install` receives the constant. The
+  section-anchor guidance in this release landed in the file and would have shipped to nobody. Both it
+  and `_AGENTS_BLOCK` are now pinned equal, with a failure message that names the fix in either
+  direction.
+
 ## [1.5.2] — 2026-08-22
 
 **A guidance string that names a verb the state refuses is a dead end wearing a helpful face.**

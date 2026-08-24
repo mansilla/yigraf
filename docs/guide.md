@@ -95,6 +95,12 @@ The anchor is what makes the link *enforceable*: if the symbol's body later chan
 **drifts** and yigraf asks for a re-verification. You can also anchor to whole files or line ranges for
 infra/glue that has no parsed symbol: `file:Dockerfile` or `file:deploy.sh:L10-L40`.
 
+For a claim about one part of a **markdown** document, anchor the heading — `file:docs/guide.md#drift`
+— not a line range. A range is addressed by position, so inserting a paragraph above it slides it onto
+different text; a section is addressed by name, so it survives a rewrap, a re-level, an edit in one of
+its subsections, and any insertion above it, and a heading *rename* re-anchors rather than drifting.
+Rewriting the prose the belief is actually about is what drifts it.
+
 ### Retrieve
 
 `yigraf context "<topic>"` is the one read command. It returns a scoped, **token-budgeted** slice —

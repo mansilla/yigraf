@@ -20,7 +20,8 @@ import networkx as nx
 import yaml
 
 from yigraf import relations
-from yigraf.astnorm import ANCHOR_ALGO, FILE_ANCHOR_ALGO, file_content_hash, parse_file_target
+from yigraf.astnorm import (ANCHOR_ALGO, SECTION_ANCHOR_ALGO, locus_hash, parse_file_target,
+                            parse_section_target, section_locator_for_anchor)
 
 INTENT_FAMILY = "intent"
 PLAN_FAMILY = "plan"
@@ -425,26 +426,44 @@ def project_into(graph: nx.DiGraph, root: Path) -> None:
             _project_task_edges(graph, task)
 
 
-def _project_file_anchor_nodes(graph: nx.DiGraph, root: Path, plans: list[Plan]) -> None:
-    """Inject a node for each ``file:`` target a task ``implements``, carrying its current hash (#12).
+def mint_locus_node(graph: nx.DiGraph, root: Path, locus: str, anchor: str | None) -> None:
+    """Add the structure node a ``file:`` edge attaches to, carrying that locus's *current* hash (#12).
 
-    The task counterpart of :func:`yigraf.memory._project_file_anchor_nodes`: an infra/glue file has
-    no extracted symbol, so we add its node with the file's current SHA-256 here — then the
-    ``implements`` edge resolves and drift compares like a symbol. A missing file stays absent → the
-    edge dangles → hard drift.
+    Shared by the plan and memory projectors, so the two cannot drift apart. The extractor never
+    produces these nodes — an infra/glue file has no symbol, and docs are deliberately not indexed
+    (mem:a65f1ccad03b765e) — so without this the edge would dangle. A locus that does not resolve is
+    left absent: the edge dangles and reports hard drift, matching a gone symbol.
+
+    The one exception is a **renamed heading**. A section anchor excludes the heading's own text, so a
+    rename leaves the hash intact; when exactly one section in that file still hashes to the *stored*
+    ``anchor``, the node is minted under the heading's NEW locator instead.
+    :func:`yigraf.drift.resolve_renames` then re-anchors the edge onto it by that same hash, so the
+    move reports as ``renamed`` rather than hard drift (int:drift-detection: SHALL NOT flag a pure
+    rename). Symbols need no equivalent — the extractor already indexes the renamed one.
     """
+    if locus in graph:
+        return
+    current, algo = locus_hash(root, locus)
+    if current is None:
+        relpath, slug = parse_section_target(locus)
+        if slug is None or anchor is None:
+            return  # a missing file or line range does not "rename" by content match
+        moved = section_locator_for_anchor(root, relpath, anchor)
+        if moved is None or moved in graph:
+            return
+        locus, current, algo = moved, anchor, SECTION_ANCHOR_ALGO
+    graph.add_node(locus, family="structure", kind="file-anchor",
+                   label=locus[len("file:"):], confidence=CONF, content_hash=current,
+                   hash_algo=algo, source_file=parse_file_target(locus)[0])
+
+
+def _project_file_anchor_nodes(graph: nx.DiGraph, root: Path, plans: list[Plan]) -> None:
+    """Inject a node for each ``file:`` target a task ``implements`` (#12) via :func:`mint_locus_node`."""
     for plan in plans:
         for task in plan.tasks:
             for impl in task.implements:
-                if not impl.sym.startswith("file:") or impl.sym in graph:
-                    continue
-                current = file_content_hash(root, impl.sym)
-                if current is None:
-                    continue
-                relpath, _s, _e = parse_file_target(impl.sym)
-                graph.add_node(impl.sym, family="structure", kind="file-anchor",
-                               label=impl.sym[len("file:"):], confidence=CONF,
-                               content_hash=current, hash_algo=FILE_ANCHOR_ALGO, source_file=relpath)
+                if impl.sym.startswith("file:"):
+                    mint_locus_node(graph, root, impl.sym, impl.anchor)
 
 
 def _project_task_edges(graph: nx.DiGraph, task: Task) -> None:

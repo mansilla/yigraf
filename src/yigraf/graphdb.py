@@ -24,6 +24,7 @@ import hashlib
 import json
 import os
 import sqlite3
+from collections.abc import Sequence
 from pathlib import Path
 
 import networkx as nx
@@ -34,7 +35,7 @@ from yigraf.graph import _EDGES_KEY, _VOLATILE_NODE_ATTRS, empty_graph, to_node_
 #: Bumped when the SQLite schema or the fingerprint recipe changes incompatibly (⇒ every existing view
 #: is treated as absent and rebuilt). Distinct from :data:`yigraf.graph.SCHEMA_VERSION` (the node-link
 #: shape) — this guards the DB layout + fingerprint, so either changing invalidates cached views.
-DB_SCHEMA_VERSION = 1
+DB_SCHEMA_VERSION = 2
 
 #: The authored-artifact subdirectories the fold reads (mirrors scaffold's ``_ARTIFACT_DIRS``); each
 #: ``.md`` under them is one assertion, so it feeds the fingerprint like a source file.
@@ -136,7 +137,28 @@ def _input_files(root: Path, config: dict) -> list[Path]:
     return paths
 
 
-def source_fingerprint(root: Path, config: dict) -> str:
+def governed_file_paths(graph: nx.DiGraph) -> list[str]:
+    """The repo-relative paths this graph's ``file:`` anchors point at (sorted, deduplicated).
+
+    These are graph inputs that :func:`_input_files` cannot discover: a governed Dockerfile, buildspec
+    or doc is neither an extractable source file nor a yigraf artifact, so nothing else in the
+    fingerprint moves when one is edited. Without them the cache-backed read paths — ``context`` and the
+    PostToolUse hook — serve a *stale* hash for the very file the agent just changed, so the edit hook
+    goes silent about the locus it was called for while ``status``, which always rebuilds, reports the
+    drift: two surfaces disagreeing about the same file, with the quiet one on the hot path.
+
+    Read off the last built graph rather than rediscovered, because parsing every assertion file to find
+    them would cost far more than the stat walk the fingerprint exists to be. A locus that is *added* or
+    *removed* arrives by an edited assertion file, which is already an input — so the set refreshes on
+    the same rebuild that changed it.
+    """
+    return sorted({
+        attrs["source_file"] for _, attrs in graph.nodes(data=True)
+        if attrs.get("kind") == "file-anchor" and attrs.get("source_file")
+    })
+
+
+def source_fingerprint(root: Path, config: dict, extra: Sequence[str] = ()) -> str:
     """A cheap, deterministic content fingerprint of the graph's inputs (stat-only — no file reads).
 
     Hashes ``(relpath, st_mtime_ns, st_size)`` for every input file, tagged with the DB schema and the
@@ -144,17 +166,24 @@ def source_fingerprint(root: Path, config: dict) -> str:
     into the digest as a sentinel, so a vanished/unreadable file just changes the fingerprint (⇒ rebuild)
     rather than raising. mtime+size is the standard build-cache key; a content change that preserves both
     is astronomically rare on a real editor write, and ``yigraf build`` is the hard-refresh escape hatch.
+
+    ``extra`` names additional repo-relative inputs to stat — the governed ``file:`` loci from
+    :func:`governed_file_paths`. Paths are deduplicated before hashing, so a locus that *is* also a
+    source file (a line range in indexed code) counts once and the digest stays independent of how a
+    path was discovered.
     """
     root = Path(root)
     h = hashlib.sha256()
     h.update(f"schema={DB_SCHEMA_VERSION};anchor={ANCHOR_ALGO}\n".encode())
-    for path in sorted(_input_files(root, config)):
+    rels = {str(rel) for rel in extra}
+    for path in _input_files(root, config):
         try:
-            rel = path.relative_to(root).as_posix()
+            rels.add(path.relative_to(root).as_posix())
         except ValueError:
-            rel = str(path)
+            rels.add(str(path))
+    for rel in sorted(rels):
         try:
-            st = path.stat()
+            st = (root / rel).stat()
             h.update(f"{rel}\0{st.st_mtime_ns}\0{st.st_size}\n".encode())
         except OSError:
             h.update(f"{rel}\0MISSING\n".encode())
@@ -195,6 +224,9 @@ def materialize(graph: nx.DiGraph, path: Path, fingerprint: str) -> None:
                 "INSERT INTO meta (key, value) VALUES (?, ?)",
                 [("db_schema_version", str(DB_SCHEMA_VERSION)),
                  ("fingerprint", fingerprint),
+                 # The governed file: loci this fingerprint accounted for. A reader cannot recompute
+                 # them without the graph it is deciding whether to load, so they ride the view.
+                 ("governed_files", json.dumps(governed_file_paths(graph))),
                  ("graph_attrs", json.dumps(data.get("graph", {}), sort_keys=True))],
             )
             conn.executemany(
@@ -218,13 +250,17 @@ def materialize(graph: nx.DiGraph, path: Path, fingerprint: str) -> None:
         raise ViewUnwritable(path, exc) from exc
 
 
-def stored_fingerprint(path: Path) -> str | None:
-    """The fingerprint the view at ``path`` was materialized with, or ``None`` (absent/corrupt/wrong
-    schema) — cheap (one indexed row read), so a read path can decide load-vs-rebuild without opening
-    the whole graph."""
+def stored_meta(path: Path) -> tuple[str | None, list[str]]:
+    """``(fingerprint, governed_files)`` for the view at ``path``; ``(None, [])`` if it's absent, corrupt
+    or a stale schema — cheap (one small table read), so a read path can decide load-vs-rebuild without
+    opening the whole graph.
+
+    Both come back together because the comparison needs both: the stored fingerprint accounted for
+    those governed loci, so recomputing it without them would never match and every read would rebuild.
+    """
     path = Path(path)
     if not path.is_file():
-        return None
+        return None, []
     try:
         conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         try:
@@ -232,10 +268,30 @@ def stored_fingerprint(path: Path) -> str | None:
         finally:
             conn.close()
     except sqlite3.Error:
-        return None
+        return None, []
     if rows.get("db_schema_version") != str(DB_SCHEMA_VERSION):
-        return None
-    return rows.get("fingerprint")
+        return None, []
+    try:
+        governed = json.loads(rows.get("governed_files") or "[]")
+    except (TypeError, ValueError):
+        governed = []
+    return rows.get("fingerprint"), (governed if isinstance(governed, list) else [])
+
+
+def stored_fingerprint(path: Path) -> str | None:
+    """The fingerprint the view at ``path`` was materialized with, or ``None``; see :func:`stored_meta`."""
+    return stored_meta(path)[0]
+
+
+def current_fingerprint(root: Path, config: dict) -> str:
+    """The inputs' fingerprint, computed the way the *stored* view computed it — governed loci included.
+
+    The seam for a caller that only wants "did anything the graph depends on change?" without loading
+    the graph (the Stop hook's obligation latch). Comparing a bare :func:`source_fingerprint` against a
+    stored one that counted governed files would report "unchanged" for a governed-doc edit, which is
+    exactly the silence :func:`governed_file_paths` exists to end.
+    """
+    return source_fingerprint(root, config, stored_meta(db_path(root))[1])
 
 
 def load(path: Path) -> nx.DiGraph | None:
@@ -294,7 +350,8 @@ def _materialize_or_flag(graph: nx.DiGraph, root: Path, config: dict) -> bool:
     condition is the one that retracts the guidance.
     """
     try:
-        materialize(graph, db_path(root), source_fingerprint(root, config))
+        materialize(graph, db_path(root),
+                    source_fingerprint(root, config, governed_file_paths(graph)))
         graph.graph.pop(_UNWRITABLE_KEY, None)  # the view is current again ⇒ earlier guidance is stale
         return True
     except ViewUnwritable as exc:
@@ -335,7 +392,8 @@ def load_or_build(root: Path, config: dict) -> tuple[nx.DiGraph, bool]:
 
     root = Path(root)
     db = db_path(root)
-    if stored_fingerprint(db) == source_fingerprint(root, config):
+    stored, governed = stored_meta(db)
+    if stored is not None and stored == source_fingerprint(root, config, governed):
         graph = load(db)
         if graph is not None:
             if int(config.get("maturity_survival_floor", 0)) > 0:

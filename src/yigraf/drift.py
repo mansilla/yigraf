@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 import networkx as nx
 
-from yigraf.astnorm import ANCHOR_ALGO
+from yigraf.astnorm import ANCHOR_ALGO, SECTION_ANCHOR_ALGO
 
 CONF = "EXTRACTED"
 
@@ -45,18 +45,27 @@ class DriftItem:
     relation: str = "implements"  # which drift-bearing relation drifted (implements | concerns)
 
 
-def _hash_index(graph: nx.DiGraph) -> dict[str, list[str]]:
-    """Map each astnorm structure node's ``content_hash`` to the node ids that carry it (sorted).
+#: The anchor algos whose hash survives a rename, so a dangling edge can be re-anchored by matching it.
+#: ``astnorm-v1``: a symbol's hash excludes its own declared name (R10). ``mdsec-v1``: a section's hash
+#: excludes its own heading text, for exactly the same reason and with the same consequence
+#: (mem:a65f1ccad03b765e). ``file-sha256-v1`` is absent and stays absent — a whole file or a line range
+#: has no name held out of its hash, so a "match" would mean two identical files, not a move.
+_RENAMEABLE_ALGOS = frozenset({ANCHOR_ALGO, SECTION_ANCHOR_ALGO})
 
-    Rename re-anchoring is an astnorm-symbol concept — a moved symbol keeps its body-hash. ``file:``
-    anchor nodes (``hash_algo != astnorm-v1``) are excluded: a file doesn't "rename" by content match,
-    and its raw SHA lives in a different hash space anyway (friend-review #12).
+
+def _hash_index(graph: nx.DiGraph) -> dict[tuple[str, str], list[str]]:
+    """Map each rename-capable structure node's ``(algo, content_hash)`` to the ids carrying it (sorted).
+
+    Keyed by algo as well as hash so a match can only ever be found in the hash space that produced the
+    anchor — the same "compare like against like" rule :func:`compute_drift` applies to soft drift, and
+    what keeps the ``astnorm-v2``-bump protection intact when a second rename-capable algo exists.
     """
-    index: dict[str, list[str]] = {}
+    index: dict[tuple[str, str], list[str]] = {}
     for node_id, attrs in graph.nodes(data=True):
+        algo = attrs.get("hash_algo", ANCHOR_ALGO)
         if (attrs.get("family") == "structure" and "content_hash" in attrs
-                and attrs.get("hash_algo", ANCHOR_ALGO) == ANCHOR_ALGO):
-            index.setdefault(attrs["content_hash"], []).append(node_id)
+                and algo in _RENAMEABLE_ALGOS):
+            index.setdefault((algo, attrs["content_hash"]), []).append(node_id)
     for ids in index.values():
         ids.sort()
     return index
@@ -69,6 +78,10 @@ def resolve_renames(graph: nx.DiGraph) -> None:
     structure nodes: a unique hit is a rename → add the edge to the new locator (tagged
     ``renamed_from``) and clear the entry. Zero hits = real hard drift; multiple hits = ambiguous →
     left dangling, not guessed (§3). The same logic serves both relations (``concerns`` for free).
+
+    It also serves a **renamed markdown heading**, which reaches here the same way a renamed symbol
+    does even though docs carry no index: ``artifacts.mint_locus_node`` puts the moved section into the
+    graph under its new locator when the stored anchor still matches it, and the lookup below finds it.
     """
     index = _hash_index(graph)
     for node_id in list(graph.nodes):
@@ -79,7 +92,7 @@ def resolve_renames(graph: nx.DiGraph) -> None:
             remaining = []
             for entry in dangling:
                 anchor, algo = entry.get("anchor"), entry.get("anchor_algo")
-                matches = index.get(anchor, []) if anchor and algo == ANCHOR_ALGO else []
+                matches = index.get((algo, anchor), []) if anchor and algo in _RENAMEABLE_ALGOS else []
                 if len(matches) == 1:
                     graph.add_edge(
                         node_id, matches[0], relation=relation, confidence=CONF,

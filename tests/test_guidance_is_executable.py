@@ -303,9 +303,68 @@ def test_the_plan_already_exists_refusal_names_the_verbs_that_do_the_work(tmp_pa
     assert "task:auth/2" in _run(root, "tasks").output
 
 
+def test_a_bare_reaffirm_of_a_legacy_empirical_node_re_stamps_instead_of_refusing(tmp_path: Path):
+    """A node claiming ``empirical`` with no ``evidence:`` must still be reaffirmable.
+
+    The evidence gate keyed on ``grounding if grounding is not None else node.grounding``, so a *bare*
+    reaffirm of a node that predates the evidence requirement (five in yigraf's own store, all
+    pre-1.5.0) was refused by a message about ``--grounding empirical`` — a flag the caller never
+    passed. Both exits it named miss what was asked: ``--evidence`` wants an observation invented, and
+    the downgrade discards a probably-true tier, to clear a ``concerns`` drift on a different axis. So
+    the drift on such a node was unreachable. The gate now keys on the flag actually passed, matching
+    its own sibling guard, and the gap is *said* rather than enforced.
+    """
+    root = _repo(tmp_path)
+    mem = _remember(root, "the refresh path is idempotent", "--why", "measured", "--concerns", SYM)
+    node = next(p for p in (root / "yigraf" / "memory").glob("*.md") if mem.split(":")[1] in p.read_text())
+    node.write_text(node.read_text().replace("grounding: inferred", "grounding: empirical"))
+    (root / "auth" / "session.py").write_text("def refresh(token):\n    return token + 1\n")
+
+    out = _run(root, "reaffirm", mem).output
+    assert "drift cleared" in out, out
+    assert "note:" in out and "names no evidence" in out
+    assert "No drift." in _drift(root), "and the ⚠ is actually gone"
+
+    # The upgrade it was written to gate is still gated.
+    refused = _run(root, "reaffirm", mem, "--grounding", "empirical").output
+    assert "requires naming the observation" in refused
+
+
 # --------------------------------------------------------------------------------------------------
 # the guidance the installer writes, rather than the guidance a command prints
 # --------------------------------------------------------------------------------------------------
+
+def test_the_skill_install_writes_matches_the_one_this_repo_reads():
+    """``hooks.SKILL_MD`` and ``.claude/skills/yigraf/SKILL.md`` are two copies of one document, and
+    nothing asserted they agree.
+
+    The consequence is one-directional and silent: this repo *reads* the checked-in file, so editing it
+    is what a contributor naturally does and what self-hosting rewards — while every user who runs
+    `yigraf install` gets the constant. Guidance improved here would simply never ship, and the divergence
+    grows without a single failing test. Caught while adding the section-anchor guidance, which landed in
+    the file and not in the constant.
+    """
+    from yigraf.hooks import SKILL_MD
+
+    checked_in = Path(__file__).resolve().parent.parent / ".claude" / "skills" / "yigraf" / "SKILL.md"
+    assert checked_in.is_file(), "this repo self-hosts the skill it ships"
+    assert SKILL_MD == checked_in.read_text(encoding="utf-8"), (
+        "hooks.SKILL_MD (what `yigraf install` writes) has drifted from the checked-in SKILL.md "
+        "(what this repo reads). Whichever you edited, mirror it into the other."
+    )
+
+
+def test_the_agents_block_install_writes_matches_this_repo_own():
+    """The same two-copy hazard for the host-agnostic channel: ``hooks._AGENTS_BLOCK`` is what
+    ``install`` writes into a repo's AGENTS.md, and this repo carries its own copy between the fences."""
+    from yigraf.hooks import _AGENTS_BLOCK
+
+    agents = Path(__file__).resolve().parent.parent / "AGENTS.md"
+    assert _AGENTS_BLOCK.strip() in agents.read_text(encoding="utf-8"), (
+        "hooks._AGENTS_BLOCK (what `yigraf install` writes) has drifted from this repo's own AGENTS.md "
+        "block. Whichever you edited, mirror it into the other."
+    )
+
 
 def test_the_skill_frontmatter_install_writes_is_valid_yaml():
     """`install` emits SKILL.md; its front matter must parse by spec, not merely in one host's loader.

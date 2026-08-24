@@ -45,6 +45,15 @@ the **tags-query** tier (everything else — one generic extractor + per-languag
    names a whole *module/framework* — neither maps to a file, so import **edges** can't be resolved without
    inventing false ones. (Bash/SQL have no import-to-file model either.)
 
+**Markdown (`mdsec-v1`) — not an extractor.** Markdown is absent from the table on purpose: yigraf does
+not index your docs, so a repo whose docs nobody governs pays nothing. But a belief can *anchor* one
+heading's section, `file:<path>#<slug>`, and only the sections some assertion names become nodes. The
+hash restates the astnorm rules for prose: the section's own heading text is excluded (so a rename
+re-anchors instead of drifting), a directly nested subsection collapses to a marker (so editing a
+child never drifts the parent, while adding, renaming or removing one does), and each block is
+whitespace-collapsed (so a rewrap is not a change) — except inside a fenced or indented code block,
+which is hashed byte-for-byte. Asserted in `tests/test_section_anchors.py`.
+
 **Quote handling (astnorm):** JS/TS/Python normalize `'`↔`"` (Prettier/Black flip them cosmetically, so a
 flip must NOT drift). Ruby/PHP do **not** — there `'…'` (literal) and `"…"` (interpolating) differ
 semantically, so a quote flip **is** real drift. Both directions are pinned in `test_language_drift.py`.

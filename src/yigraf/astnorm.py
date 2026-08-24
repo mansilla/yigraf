@@ -11,11 +11,17 @@ What is deliberately ignored (no drift): comments, docstrings, string quote styl
 and all whitespace/reformatting that doesn't change the parsed token stream — so a ``black``/``isort``
 reflow is safe. What trips drift (intended): any change to identifiers, operators, literal *values*,
 keywords, control flow, signatures, or decorators within a symbol's own body.
+
+The module also owns the two *non-AST* anchor algorithms, because "compare like against like" is one
+rule and it belongs in one place: :data:`FILE_ANCHOR_ALGO` (raw bytes, for a file or a line range) and
+:data:`SECTION_ANCHOR_ALGO` (``mdsec-v1``: one markdown heading's normalized section — see
+:func:`section_content_hash`, which restates astnorm's own rules for prose).
 """
 from __future__ import annotations
 
 import hashlib
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Mapping
 
@@ -31,16 +37,53 @@ ANCHOR_ALGO = "astnorm-v1"
 #: distinct algo so drift compares a file anchor only against a file node's hash, never an astnorm one.
 FILE_ANCHOR_ALGO = "file-sha256-v1"
 
+#: Anchor algo for a ``file:<path>#<heading>`` **section** target (feedback-v4 #6): a SHA-256 over one
+#: heading's *normalized* section, not its raw bytes — so it needs its own tag, distinct from
+#: ``FILE_ANCHOR_ALGO``. It exists because a line range is a **positional** address and prose moves:
+#: inserting a paragraph above a governed section false-drifts it, ``reaffirm`` then re-stamps the hash
+#: of the WRONG lines while reporting success, and a later rewrite of the actual governed claim drifts
+#: nothing at all — a false negative in the moat, not a nag (mem:a65f1ccad03b765e).
+SECTION_ANCHOR_ALGO = "mdsec-v1"
+
+#: Suffixes whose headings ``mdsec-v1`` can address. Markdown only: the algorithm reads ATX headings
+#: and fenced code, which is a markdown grammar — accepting ``.rst``/``.adoc`` would mint addresses
+#: that silently never resolve.
+DOC_SUFFIXES = frozenset({".md", ".markdown", ".mdx"})
+
 _FILE_RANGE = re.compile(r"^(.*):L(\d+)-L?(\d+)$")  # file:path:L10-L40 (or L10-40)
 
 
 def parse_file_target(target: str) -> tuple[str, int | None, int | None]:
-    """Split a ``file:<path>[:L<a>-L<b>]`` locator into ``(relpath, start, end)`` (1-based, inclusive)."""
+    """Split ``file:<path>[:L<a>-L<b>][#<section>]`` into ``(relpath, start, end)`` (1-based, inclusive).
+
+    A ``#<section>`` fragment is stripped from ``relpath`` and yields ``(relpath, None, None)`` — it
+    addresses a heading, not a line range. Every existing caller wants exactly that: the path on disk,
+    for an existence check or a node's ``source_file``. Callers that need the fragment itself use
+    :func:`parse_section_target`.
+    """
     spec = target[len("file:"):] if target.startswith("file:") else target
+    spec = spec.split("#", 1)[0]
     match = _FILE_RANGE.match(spec)
     if match is None:
         return spec, None, None
     return match.group(1), int(match.group(2)), int(match.group(3))
+
+
+def parse_section_target(target: str) -> tuple[str, str | None]:
+    """Split ``file:<path>#<slug>`` into ``(relpath, slug)``; ``slug`` is ``None`` for any other form.
+
+    The ``file:`` prefix is **required** for the fragment to count, because ``#`` already separates a
+    symbol from its path: without that guard ``sym:auth/session.py#refresh`` reads as a section of
+    ``auth/session.py`` and every ``sym:`` guidance surface answers about headings.
+
+    The slug is returned **as typed**, never case-folded: the locator string *is* the node id, so
+    accepting ``#Drift`` and ``#drift`` as the same locus would split one section's identity across two
+    nodes. One spelling is canonical and ``cli._anchor`` guides a near miss to it (design law #1).
+    """
+    if not target.startswith("file:"):
+        return target, None
+    relpath, sep, frag = target[len("file:"):].partition("#")
+    return relpath, (frag if sep and frag else None)
 
 
 def file_content_hash(root: Path, target: str) -> str | None:
@@ -59,9 +102,11 @@ def file_content_hash(root: Path, target: str) -> str | None:
         data = b"\n".join(data.split(b"\n")[start - 1:end])
     return hashlib.sha256(data).hexdigest()
 
-#: Field separators for the token stream. ``\x1f`` (unit) joins a token's type to its text; ``\x1e``
-#: (record) joins tokens. Both are control chars that cannot occur in Python source, so they can't be
-#: forged by a literal's contents.
+#: Field separators for the token stream, shared by ``astnorm-v1`` and ``mdsec-v1``. ``\x1f`` (unit)
+#: joins a token's type to its text; ``\x1e`` (record) joins tokens. Both are control chars no source
+#: file carries in practice, so a literal's — or a paragraph's — contents can't forge a boundary. For
+#: code that is a guarantee (a parser would reject them); for prose it is a property of real documents,
+#: and the failure it protects against is a hash collision between two texts, not a security boundary.
 _FIELD = "\x1f"
 _TOKEN = "\x1e"
 
@@ -184,3 +229,282 @@ def _canon_quote(token: str) -> str:
         i += 1
     prefix, quotes = token[:i], token[i:]
     return prefix.lower() + quotes.replace("'", '"')
+
+
+# ── mdsec-v1: a markdown heading's section as a drift anchor (feedback-v4 #6) ─────────────────────
+
+#: A fenced code block's delimiter: 3+ backticks or tildes, indented at most 3 spaces (CommonMark).
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*(.*)$")
+
+#: An ATX heading: 1-6 ``#`` indented at most 3 spaces, then whitespace and the title (CommonMark).
+#: ``#!/bin/sh`` is correctly not a heading — the ``#`` must be followed by whitespace or end of line.
+_ATX = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$")
+
+#: A heading's optional closing sequence (``## Drift ##``) — only a run of ``#`` preceded by space.
+_CLOSING_HASHES = re.compile(r"[ \t]+#+$")
+
+_SLUG_NOISE = re.compile(r"[^a-z0-9]+")
+
+#: Block-start markers. A *continuation* line joins the block above it — that is what makes a rewrap
+#: invisible — so the hash needs to know which lines genuinely start something new. Checked in this
+#: order: ``- - -`` is a thematic break, not a list item, and both patterns accept it.
+_BREAK = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
+_LIST = re.compile(r"^ {0,3}(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)")
+_QUOTE = re.compile(r"^ {0,3}>")
+_TABLE = re.compile(r"^ {0,3}\|")
+
+#: One level of blockquote marker, stripped from a quote block's *continuation* lines so a rewrapped
+#: callout is not a change. The block's FIRST line keeps its marker, so un-quoting the text still
+#: drifts; stripping only one level keeps a nested ``>>`` visible.
+_QUOTE_MARK = re.compile(r"^ {0,3}> ?")
+
+#: An indented code block needs 4 spaces — but only where a paragraph isn't already open, which is
+#: CommonMark's own condition and the one :func:`_hash_section` applies.
+_CODE_INDENT = 4
+
+
+def section_slug(title: str) -> str:
+    """The addressable slug for a heading title: case-folded, every run of other characters → one ``-``.
+
+    Deliberately *not* GitHub's rule, which preserves a ``-`` per punctuation character (so ``The
+    --governs flag`` becomes ``the---governs-flag``). The audience is an agent typing a locator, not a
+    browser following an anchor link, so the collapsing rule is the one a caller can actually guess —
+    and when a guess still misses, ``cli._anchor`` prints the file's real slugs (design law #1).
+    """
+    return _SLUG_NOISE.sub("-", title.casefold()).strip("-")
+
+
+@dataclass(frozen=True)
+class _Heading:
+    index: int  # 0-based line index of the heading line
+    depth: int  # 1..6
+    slug: str
+
+
+@dataclass(frozen=True)
+class _Section:
+    slug: str
+    start: int  # the heading's own line index
+    end: int  # exclusive — the next heading at depth <= this one, or EOF
+    depth: int
+
+
+def _line_kind(line: str) -> str:
+    """Classify one non-fenced, non-heading line by the block it starts, or ``"text"`` if it continues.
+
+    Only ``"text"`` (and, per its own kind, a ``quote`` or ``table`` line) joins the block above it.
+    ``list`` deliberately does not: two items are two things, so splitting one must drift.
+    """
+    if not line.strip():
+        return "blank"
+    if _BREAK.match(line):
+        return "break"
+    if _LIST.match(line):
+        return "list"
+    if _QUOTE.match(line):
+        return "quote"
+    if _TABLE.match(line):
+        return "table"
+    return "text"
+
+
+def _scan(text: str) -> tuple[list[str], list[str], list[_Heading]]:
+    """Split ``text`` into lines, a per-line block kind, and the ATX headings found outside fences.
+
+    Fence state is tracked over the **whole file** rather than per section, because a ``#`` inside a
+    fenced block is code: a scan that missed that would read a shell comment in an example as a heading
+    and cut the enclosing section short there. Fenced lines (delimiters included) get the kind
+    ``"fence"`` and are hashed verbatim; a heading line gets ``"heading"`` and is handled structurally.
+    """
+    lines = text.splitlines()
+    kinds = ["text"] * len(lines)
+    headings: list[_Heading] = []
+    fence: str | None = None
+    for i, line in enumerate(lines):
+        delim = _FENCE.match(line)
+        if fence is not None:
+            kinds[i] = "fence"  # delimiters included: open-to-close is one verbatim run
+            if (delim is not None and delim.group(1)[0] == fence[0]
+                    and len(delim.group(1)) >= len(fence) and not delim.group(2)):
+                fence = None
+            continue
+        if delim is not None:
+            fence, kinds[i] = delim.group(1), "fence"
+            continue
+        atx = _ATX.match(line)
+        title = _CLOSING_HASHES.sub("", atx.group(2) or "").strip() if atx is not None else ""
+        if title:  # a bare ``##`` has no title, so it has no address
+            headings.append(_Heading(i, len(atx.group(1)), section_slug(title)))
+            kinds[i] = "heading"
+            continue
+        kinds[i] = _line_kind(line)
+    return lines, kinds, headings
+
+
+def _sections(lines: list[str], headings: list[_Heading]) -> list[_Section]:
+    """Each heading's extent: to the next heading at the same or a shallower depth, else end of file."""
+    out: list[_Section] = []
+    for k, head in enumerate(headings):
+        end = next((h.index for h in headings[k + 1:] if h.depth <= head.depth), len(lines))
+        out.append(_Section(head.slug, head.index, end, head.depth))
+    return out
+
+
+def _hash_section(lines: list[str], kinds: list[str], headings: list[_Heading],
+                  sec: _Section) -> str:
+    """SHA-256 over one section's normalized token stream; see :func:`section_content_hash`.
+
+    One token per *block*, not per line. Joining a block's continuation lines is what makes a rewrap
+    invisible — and a rewrap (Prettier's markdown printer, ``fmt``, an editor's hard wrap) is to prose
+    what a ``black`` reflow is to code: the dominant false-drift source, changing nothing. Per-line
+    tokens looked equivalent and were not: re-wrapping one sentence across two lines drifted it.
+    """
+    by_line = {h.index: h for h in headings}
+    tokens: list[str] = []
+    block: list[str] = []
+    block_kind: str | None = None
+
+    def flush() -> None:
+        nonlocal block, block_kind
+        if block:
+            tokens.append(f"text{_FIELD}{' '.join(' '.join(block).split())}")
+        block, block_kind = [], None
+
+    i = sec.start + 1  # the section's OWN heading line is excluded — that is what survives a rename
+    while i < sec.end:
+        child = by_line.get(i)
+        if child is not None:
+            flush()
+            tokens.append(f"<sec:{child.slug}>")  # a directly nested subsection: its body is its own
+            i += 1
+            while i < sec.end and not (i in by_line and by_line[i].depth <= child.depth):
+                i += 1
+            continue
+        line, kind = lines[i], kinds[i]
+        if kind == "fence":
+            flush()
+            tokens.append(f"code{_FIELD}{line}")  # verbatim: indentation is semantic in a sample
+        elif kind == "blank":
+            flush()
+        elif kind == "break":
+            flush()
+            tokens.append(f"break{_FIELD}{line.strip()}")
+        elif kind == "list":
+            flush()  # two items are two things: splitting one must drift, so it never continues
+            block, block_kind = [line], "list"
+        elif kind in ("quote", "table"):
+            continuing = block_kind == kind
+            if not continuing:
+                flush()
+                block_kind = kind
+            # Consecutive ``>``/``|`` lines are ONE block, so a rewrap is safe. A quote's continuation
+            # lines shed their marker as well, or the interior ``>`` would itself be the change when a
+            # two-line callout is re-wrapped onto one. The first line keeps it, so un-quoting drifts.
+            block.append(_QUOTE_MARK.sub("", line) if continuing and kind == "quote" else line)
+        elif not block and len(line) - len(line.lstrip(" ")) >= _CODE_INDENT:
+            # An indented code block — only reachable with no paragraph open, CommonMark's own rule.
+            # Where the guess is wrong (deep list content after a blank line) it errs verbatim, i.e.
+            # over-sensitive: the wrong direction to err is collapsing a code sample's indentation.
+            flush()
+            tokens.append(f"code{_FIELD}{line}")
+        else:
+            block_kind = block_kind or "text"
+            block.append(line)
+        i += 1
+    flush()
+    return hashlib.sha256(_TOKEN.join(tokens).encode("utf-8", "surrogatepass")).hexdigest()
+
+
+def _read_sections(root: Path, relpath: str):
+    """``(lines, kinds, headings, sections)`` for a markdown file, or ``None`` if it isn't there."""
+    path = Path(root) / relpath
+    if not path.is_file():
+        return None
+    lines, kinds, headings = _scan(path.read_text(encoding="utf-8", errors="replace"))
+    return lines, kinds, headings, _sections(lines, headings)
+
+
+def section_slugs(root: Path, relpath: str) -> list[str]:
+    """Every addressable heading slug in a markdown file, in document order (duplicates kept).
+
+    Duplicates are kept because they are the signal: two headings with one slug make that slug
+    unaddressable, and ``cli._anchor`` refuses it rather than picking one (which would silently anchor
+    a belief to whichever section happened to come first).
+    """
+    read = _read_sections(root, relpath)
+    return [s.slug for s in read[3]] if read is not None else []
+
+
+def section_content_hash(root: Path, target: str) -> str | None:
+    """``mdsec-v1`` anchor for ``file:<path>#<slug>``; ``None`` if the file, or a *unique* section with
+    that slug, isn't there.
+
+    Every normalization rule is one astnorm already applies to code, restated for prose:
+
+    * the section's **own heading text is excluded**, exactly as :func:`content_hash`'s ``exclude``
+      drops a symbol's declared name — so renaming the heading leaves the hash intact, which is what
+      lets :func:`section_locator_for_anchor` resolve the move instead of reporting hard drift
+      (int:drift-detection: SHALL NOT flag a pure rename);
+    * each **directly nested subsection** collapses to a ``<sec:slug>`` marker and is not descended
+      into, exactly as a nested symbol becomes ``<def:NAME>`` — so editing prose under ``### Soft
+      drift`` never drifts ``## Drift``, while adding, removing or renaming a subsection does (a
+      container's hash captures its members' names, not their bodies);
+    * **each block becomes one whitespace-collapsed token**, the prose analogue of quote
+      canonicalization: a rewrap is to text what a ``black`` reflow is to code — the dominant
+      false-drift source, changing nothing — so a paragraph's or a list item's continuation lines are
+      joined before hashing. Inside a fence (or an indented code block) every byte is kept:
+      indentation is semantic in a sample, and equating two different samples would be a false
+      negative in the one part of a doc that is precise. A new list item, table row or thematic break
+      is its own token, so adding one still drifts.
+
+    Heading *depth* is deliberately not hashed: promoting a whole document one level is a reflow-class
+    edit, and where a depth change really alters what a section contains, its body tokens move anyway.
+    """
+    relpath, slug = parse_section_target(target)
+    if slug is None:
+        return None
+    read = _read_sections(root, relpath)
+    if read is None:
+        return None
+    lines, kinds, headings, sections = read
+    matches = [s for s in sections if s.slug == slug]
+    if len(matches) != 1:
+        return None  # absent, or ambiguous — cli._anchor tells those apart and guides each
+    return _hash_section(lines, kinds, headings, matches[0])
+
+
+def section_locator_for_anchor(root: Path, relpath: str, anchor: str) -> str | None:
+    """The ``file:<relpath>#<slug>`` whose section hashes to ``anchor``, when exactly one does.
+
+    The section counterpart of astnorm's rename re-anchoring, and the reason a heading's own text sits
+    outside the hash. Symbols get this for free: the extractor indexes every symbol, so a renamed one
+    is already a node ``drift._hash_index`` can find. Docs are deliberately **not** indexed
+    (mem:a65f1ccad03b765e keeps that — a repo whose docs nobody governs pays nothing), so nothing mints
+    a node under the heading's new name. Resolving the move from the stored anchor at projection time
+    is what lets a rename land as ``renamed`` rather than hard drift, with no doc-wide index.
+
+    Two sections that hash alike (two empty ones, say) return ``None`` — ambiguous, so not guessed,
+    the same rule ``drift.resolve_renames`` applies to an ambiguous symbol hash.
+    """
+    read = _read_sections(root, relpath)
+    if read is None:
+        return None
+    lines, kinds, headings, sections = read
+    hits = [s.slug for s in sections if _hash_section(lines, kinds, headings, s) == anchor]
+    return f"file:{relpath}#{hits[0]}" if len(hits) == 1 else None
+
+
+def locus_hash(root: Path, target: str) -> tuple[str | None, str | None]:
+    """``(hash, algo)`` for any ``file:`` form — section, line range, or whole file; ``(None, None)``
+    if it doesn't resolve.
+
+    One dispatcher, so every site that stamps or re-derives a file anchor (``cli._anchor``, the
+    ``reaffirm`` re-stamp, and the two projectors) routes the section form to ``mdsec-v1`` and the
+    other two to the raw byte hash. The algo travels with the hash so ``drift`` keeps comparing like
+    against like.
+    """
+    if parse_section_target(target)[1] is not None:
+        anchor, algo = section_content_hash(root, target), SECTION_ANCHOR_ALGO
+    else:
+        anchor, algo = file_content_hash(root, target), FILE_ANCHOR_ALGO
+    return (anchor, algo) if anchor is not None else (None, None)

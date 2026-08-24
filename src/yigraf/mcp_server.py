@@ -365,8 +365,9 @@ def build_server(default_repo: str | None = None):
 
         Args:
             task: the task id, e.g. "task:auth/1".
-            target: a symbol "sym:<path>#<name>" or a file "file:<path>[:L<a>-L<b>]" (implements),
-                or an intent "int:<slug>" (tracks). Use file: for infra/glue with no code symbol.
+            target: a symbol "sym:<path>#<name>", a file "file:<path>[:L<a>-L<b>]" or a markdown
+                section "file:<path>#<section>" (implements), or an intent "int:<slug>" (tracks).
+                Use file: for infra/glue with no code symbol.
         """
         return run_link(repo or default_repo, task, target)
 
@@ -412,7 +413,8 @@ def build_server(default_repo: str | None = None):
         Args:
             target: the memory id, e.g. "mem:1678ce10ad2fcc15".
             old: the anchor to move, exactly as the node carries it.
-            new: where the subject now lives — "sym:<path>#<name>" or "file:<path>[:L<a>-L<b>]".
+            new: where the subject now lives — "sym:<path>#<name>", "file:<path>[:L<a>-L<b>]" or
+                "file:<path>#<section>".
         """
         return run_reanchor(repo or default_repo, target, old, new)
 
@@ -458,8 +460,11 @@ def build_server(default_repo: str | None = None):
             statement: the decision in one line.
             why: the reasoning — what a context reset would otherwise lose.
             serves: intent/plan ids this serves, e.g. ["int:auth"].
-            concerns: symbols or files this governs, e.g. ["sym:auth/session.py#refresh",
-                "file:Dockerfile", "file:cfg.yaml:L10-L40"] (anchored; file: for infra/glue).
+            concerns: the loci this governs, e.g. ["sym:auth/session.py#refresh", "file:Dockerfile",
+                "file:cfg.yaml:L10-L40", "file:docs/guide.md#drift"] (anchored; file: for infra/glue).
+                For part of a markdown doc use "#<section>", not a line range: a section is addressed
+                by heading, so it survives a rewrap and an insertion above it and re-anchors on a
+                rename, while a range is positional and slides onto other text.
             rejected: the rejected alternative + why not (the most perishable content).
             type: one of decision|constraint|learning (default decision).
             grounding: how the belief is grounded — inferred|docs|empirical (default inferred). Use
@@ -476,7 +481,8 @@ def build_server(default_repo: str | None = None):
                 forms), e.g. rejected "no Redis in deploy" + rejected_invalidated_when
                 ["file:infra/redis.tf"] — the rejection vanishes the moment that file appears.
             governs: loci whose *use* this belief governs rather than their contents, e.g.
-                ["file:docs/status.md"] for "status.md holds ONLY status". Surfaces at the edit hook
+                ["file:docs/status.md"] for "status.md holds ONLY status" (a "#<section>" works too;
+                a line range does not — a policy is about a named locus). Surfaces at the edit hook
                 exactly like `concerns` but carries no content hash, so it NEVER drifts — use it when
                 a content anchor would demand a rubber-stamp reaffirm on every edit that obeys the
                 policy. The locus must already exist.

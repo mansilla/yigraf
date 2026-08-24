@@ -143,18 +143,26 @@ plus the rejected option is enough; capture at the *conclusion*, not mid-thinkin
   into the most valuable structure in the graph. An anchor that never belonged at all →
   `yigraf unlink mem:<id> <ref>` (works for `concerns` and `grounded_by`).
 - A belief about how a file is *used* rather than what it contains ("status.md holds ONLY status")?
-  `--governs file:<path>`: surfaces at the edit hook exactly like `--concerns` but carries no content
+  `--governs file:<path>` (or `file:<path>#<section>`): surfaces at the edit hook exactly like
+  `--concerns` but carries no content
   hash, so it **never drifts** — a content anchor on a usage policy demands a rubber-stamp reaffirm on
   every edit that obeys it, and a ⚠ that is usually noise trains you to clear it without reading.
 - Governing an infra/glue file with **no code symbol** (Dockerfile, buildspec, `*.sh`, `*.json`)? Anchor to the file: `--concerns file:<path>` (whole file), or `--concerns file:<path>:L10-L40` for a line range — region-scoped, so an unrelated edit elsewhere in the file doesn't drift it. `sym:` is for code; `file:` is for everything else. (A whole-file `file:` anchor on *indexed code* is refused — use a symbol or a line range there.)
-  Prefer a **line range** only for a file that grows at the END — a log, an append-only record. A
-  curated list edited in the middle silently *slides* the range onto unrelated text while leaving it
-  syntactically valid, so a later reaffirm re-stamps the wrong region. When the locus is code, anchor
-  a **symbol** even if the claim feels like it's about a passage — a symbol moves with its body. For a
-  usage policy over a whole document, use `--governs` (§2). And note anchor granularity: a *class*
-  anchor hashes member names, not method bodies — a belief about what a method computes must anchor
-  the method, or it never resurfaces when that arithmetic changes. If what you're asserting is that
-  the file *exists* rather than what's in it, don't cite it as `--evidence` at all.
+  **A claim about one part of a markdown document takes `--concerns file:<path>#<section>`** — the
+  heading's slug (case-folded, every run of other characters collapsed to one `-`). That is the one
+  sub-file anchor addressed *by name*: it survives a rewrap, a re-level, an edit in a subsection, and
+  any insertion above it, and a heading **rename** re-anchors instead of drifting. Get the slug wrong
+  and yigraf lists the real ones.
+  A **line range** is addressed by *position*, so use it only where nothing is inserted above the
+  region — a log, an append-only record. Edit a curated list in the middle and the range silently
+  *slides* onto unrelated text while staying syntactically valid: a later reaffirm re-stamps the wrong
+  region, after which a rewrite of what you actually meant drifts **nothing**. In markdown, reach for
+  `#<section>`; in code, anchor a **symbol** even if the claim feels like it's about a passage — a
+  symbol moves with its body. For a usage policy over a whole document or one section, use `--governs`
+  (§2). And note anchor granularity: a *class* anchor hashes member names, not method bodies — a
+  belief about what a method computes must anchor the method, or it never resurfaces when that
+  arithmetic changes. If what you're asserting is that the file *exists* rather than what's in it,
+  don't cite it as `--evidence` at all.
 - The human genuinely chose this (you asked, they answered)? `yigraf attest mem:<id>` records the
   principal's endorsement — a sticky trust floor that ranks it up and holds any later agent
   `supersede` of it *pending* a human. Use it for an elicited preference; never to bless your own call.
