@@ -4,6 +4,78 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.7.0] — 2026-08-24
+
+**Two rescues that never reached the file, and a deletion the log never heard.**
+
+A rename is the one signal yigraf resolved perfectly and then forgot. `resolve_renames` matches a
+moved symbol or heading by content hash and re-anchors the edge, so nothing drifts — in the **graph**,
+which design law #6 makes a derived, recomputable projection. The rescue is therefore re-derived from
+the body on every build and lasts exactly as long as that body does. Rename in one session, edit the
+same body in the next, and it is hard drift on a locator that will never resolve, with no record
+anywhere of where the subject went.
+
+That was called content-hash identity's honest limit. The limit is real; the silence was not. Every
+agent-facing reader dropped the item — both `retrieval` paths, `show`, and the drifted set `yigraf
+drift` builds its report from — so the only surface that ever named a rename was `yigraf drift`, which
+the working loop never runs. The agent had no moment at which it could act, and the one edit that ends
+the rescue window is the very edit the `PostToolUse` hook fires on.
+
+An unsettled rename is now an **expiring obligation**: surfaced at the edit hook, in a topic query and
+in `yigraf drift`, each naming the verb that writes it down, with a footer stating the cliff rather
+than leaving it to be inferred. `yigraf gc --apply` settles every pending one, as a second backfill
+beside the superseded-status one — the same sentence, that the graph already knows something a reader
+of the files cannot tell. **Only the locator moves**: `anchor`, `anchor_algo` and `stamped_at` are
+carried across untouched, because a rename is by definition a content-hash *match*, and re-stamping
+would date the anchor to this commit when it was taken at an older one (the wrong-*when* inference
+1.5.2 built `stamped_at` to foreclose).
+
+`link` now replaces the entry the subject moved off rather than appending a second one — but only
+where the engine has *proved* the move. The standing objection was sound for a blind link (a task may
+legitimately implement several symbols, so replacing on a guess deletes a real edge) and dissolves
+once `resolve_renames` has matched the old anchor to exactly one symbol in its own scope. The graph is
+built only when the cheap pre-test passes — an existing entry with the identical anchor — so an
+ordinary `link` pays nothing. None of this happens during `build_graph`: a read command would then
+mutate committed files as a side effect of being asked a question, and a task's `implements` anchors
+sit inside its revision-id body with a per-HEAD `stamped_at`, so two workspaces noticing one rename at
+two HEADs would mint two revisions of one task — the phantom divergence 1.6.0's cache fix removed.
+
+**A task removed from a plan no longer comes back from the replica.** `defer_families` says "the local
+file wins", which is complete only where a local node exists to win. Deleting a task asserts nothing —
+absence is invisible to an append-only log — so the replica's copy met no local claim, was folded
+rather than declined, and returned as a live `state: todo` node contained by nothing. Caught on
+yigraf's own graph: `yigraf status` counting five open tasks while `yigraf tasks --open`, which reads
+the plan files, said there were none. A plan artifact's `contains` set is this family's statement of
+which tasks the plan *has*, and the plan node revises when it changes, so the deletion **is** asserted
+one level up. Scoped to plans this workspace holds, so a teammate-only plan arrives whole; and a
+teammate's *added* task surfaces as divergence on `plan:<slug>` rather than vanishing.
+
+### Also in this release
+
+- **`yigraf amend`** — repair a botched record (statement, `--why`, `--rejected`) with no `supersedes`
+  trail. The two ways out were both wrong: hand-delete the artifact, or file a mind-change nobody had
+  and leave the mangled text standing inside the trail that is the most valuable structure in the
+  graph. It re-keys the node, because `memory_id` hashes exactly the payload it repairs, and refuses on
+  a referrer or a pushed assertion. `--why-file` on every verb that takes `--why`, for the same reason
+  a shell rewrote one.
+- **`mdsec-v1` hardening** — six defects from an adversarial review of the 1.6.0 diff, two of them
+  false *negatives*, the failure that release existed to remove. A deleted `## License` could re-anchor
+  onto the identically worded section of an unrelated document, and every body-less heading hashes to
+  `sha256("")` so deleting one stub left "exactly one survivor" reading as a rename. Rename matching is
+  now scoped per file for `mdsec-v1` and refuses the empty-section hash outright.
+- **A divergence count you could not clear** — `⚠ 45 diverged` in the SessionStart injection while
+  `yigraf status`, in the same second, said none. Divergence is computed by the fold, which is what a
+  cache exists to skip, and the replica was not a fingerprint input — so `whoami`, the advertised
+  remedy, could never reach the surface showing the symptom.
+- **`plan:divergence-ledger` retired without implementing.** Its premise described 1.3.0 code; the
+  classifier has been three-filter since 1.5.1, the six locators it cited are the same six that release
+  measured and fixed, and the ledger it proposed was already rejected by name as unbounded
+  per-workspace state a fresh clone loses. Its one surviving finding — a divergence test whose
+  "competing" revision came from this repo's own unattributed file log — is fixed.
+
+**Not on PyPI: 1.5.2 and 1.6.0.** Both landed as commits and changelog entries but were never tagged
+or released, so `pip` goes 1.5.1 → 1.7.0. Everything in them ships here.
+
 ## [1.6.0] — 2026-08-23
 
 **A position is not an address. Prose moves.**
