@@ -35,7 +35,11 @@ Building it surfaced five older defects underneath, none in the model and all in
 edit hook reaching almost no `file:` anchor at all, the cache not noticing a governed file change,
 two guidance dead ends, and the shipped skill having quietly stopped being the skill this repo
 reads. Three of them were only reachable by *composing* features, which is where the tests were
-thin — each is now pinned.
+thin — each is now pinned. An adversarial review of the diff then found six more, four of them in the
+new code and two of those false *negatives*: a dead section re-anchoring onto a coincidence, and a
+commented-out heading truncating the section it sat in. Both are listed below; both are the failure this
+release exists to remove, which is the argument for reviewing a drift-detection change by trying to
+make it miss something rather than by reading it.
 
 ### Added
 - **`file:<path>#<section>`** on `--concerns`, `--governs`, `--evidence`, the rejection premises,
@@ -53,6 +57,43 @@ thin — each is now pinned.
   re-stamps the wrong region.
 
 ### Fixed
+- **A dead section was reported as a benign `renamed`, onto a coincidence.** Two false negatives, in the
+  one class this feature exists to remove. `mint_locus_node` scoped its rename rescue to one file and
+  required a unique hit; `drift.resolve_renames` then did its own lookup in a graph-wide index and
+  bypassed both — so a `## License` deleted from one governed doc re-anchored onto the identically
+  worded section of an unrelated one, relocating a belief onto prose it never governed in a file it
+  never named. And every body-less section hashes to `sha256("")`, so deleting one of two ordinary stub
+  headings left "exactly one survivor carrying the stored anchor" and read as a rename. The asymmetry
+  with symbols is the point: uniqueness has teeth for symbols because the extractor indexes *every* one,
+  so a collision normally yields 2+ matches — sections are deliberately not indexed, so a collision
+  looks unique. Matching is now scoped to the section's own file, and an empty section never matches.
+- **A heading `mdsec-v1` could not see, or wrongly invented, moved a section boundary.** A section ends
+  at the next heading of its depth or shallower, so this was never only about what is addressable.
+  Setext headings (`Title` over `===`/`---`) are now parsed: without them an ATX section's extent ran
+  past a setext one and drifted on a neighbour's prose, and — the silent half — a setext subsection
+  never reached its parent's marker list, so renaming, removing or adding one drifted nothing, against
+  a contract stated in three places. HTML comment blocks are now skipped: a commented-out
+  `## Old wording` *ended* the governed section, after which the prose below it could be reversed in
+  silence. YAML front matter is skipped too, so a `#` comment in it is not a phantom heading and its
+  closing `---` is not a setext rule for the line above.
+- **The cache fix was one-directional.** A node is minted only for a locus that *resolves*, so watching
+  the minted nodes watched every file whose content can change and none whose **arrival** matters — and
+  a forward reference is told, in as many words, that it governs once that section is written. Writing
+  it did not invalidate the view, so the hook stayed silent on the very edit that fulfilled the
+  reference; a `file:` rejection premise ("withdraws this the moment that file appears") likewise kept
+  reporting absent on the cached read path. The dangling edges and the `file:` premises are swept too.
+- **`reaffirm` hard-guided on a *stored* evidence section**, so a third party making one ambiguous
+  dead-ended the verb `drift` had just named — the typed-vs-inherited rule above, missed in
+  `_stale_grounds` and `_dead_grounds`.
+- **The new line-range caveat named a verb that refuses the caller.** `reanchor` takes a `mem:` id, so
+  on a task's `implements` item it was a dead end; and `link` alone does not clear it either, because a
+  task's implements edge is *appended*, not replaced, leaving the drifting range beside the new anchor.
+  The line now names `link` **then** `unlink` for a task, and `reanchor` for a memory — and a test runs
+  each and asserts the ⚠ is gone.
+- **A file whose name contains `#` stopped being anchorable.** `C#-notes.txt` was refused as "`C` is not
+  markdown", advising a path that does not exist, and any anchor already stored on it stopped resolving.
+  A fragment now needs the text before the *last* `#` to look like a filename with an extension — so
+  `cfg.txt#top` still gets the helpful "use a line range" guidance.
 - **The edit hook reached only a whole-file anchor on an all-lowercase path.** The extractor casefolds
   a path into its node ids, but a `file:` anchor node is minted from the assertion, so it keeps the
   spelling its author typed *and* any `:L<a>-L<b>` or `#<section>` suffix. Two surfaces compared the

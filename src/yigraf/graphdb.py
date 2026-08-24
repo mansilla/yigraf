@@ -29,13 +29,20 @@ from pathlib import Path
 
 import networkx as nx
 
-from yigraf.astnorm import ANCHOR_ALGO
+from yigraf.astnorm import ANCHOR_ALGO, parse_file_target
 from yigraf.graph import _EDGES_KEY, _VOLATILE_NODE_ATTRS, empty_graph, to_node_link
 
 #: Bumped when the SQLite schema or the fingerprint recipe changes incompatibly (⇒ every existing view
 #: is treated as absent and rebuilt). Distinct from :data:`yigraf.graph.SCHEMA_VERSION` (the node-link
 #: shape) — this guards the DB layout + fingerprint, so either changing invalidates cached views.
 DB_SCHEMA_VERSION = 2
+
+#: Where an *unresolved* ``file:`` locus is stashed. These are inputs whose ARRIVAL matters, so the
+#: fingerprint must watch them even though no node exists for them yet (see :func:`governed_file_paths`).
+_DANGLING_ATTRS = ("dangling_implements", "dangling_concerns", "dangling_grounded_by")
+
+#: Rejection-applicability premises: node attrs, not edges, and a ``file:`` one is a pure presence check.
+_PREMISE_ATTRS = ("rejected_valid_when", "rejected_invalidated_when")
 
 #: The authored-artifact subdirectories the fold reads (mirrors scaffold's ``_ARTIFACT_DIRS``); each
 #: ``.md`` under them is one assertion, so it feeds the fingerprint like a source file.
@@ -151,11 +158,24 @@ def governed_file_paths(graph: nx.DiGraph) -> list[str]:
     them would cost far more than the stat walk the fingerprint exists to be. A locus that is *added* or
     *removed* arrives by an edited assertion file, which is already an input — so the set refreshes on
     the same rebuild that changed it.
+
+    **Dangling** loci count too, and that half is not symmetric with the rest: a node is minted only for
+    a locus that resolves, so reading the minted nodes alone watched exactly the files whose *content*
+    can change and none of the ones whose *arrival* matters. A forward reference told the caller "it
+    governs once that section is written" and then the writing of it did not invalidate the view, so the
+    edit hook stayed silent on the very edit that fulfilled it; a ``file:`` rejection premise
+    ("withdraws this the moment that file appears") kept reporting absent on the cached read path after
+    the file appeared. So the dangling edges and the ``file:`` premises are swept as well.
     """
-    return sorted({
-        attrs["source_file"] for _, attrs in graph.nodes(data=True)
-        if attrs.get("kind") == "file-anchor" and attrs.get("source_file")
-    })
+    paths = {attrs["source_file"] for _, attrs in graph.nodes(data=True)
+             if attrs.get("kind") == "file-anchor" and attrs.get("source_file")}
+    for _node, attrs in graph.nodes(data=True):
+        pending = [entry.get("sym") for key in _DANGLING_ATTRS for entry in attrs.get(key) or []]
+        pending += [ref for key in _PREMISE_ATTRS for ref in attrs.get(key) or []]
+        for locus in pending:
+            if isinstance(locus, str) and locus.startswith("file:"):
+                paths.add(parse_file_target(locus)[0])
+    return sorted(p for p in paths if p)
 
 
 def source_fingerprint(root: Path, config: dict, extra: Sequence[str] = ()) -> str:

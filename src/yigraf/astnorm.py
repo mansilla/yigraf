@@ -22,7 +22,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Mapping
 
 if TYPE_CHECKING:
@@ -53,6 +53,23 @@ DOC_SUFFIXES = frozenset({".md", ".markdown", ".mdx"})
 _FILE_RANGE = re.compile(r"^(.*):L(\d+)-L?(\d+)$")  # file:path:L10-L40 (or L10-40)
 
 
+def _split_fragment(spec: str) -> tuple[str, str | None]:
+    """Split a bare ``<path>[#<section>]`` spec, taking the **last** ``#`` and only when what precedes
+    it looks like a filename with an extension.
+
+    Both conditions earn their keep on real paths. A file genuinely named ``C#-notes.txt`` was made
+    unanchorable by an unconditional split — refused as "``C`` is not markdown", advising a path that
+    does not exist, and silently dropping any anchor already stored on it (D8). Splitting on the last
+    ``#`` keeps ``C#-notes.md#intro`` working; requiring an extension keeps ``C#-notes.md`` a path. And
+    ``cfg.txt#top`` still reads as an attempted section, so the "not markdown, use a line range"
+    guidance still fires where it helps.
+    """
+    prefix, sep, frag = spec.rpartition("#")
+    if sep and frag and prefix and PurePosixPath(prefix).suffix:
+        return prefix, frag
+    return spec, None
+
+
 def parse_file_target(target: str) -> tuple[str, int | None, int | None]:
     """Split ``file:<path>[:L<a>-L<b>][#<section>]`` into ``(relpath, start, end)`` (1-based, inclusive).
 
@@ -62,7 +79,7 @@ def parse_file_target(target: str) -> tuple[str, int | None, int | None]:
     :func:`parse_section_target`.
     """
     spec = target[len("file:"):] if target.startswith("file:") else target
-    spec = spec.split("#", 1)[0]
+    spec = _split_fragment(spec)[0]
     match = _FILE_RANGE.match(spec)
     if match is None:
         return spec, None, None
@@ -82,8 +99,7 @@ def parse_section_target(target: str) -> tuple[str, str | None]:
     """
     if not target.startswith("file:"):
         return target, None
-    relpath, sep, frag = target[len("file:"):].partition("#")
-    return relpath, (frag if sep and frag else None)
+    return _split_fragment(target[len("file:"):])
 
 
 def file_content_hash(root: Path, target: str) -> str | None:
@@ -245,6 +261,13 @@ _CLOSING_HASHES = re.compile(r"[ \t]+#+$")
 
 _SLUG_NOISE = re.compile(r"[^a-z0-9]+")
 
+#: The hash every *empty* section produces (no body at all → an empty token stream). Excluded from
+#: rename matching, because it identifies nothing: a stub heading is common in real documents, so every
+#: one of them collides with every other, and "exactly one survivor carries the stored anchor" then
+#: resolves a DELETED section to whichever stub happens to remain (D1). Content-hash identity needs
+#: content.
+EMPTY_SECTION_HASH = hashlib.sha256(b"").hexdigest()
+
 #: Block-start markers. A *continuation* line joins the block above it — that is what makes a rewrap
 #: invisible — so the hash needs to know which lines genuinely start something new. Checked in this
 #: order: ``- - -`` is a thematic break, not a list item, and both patterns accept it.
@@ -262,6 +285,28 @@ _QUOTE_MARK = re.compile(r"^ {0,3}> ?")
 #: CommonMark's own condition and the one :func:`_hash_section` applies.
 _CODE_INDENT = 4
 
+#: A **setext** underline: a run of ``=`` (depth 1) or ``-`` (depth 2) on its own line, which turns the
+#: paragraph above it into a heading. Recognized because ignoring it corrupted *extents*, not merely
+#: addresses: a section's end is the next heading at its depth or shallower, so a document mixing
+#: setext top-level headings with ATX sub-headings let one section swallow a later one's prose (D7,
+#: over-sensitive) and hid a setext sibling from its parent's subsection markers (D2, a false
+#: negative against the documented "adding, renaming or removing a subsection drifts the parent").
+#: Checked BEFORE :data:`_BREAK`, which also matches ``---`` — CommonMark gives setext precedence when
+#: a paragraph is open, and a thematic break when one is not.
+_SETEXT = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
+
+#: An HTML block comment (CommonMark block type 2): the line must *begin* with ``<!--``, and the block
+#: runs to the line containing ``-->``. Skipped like a fence, because a commented-out ``## Old wording``
+#: was read as a real heading and **ended** the governed section there — after which the prose below it
+#: could be reversed in silence (D6).
+_HTML_COMMENT_OPEN = re.compile(r"^ {0,3}<!--")
+
+#: A YAML front-matter fence: ``---`` on the very first line, closed by ``---`` or ``...``. Skipped
+#: entirely so a ``#`` comment in it is not a phantom heading (D9) and so the closing fence is not read
+#: as a setext underline for the metadata line above it. Nothing addressable can precede it, so
+#: skipping cannot change any section's hash.
+_FRONT_MATTER = re.compile(r"^(---|\.\.\.)[ \t]*$")
+
 
 def section_slug(title: str) -> str:
     """The addressable slug for a heading title: case-folded, every run of other characters → one ``-``.
@@ -276,15 +321,17 @@ def section_slug(title: str) -> str:
 
 @dataclass(frozen=True)
 class _Heading:
-    index: int  # 0-based line index of the heading line
+    index: int  # 0-based line index where the heading STARTS (a setext heading's text, not its rule)
     depth: int  # 1..6
     slug: str
+    body_start: int  # first line after the heading — ``index + 1`` for ATX, past the rule for setext
 
 
 @dataclass(frozen=True)
 class _Section:
     slug: str
-    start: int  # the heading's own line index
+    start: int  # the line the heading starts on
+    body_start: int  # first line of the body — the heading's own text is never hashed
     end: int  # exclusive — the next heading at depth <= this one, or EOF
     depth: int
 
@@ -309,44 +356,101 @@ def _line_kind(line: str) -> str:
 
 
 def _scan(text: str) -> tuple[list[str], list[str], list[_Heading]]:
-    """Split ``text`` into lines, a per-line block kind, and the ATX headings found outside fences.
+    """Split ``text`` into lines, a per-line block kind, and the headings found in real content.
 
-    Fence state is tracked over the **whole file** rather than per section, because a ``#`` inside a
-    fenced block is code: a scan that missed that would read a shell comment in an example as a heading
-    and cut the enclosing section short there. Fenced lines (delimiters included) get the kind
-    ``"fence"`` and are hashed verbatim; a heading line gets ``"heading"`` and is handled structurally.
+    Three states are tracked over the **whole file**, not per section, because each one can otherwise
+    put a heading where the document has none — and a phantom heading *ends* the section it lands in,
+    which silences every edit below it:
+
+    * **fences** — a ``#`` inside a fenced block is code, so a shell comment in an example would read
+      as a heading;
+    * **HTML comments** — a commented-out ``## Old wording`` is not a heading (D6);
+    * **front matter** — a ``#`` comment in it is not a heading, and its closing ``---`` is not a
+      setext rule for the metadata line above (D9).
+
+    Setext headings (``Title`` over ``===`` / ``---``) are recognized as headings, which is what keeps
+    section *extents* right in a document that mixes them with ATX (D2/D7). A setext heading spans its
+    paragraph *and* its rule, so it records a ``body_start`` past both; for ATX the two are adjacent.
     """
     lines = text.splitlines()
     kinds = ["text"] * len(lines)
     headings: list[_Heading] = []
     fence: str | None = None
-    for i, line in enumerate(lines):
+    skip_to: str | None = None  # closing token of an open HTML comment / front-matter block
+    para: list[int] = []  # line indices of the open paragraph — a setext heading's text
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        if skip_to is not None:  # inside an HTML comment or front matter: content, never structure
+            kinds[i] = "skip"
+            if (_FRONT_MATTER.match(line) if skip_to == "---" else skip_to in line):
+                skip_to = None
+            i += 1
+            continue
+
         delim = _FENCE.match(line)
         if fence is not None:
             kinds[i] = "fence"  # delimiters included: open-to-close is one verbatim run
             if (delim is not None and delim.group(1)[0] == fence[0]
                     and len(delim.group(1)) >= len(fence) and not delim.group(2)):
                 fence = None
+            i += 1
             continue
         if delim is not None:
-            fence, kinds[i] = delim.group(1), "fence"
+            fence, kinds[i], para = delim.group(1), "fence", []
+            i += 1
             continue
+
+        if i == 0 and _FRONT_MATTER.match(line) and line.strip() == "---":
+            # Only at the very top, and only if it actually closes — otherwise a lone `---` on line 1
+            # is a thematic break and swallowing the file would hide every heading in it.
+            if any(_FRONT_MATTER.match(later) for later in lines[1:]):
+                kinds[i], skip_to = "skip", "---"
+                i += 1
+                continue
+        if _HTML_COMMENT_OPEN.match(line):
+            kinds[i], para = "skip", []
+            skip_to = None if "-->" in line else "-->"
+            i += 1
+            continue
+
         atx = _ATX.match(line)
         title = _CLOSING_HASHES.sub("", atx.group(2) or "").strip() if atx is not None else ""
         if title:  # a bare ``##`` has no title, so it has no address
-            headings.append(_Heading(i, len(atx.group(1)), section_slug(title)))
-            kinds[i] = "heading"
+            headings.append(_Heading(i, len(atx.group(1)), section_slug(title), i + 1))
+            kinds[i], para = "heading", []
+            i += 1
             continue
+
+        rule = _SETEXT.match(line)
+        if rule is not None and para:
+            # The paragraph above becomes the heading text; its lines and this rule stop being body.
+            depth = 1 if rule.group(1)[0] == "=" else 2
+            text_of = " ".join(" ".join(lines[j] for j in para).split())
+            headings.append(_Heading(para[0], depth, section_slug(text_of), i + 1))
+            for j in (*para, i):
+                kinds[j] = "heading"
+            para = []
+            i += 1
+            continue
+
         kinds[i] = _line_kind(line)
+        para = [*para, i] if kinds[i] == "text" else []
+        i += 1
     return lines, kinds, headings
 
 
 def _sections(lines: list[str], headings: list[_Heading]) -> list[_Section]:
-    """Each heading's extent: to the next heading at the same or a shallower depth, else end of file."""
+    """Each heading's extent: to the next heading at the same or a shallower depth, else end of file.
+
+    The boundary is the next heading's ``index`` — where it *starts* — so a setext heading's own text
+    lines fall outside the section above it rather than being hashed as that section's last paragraph.
+    """
     out: list[_Section] = []
     for k, head in enumerate(headings):
         end = next((h.index for h in headings[k + 1:] if h.depth <= head.depth), len(lines))
-        out.append(_Section(head.slug, head.index, end, head.depth))
+        out.append(_Section(head.slug, head.index, head.body_start, end, head.depth))
     return out
 
 
@@ -370,18 +474,20 @@ def _hash_section(lines: list[str], kinds: list[str], headings: list[_Heading],
             tokens.append(f"text{_FIELD}{' '.join(' '.join(block).split())}")
         block, block_kind = [], None
 
-    i = sec.start + 1  # the section's OWN heading line is excluded — that is what survives a rename
+    i = sec.body_start  # the section's OWN heading is excluded — that is what survives a rename
     while i < sec.end:
         child = by_line.get(i)
         if child is not None:
             flush()
             tokens.append(f"<sec:{child.slug}>")  # a directly nested subsection: its body is its own
-            i += 1
+            i = child.body_start
             while i < sec.end and not (i in by_line and by_line[i].depth <= child.depth):
                 i += 1
             continue
         line, kind = lines[i], kinds[i]
-        if kind == "fence":
+        if kind == "skip":
+            flush()  # an HTML comment or front matter: not content, and never a heading
+        elif kind == "fence":
             flush()
             tokens.append(f"code{_FIELD}{line}")  # verbatim: indentation is semantic in a sample
         elif kind == "blank":
@@ -490,6 +596,8 @@ def section_locator_for_anchor(root: Path, relpath: str, anchor: str) -> str | N
     if read is None:
         return None
     lines, kinds, headings, sections = read
+    if anchor == EMPTY_SECTION_HASH:
+        return None  # an empty section identifies nothing — see :data:`EMPTY_SECTION_HASH`
     hits = [s.slug for s in sections if _hash_section(lines, kinds, headings, s) == anchor]
     return f"file:{relpath}#{hits[0]}" if len(hits) == 1 else None
 

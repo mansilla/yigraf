@@ -19,7 +19,8 @@ from dataclasses import dataclass
 
 import networkx as nx
 
-from yigraf.astnorm import ANCHOR_ALGO, SECTION_ANCHOR_ALGO
+from yigraf.astnorm import (ANCHOR_ALGO, EMPTY_SECTION_HASH, SECTION_ANCHOR_ALGO,
+                           parse_file_target)
 
 CONF = "EXTRACTED"
 
@@ -53,19 +54,39 @@ class DriftItem:
 _RENAMEABLE_ALGOS = frozenset({ANCHOR_ALGO, SECTION_ANCHOR_ALGO})
 
 
-def _hash_index(graph: nx.DiGraph) -> dict[tuple[str, str], list[str]]:
-    """Map each rename-capable structure node's ``(algo, content_hash)`` to the ids carrying it (sorted).
+def _rename_scope(algo: str, locator: str) -> str:
+    """The space within which ``locator``'s hash is allowed to identify a move.
 
-    Keyed by algo as well as hash so a match can only ever be found in the hash space that produced the
-    anchor — the same "compare like against like" rule :func:`compute_drift` applies to soft drift, and
-    what keeps the ``astnorm-v2``-bump protection intact when a second rename-capable algo exists.
+    Empty for a symbol: moving a function to another file **is** a rename, and the whole graph of
+    indexed symbols is the candidate set. A section's own *file* for ``mdsec-v1``, because a section
+    cannot attest that it moved documents — and unlike symbols, docs are deliberately not indexed, so
+    the candidate set is not "every section that exists" but "the few some assertion happens to
+    govern". A `## License` deleted from one governed doc then matched the identically-worded section
+    of an unrelated one and reported ``renamed`` (D1): a belief silently relocated onto prose it never
+    governed, in a file it never named. ``artifacts.section_locator_for_anchor`` already scoped to one
+    file; this is the same rule where the lookup actually happens.
     """
-    index: dict[tuple[str, str], list[str]] = {}
+    return parse_file_target(locator)[0] if algo == SECTION_ANCHOR_ALGO else ""
+
+
+def _hash_index(graph: nx.DiGraph) -> dict[tuple[str, str, str], list[str]]:
+    """Map each rename-capable structure node's ``(algo, scope, content_hash)`` to its ids (sorted).
+
+    Keyed by algo so a match can only ever be found in the hash space that produced the anchor — the
+    same "compare like against like" rule :func:`compute_drift` applies to soft drift, and what keeps
+    the ``astnorm-v2``-bump protection intact now that a second rename-capable algo exists. Keyed by
+    scope for the reason :func:`_rename_scope` gives.
+    """
+    index: dict[tuple[str, str, str], list[str]] = {}
     for node_id, attrs in graph.nodes(data=True):
         algo = attrs.get("hash_algo", ANCHOR_ALGO)
-        if (attrs.get("family") == "structure" and "content_hash" in attrs
-                and algo in _RENAMEABLE_ALGOS):
-            index.setdefault((algo, attrs["content_hash"]), []).append(node_id)
+        content = attrs.get("content_hash")
+        if (attrs.get("family") != "structure" or content is None
+                or algo not in _RENAMEABLE_ALGOS):
+            continue
+        if algo == SECTION_ANCHOR_ALGO and content == EMPTY_SECTION_HASH:
+            continue  # a body-less section identifies nothing (astnorm.EMPTY_SECTION_HASH)
+        index.setdefault((algo, _rename_scope(algo, node_id), content), []).append(node_id)
     for ids in index.values():
         ids.sort()
     return index
@@ -92,7 +113,8 @@ def resolve_renames(graph: nx.DiGraph) -> None:
             remaining = []
             for entry in dangling:
                 anchor, algo = entry.get("anchor"), entry.get("anchor_algo")
-                matches = index.get((algo, anchor), []) if anchor and algo in _RENAMEABLE_ALGOS else []
+                matches = (index.get((algo, _rename_scope(algo, entry["sym"]), anchor), [])
+                           if anchor and algo in _RENAMEABLE_ALGOS else [])
                 if len(matches) == 1:
                     graph.add_edge(
                         node_id, matches[0], relation=relation, confidence=CONF,

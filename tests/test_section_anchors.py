@@ -501,3 +501,245 @@ def test_the_post_tool_use_hook_injects_the_section_belief_and_stays_silent_else
     quiet = json.dumps({"tool_name": "Edit", "cwd": str(root),
                         "tool_input": {"file_path": str(root / "scratch.md")}})
     assert runner.invoke(app, ["hook", "post-tool-use"], input=quiet).output.strip() == ""
+
+
+# ── Findings from the adversarial review of this change ───────────────────────────────────────────
+#
+# Every case below was a defect in the first cut. They are grouped because they share one shape: the
+# feature was right about the document it was shown and wrong about the documents it was not.
+
+
+def test_a_dead_section_is_hard_drift_even_when_a_sibling_hashes_the_same(tmp_path: Path):
+    """A rename match must not resolve a DELETED section onto a coincidence.
+
+    ``mint_locus_node`` scoped the rescue to one file and required a unique hit, but
+    ``drift.resolve_renames`` then did its own lookup in a graph-wide index and bypassed both. Two ways
+    it went wrong, and both are false negatives — the exact class this feature exists to remove:
+
+    * every *empty* section hashes to ``sha256("")``, and stub headings are ordinary, so deleting one of
+      two stubs left "exactly one survivor carrying the stored anchor" and reported a benign rename;
+    * an identically-worded section in a **different document** matched, relocating a belief onto prose
+      it never governed in a file it never named.
+
+    ``file-sha256-v1`` was kept out of rename matching because "a match would mean two identical files,
+    not a move". Sections needed the same reasoning: scoped to their own file, and never identified by
+    an empty body.
+    """
+    root = _repo(tmp_path)
+
+    # Two body-less stubs; the governed one is deleted.
+    (root / "notes.md").write_text("# N\n\n## Retry policy\n\n## Timeout policy\n")
+    _remember(root, "the retry policy is the claim", "--concerns", "file:notes.md#retry-policy")
+    (root / "notes.md").write_text("# N\n\n## Timeout policy\n")
+    assert [(k, loc) for k, loc, _ in _drift(root)] == [("hard", "file:notes.md#retry-policy")]
+
+
+def test_a_dead_section_never_re_anchors_into_another_document(tmp_path: Path):
+    root = _repo(tmp_path)
+    (root / "a.md").write_text("# A\n\n## License\n\nMIT.\n")
+    (root / "b.md").write_text("# B\n\n## License terms\n\nMIT.\n")
+    _remember(root, "the a-side license claim", "--concerns", "file:a.md#license")
+    _remember(root, "the b-side license claim", "--concerns", "file:b.md#license-terms")
+
+    (root / "a.md").unlink()
+    assert [(k, loc) for k, loc, _ in _drift(root)] == [("hard", "file:a.md#license")]
+
+
+SETEXT = """# Drift
+
+Drift is the moat.
+
+## Soft drift
+
+Body edits trip it.
+
+Hard drift
+----------
+
+A dangling edge is hard drift.
+"""
+
+
+@pytest.mark.parametrize("label,edit,same", [
+    # The documented contract — "adding, renaming or removing a subsection drifts the parent" — held
+    # for ATX children and silently failed for setext ones, because the child-skip loop could only be
+    # stopped by an ATX heading, so a setext sibling never reached the parent's marker list.
+    ("a setext subsection is renamed",
+     lambda t: t.replace("Hard drift\n----------", "Hard drift rules\n----------------"), False),
+    ("a setext subsection is removed",
+     lambda t: t.replace("\nHard drift\n----------\n\nA dangling edge is hard drift.\n", ""), False),
+    ("a setext subsection is added", lambda t: t + "\nMore\n----\n\nextra.\n", False),
+    ("a setext subsection's own prose is edited",
+     lambda t: t.replace("A dangling edge is hard drift.", "A dangling edge is hard drift, always."), True),
+])
+def test_a_setext_subsection_is_a_subsection_of_its_parent(tmp_path, label, edit, same):
+    (tmp_path / "g.md").write_text(SETEXT)
+    base = astnorm.section_content_hash(tmp_path, "file:g.md#drift")
+    (tmp_path / "g.md").write_text(edit(SETEXT))
+    assert (astnorm.section_content_hash(tmp_path, "file:g.md#drift") == base) is same, label
+
+
+MIXED = """Chapter One
+===========
+
+## Drift
+
+Drift is the moat.
+
+Chapter Two
+===========
+
+Billing has nothing to do with drift.
+
+## Billing
+
+Billing rules.
+"""
+
+
+def test_a_setext_heading_bounds_the_section_above_it(tmp_path: Path):
+    """A section ends at the next heading of its depth or shallower — and a setext heading is one.
+
+    Ignoring setext made the extent a *superset* of the real one, so ``## Drift`` swallowed a later
+    chapter's prose and drifted when that unrelated text was edited. Over-sensitive rather than silent,
+    but wrong either way, and it is why setext is parsed rather than merely documented as unsupported.
+    """
+    (tmp_path / "g.md").write_text(MIXED)
+    base = astnorm.section_content_hash(tmp_path, "file:g.md#drift")
+    assert base is not None
+
+    (tmp_path / "g.md").write_text(MIXED.replace("Billing has nothing to do with drift.",
+                                                 "Billing is unrelated entirely."))
+    assert astnorm.section_content_hash(tmp_path, "file:g.md#drift") == base, "a neighbour's prose"
+
+    (tmp_path / "g.md").write_text(MIXED.replace("Drift is the moat.", "Drift is NOT the moat."))
+    assert astnorm.section_content_hash(tmp_path, "file:g.md#drift") != base, "our own prose"
+
+
+def test_a_setext_heading_is_addressable_and_its_rule_is_not_content(tmp_path: Path):
+    doc = tmp_path / "g.md"
+    doc.write_text("# G\n\n## Drift\n\nmoat.\n\nDetails\n-------\n\ninner.\n")
+    assert astnorm.section_slugs(tmp_path, "g.md") == ["g", "drift", "details"]
+    base = astnorm.section_content_hash(tmp_path, "file:g.md#details")
+
+    # Prettier rewrites setext underlines to match the title's length: cosmetic, so not a change.
+    doc.write_text("# G\n\n## Drift\n\nmoat.\n\nDetails\n-----------\n\ninner.\n")
+    assert astnorm.section_content_hash(tmp_path, "file:g.md#details") == base
+
+
+def test_a_heading_inside_an_html_comment_is_not_a_heading(tmp_path: Path):
+    """A commented-out heading *ended* the governed section, after which the prose below it could be
+    reversed in silence — a false negative reachable by the ordinary act of commenting a draft out."""
+    doc = tmp_path / "g.md"
+    body = ("# D\n\n## Drift\n\nmoat.\n\n<!--\n## Old wording\n-->\n\n"
+            "soft drift is a hash mismatch.\n")
+    doc.write_text(body)
+    assert astnorm.section_slugs(tmp_path, "g.md") == ["d", "drift"]
+    base = astnorm.section_content_hash(tmp_path, "file:g.md#drift")
+
+    doc.write_text(body.replace("is a hash mismatch", "is NOT a hash mismatch"))
+    assert astnorm.section_content_hash(tmp_path, "file:g.md#drift") != base, "prose below the comment"
+
+    doc.write_text(body.replace("## Old wording", "## Older wording"))
+    assert astnorm.section_content_hash(tmp_path, "file:g.md#drift") == base, "the comment's own text"
+
+
+def test_yaml_front_matter_is_metadata_not_headings(tmp_path: Path):
+    """``---`` fences at the top are skipped, so a ``#`` comment in them is not a phantom heading and
+    the closing fence is not a setext rule for the metadata line above it."""
+    (tmp_path / "g.md").write_text(
+        "---\nname: x\n# a comment, not a heading\ndescription: y\n---\n\n# Real\n\nbody\n")
+    assert astnorm.section_slugs(tmp_path, "g.md") == ["real"]
+
+    # A lone `---` on line 1 that never closes is a thematic break, and must not swallow the document.
+    (tmp_path / "h.md").write_text("---\n\n# Still A Heading\n\nbody\n")
+    assert astnorm.section_slugs(tmp_path, "h.md") == ["still-a-heading"]
+
+
+def test_a_file_whose_name_contains_a_hash_is_still_anchorable(tmp_path: Path):
+    """Splitting on ``#`` unconditionally made ``C#-notes.txt`` unanchorable — refused as "C is not
+    markdown", advising a path that does not exist. The fragment now needs the text before the *last*
+    ``#`` to look like a filename with an extension."""
+    root = _repo(tmp_path)
+    (root / "C#-notes.txt").write_text("csharp notes\n")
+    out = _run(root, "remember", "a note about the notes", "--why", "w",
+               "--concerns", "file:C#-notes.txt").output
+    assert "Captured" in out and "file:C#-notes.txt" in out
+    # And the helpful guidance for a real mistake still fires.
+    (root / "cfg.txt").write_text("a\n")
+    assert "not markdown" in runner.invoke(app, ["remember", "x", "--repo", str(root), "--why", "w",
+                                                 "--concerns", "file:cfg.txt#top"]).output
+
+
+def test_a_forward_referenced_section_being_written_invalidates_the_cache(tmp_path: Path):
+    """The cache fix was one-directional. A node is minted only for a locus that *resolves*, so reading
+    the minted nodes watched every file whose content can change and none whose **arrival** matters —
+    and a forward reference is told, in as many words, that it governs once the section is written."""
+    from yigraf import retrieval
+
+    root = _repo(tmp_path)
+    (root / "guide.md").write_text("# G\n\nIntro.\n")
+    runner.invoke(app, ["remember", "the drift section is the claim", "--repo", str(root),
+                        "--why", "w", "--concerns", "file:guide.md#drift"])
+    _run(root, "context", "drift")  # materializes the view while the locus still dangles
+
+    (root / "guide.md").write_text("# G\n\nIntro.\n\n## Drift\n\nDrift is the moat.\n")
+    graph, was_cached = graphdb.load_or_build(root, default_config())
+    assert not was_cached
+    assert retrieval.context_for_locus(graph, "guide.md", default_config(), root=root) is not None
+
+
+def test_a_premise_file_appearing_invalidates_the_cache(tmp_path: Path):
+    """The same asymmetry against the documented premise contract: "the rejection vanishes the moment
+    that file appears" was false on the cached read path, which is the one the hook uses."""
+    from yigraf import retrieval
+
+    root = _repo(tmp_path)
+    _remember(root, "no cache layer", "--concerns", "sym:code.py#f", "--rejected", "add redis",
+              "--rejected-invalidated-when", "file:infra/redis.tf")
+    _run(root, "context", "cache")
+
+    (root / "infra").mkdir()
+    (root / "infra" / "redis.tf").write_text('resource "redis" {}\n')
+    graph, was_cached = graphdb.load_or_build(root, default_config())
+    assert not was_cached
+    assert retrieval.premise_holds(graph, "file:infra/redis.tf")
+
+
+def test_the_positional_caveat_names_link_for_a_task_not_reanchor(tmp_path: Path):
+    """``reanchor`` takes a mem: id and refuses a task one, so naming it on an ``implements`` item was a
+    dead end — the class ``test_guidance_is_executable`` exists to catch, in the one line it did not
+    cover. Asserted by running what the line says."""
+    root = _repo(tmp_path)
+    (root / "guide.md").write_text("# G\n\na\n\nb\n\nc\n\nd\n\ne\n\nf\n")
+    _run(root, "plan", "docs", "-t", "Docs", "--task", "write the guide")
+    _run(root, "link", "task:docs/1", "file:guide.md:L5-L7")
+    (root / "guide.md").write_text("# G\n\nINSERTED\n\na\n\nb\n\nc\n\nd\n\ne\n\nf\n")
+
+    advice = runner.invoke(app, ["drift", str(root), "--stale"]).output
+    assert "reanchor task:docs/1" not in advice, "reanchor refuses a task id"
+    assert "link task:docs/1 file:guide.md#<section>` then `unlink task:docs/1 file:guide.md:L5-L7" in advice
+
+    # Run exactly what it says. `link` alone would not have been enough — a task's implements edge is
+    # appended, not replaced, so the drifting range would still stand beside the new anchor.
+    _run(root, "link", "task:docs/1", "file:guide.md#g")
+    _run(root, "unlink", "task:docs/1", "file:guide.md:L5-L7")
+    assert _drift(root) == [], "the taught retry clears the signal"
+
+
+def test_reaffirm_is_not_dead_ended_by_a_stored_evidence_section_going_ambiguous(tmp_path: Path):
+    """``_stale_grounds`` / ``_dead_grounds`` re-resolve refs the node **stores**, so they must not
+    hard-guide either — the same typed-vs-inherited rule, in the two helpers it was missed in. A third
+    party making a governed evidence section ambiguous otherwise refused the verb ``drift`` had just
+    named, for a caller who touched no docs."""
+    root = _repo(tmp_path)
+    (root / "gone.py").write_text("def x():\n    return 1\n")
+    assert runner.invoke(app, ["build", str(root)]).exit_code == 0
+    mem = _remember(root, "a belief with documentary evidence", "--concerns", "sym:gone.py#x",
+                    "--grounding", "empirical", "--evidence", SECTION)
+
+    (root / "gone.py").unlink()
+    (root / "guide.md").write_text(DOC + "\n## Drift\n\nsomething else entirely.\n")
+    out = runner.invoke(app, ["reaffirm", mem, "--repo", str(root)]).output
+    assert "names 2 headings" not in out, out
+    assert "reanchor" in out, "it reports the concerns hard drift, which is the real signal"

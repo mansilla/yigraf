@@ -300,9 +300,19 @@ def positional_caveat(item) -> str:
     relpath, start, _end = parse_file_target(str(item.locator))
     if start is None:
         return ""
-    tail = (f" For prose there is a stable address: `reanchor {item.task_id} {item.locator} "
-            f"file:{relpath}#<section>` anchors a heading, which moves with it."
-            if Path(relpath).suffix.casefold() in DOC_SUFFIXES else "")
+    if Path(relpath).suffix.casefold() not in DOC_SUFFIXES:
+        tail = ""
+    else:
+        # Two different moves, because the two relations differ in whether the verb REPLACES the anchor.
+        # `reanchor` moves a memory's in place, one command. A task's `link` *appends*, so naming it
+        # alone left the drifting range edge standing beside the new one and cleared nothing — and
+        # `reanchor` refuses a task id outright ("a task's implements edge is re-anchored by
+        # re-linking"). Both were dead ends of the kind tests/test_guidance_is_executable.py exists to
+        # catch, in the one line it did not cover.
+        move = (f"link {item.task_id} file:{relpath}#<section>` then "
+                f"`unlink {item.task_id} {item.locator}" if item.relation == "implements"
+                else f"reanchor {item.task_id} {item.locator} file:{relpath}#<section>")
+        tail = f" For prose there is a stable address: `{move}` anchors a heading, which moves with it."
     return (f" NOTE: a line range is positional — if lines were inserted above it, it now covers "
             f"DIFFERENT text, and re-stamping would anchor this belief to that instead and go quiet "
             f"about its real subject. Check {item.locator} still names what you meant.{tail}")

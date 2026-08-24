@@ -52,7 +52,16 @@ hash restates the astnorm rules for prose: the section's own heading text is exc
 re-anchors instead of drifting), a directly nested subsection collapses to a marker (so editing a
 child never drifts the parent, while adding, renaming or removing one does), and each block is
 whitespace-collapsed (so a rewrap is not a change) — except inside a fenced or indented code block,
-which is hashed byte-for-byte. Asserted in `tests/test_section_anchors.py`.
+which is hashed byte-for-byte.
+
+A section ends at the next heading of its depth or shallower, so **which lines count as a heading
+decides where a section stops** — a heading missed or invented moves a boundary and silences (or
+invents) drift below it. Both ATX (`## Title`) and setext (`Title` over `===` / `---`) are parsed;
+fenced code, indented code, HTML comment blocks and YAML front matter are all skipped, so a `#` inside
+any of them is content rather than a heading. A slug that names two headings in one file is refused
+rather than pinned to whichever came first. Rename re-anchoring is scoped to the section's own file and
+never matches an empty section, because neither can identify a move. All asserted in
+`tests/test_section_anchors.py`.
 
 **Quote handling (astnorm):** JS/TS/Python normalize `'`↔`"` (Prettier/Black flip them cosmetically, so a
 flip must NOT drift). Ruby/PHP do **not** — there `'…'` (literal) and `"…"` (interpolating) differ

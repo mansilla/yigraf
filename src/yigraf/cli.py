@@ -1684,12 +1684,17 @@ def _reaffirm_evidence(repo: Path, config: dict, node: memory.Memory, new_refs: 
 def _stale_grounds(repo: Path, config: dict, node: memory.Memory) -> list[str]:
     """Evidence refs whose stored anchor no longer matches the current source — the grounds-drift a
     bare ``reaffirm`` structurally cannot clear (only ``--evidence`` re-stamps; ``unlink`` retires).
-    A gone locus counts too: its current anchor is ``None`` ≠ the stored one."""
+    A gone locus counts too: its current anchor is ``None`` ≠ the stored one.
+
+    ``guide=False`` because every ref here is one the node already **stores**, not one this caller
+    typed — the distinction :func:`_anchor` documents. Without it, a third party making a governed
+    evidence section ambiguous made ``reaffirm`` refuse with a message about heading titles, dead-ending
+    the very verb the drift line had just named, for a caller who touched no docs (D5)."""
     out: list[str] = []
     for e in node.evidence:
         if e.anchor is None or not e.ref.startswith(("sym:", "file:")):
             continue  # opaque (commit:/url) or never-anchored — nothing to compare
-        if _anchor(repo, config, e.ref)[0] != e.anchor:
+        if _anchor(repo, config, e.ref, guide=False)[0] != e.anchor:
             out.append(e.ref)
     return out
 
@@ -1701,9 +1706,12 @@ def _dead_grounds(repo: Path, config: dict, node: memory.Memory) -> list[str]:
     the ref then projects as a *dangling* ``grounded_by`` edge — permanent hard drift. So the one
     ``--evidence`` form the empirical guard accepts (re-naming the drifting locator) used to report
     success on a path that does not exist, with no warning tail at all (feedback-v4 #2).
+
+    ``guide=False`` for the reason :func:`_stale_grounds` gives: these refs are stored, not typed.
     """
     return [e.ref for e in node.evidence
-            if e.ref.startswith(("sym:", "file:")) and _anchor(repo, config, e.ref)[0] is None]
+            if e.ref.startswith(("sym:", "file:"))
+            and _anchor(repo, config, e.ref, guide=False)[0] is None]
 
 
 @app.command()
@@ -3630,7 +3638,10 @@ def _stop(data: dict) -> dict | None:
         return None
 
     # Fast path first: this runs on every turn, so an unchanged input fingerprint must cost a stat walk
-    # and nothing more — no view load, no embedding index read.
+    # plus one small indexed read — the view's `governed_files`, which names the inputs no source walk
+    # can find — and nothing more: no graph load, no embedding index read. (Measured on this repo,
+    # ~18ms either way.) Once, after the governed set changes, the latch misses its fast path and takes
+    # the full path below; that is the rebuild it should be taking.
     session = str(data.get("session_id") or "default")
     fingerprint = graphdb.current_fingerprint(root, config)
     if obligations.is_unchanged(root, session, fingerprint):
