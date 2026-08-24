@@ -392,3 +392,24 @@ def load_config(path: Path) -> dict[str, Any]:
             raise ValueError(f"{path}: expected a YAML mapping at the top level")
         cfg = _deep_merge(cfg, loaded)
     return cfg
+
+
+def replica_path(root: Path, config: dict[str, Any]) -> Path | None:
+    """The synced replica this workspace reads, or ``None`` when it is offline (no ``online.project``).
+
+    One seam because three readers must agree on it *exactly*: the fold that folds it onto the local
+    graph (:func:`yigraf.extract._fold_replica`), the shared-log survival clock
+    (:func:`yigraf.counters.log_survival`), and the view's cache key
+    (:func:`yigraf.graphdb.source_fingerprint`). The last one is why a duplicated literal was a real
+    hazard rather than a style problem: a fingerprint that stats a *different* path than the fold reads
+    is a cache key that misses its own input, and the view then serves a divergence verdict computed
+    against a replica that has since moved.
+
+    The path may not exist yet — a bound workspace that has never synced has no replica file — and
+    callers handle that themselves: the readers fail open to "nothing folded", and the fingerprint wants
+    the ARRIVAL of the file in its digest, so it must be named whether or not it is there.
+    """
+    online = config.get("online") or {}
+    if not online.get("project"):
+        return None
+    return Path(root) / "yigraf" / (online.get("replica") or "cache/replica.db")

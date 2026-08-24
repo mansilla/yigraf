@@ -584,3 +584,78 @@ def test_artifacts_are_committed_detects_a_real_gitignored_workspace(tmp_path):
     (tmp_path / ".gitignore").write_text("")
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     assert cli._artifacts_are_committed(tmp_path) is True
+
+
+# --- and the surface that shows it: the count the AGENT reads comes from the cached view -------------
+#
+# Divergence is computed by the fold, but the fold is what a cache exists to skip. `_hook_graph` reads
+# through `graphdb.load_or_build`, so the SessionStart line — the only place this count reaches the
+# agent — reports whatever the view was materialized with. Measured on this repo: `⚠ 45 diverged` in the
+# injection while `yigraf status` in the terminal, which rebuilds, said none.
+
+
+def test_the_cached_view_cannot_serve_a_divergence_count_the_replica_has_outlived(repo):
+    """The field case end to end, through the two states the tests above pin: anonymous ⇒ reported,
+    identity known ⇒ not. `yigraf whoami` is what moves between them and it writes only the replica, so
+    while the replica was not an input the view kept serving the phantom the fix had already cleared —
+    and no verb could clear it, because the count is not computed on the path that reads it."""
+    from yigraf import graphdb
+
+    _plan_repo(repo)
+    config = _config(repo)
+    _replica(repo).append(_task_assertion(repo))
+    _complete_the_task(repo)                       # an unpushed edit: the phantom's precondition
+
+    graphdb.rebuild(repo, config)                  # the view, materialized while still anonymous
+    stored = graphdb.load(graphdb.db_path(repo))
+    assert list(stored.graph.get("diverged")) == ["task:greeting/1"], \
+        "precondition: the verdict really does ride the view — the fix is the cache key, not a strip"
+
+    _record_actor(repo)                            # `yigraf whoami`: the advertised way to clear it
+
+    graph, cached = graphdb.load_or_build(repo, config)  # exactly what `_hook_graph` does
+    assert cached is False, "the replica moved, so the view is not this graph"
+    assert list(graph.graph.get("diverged") or ()) == [], "and the phantom is gone from the agent's line"
+
+
+def test_a_teammates_pulled_belief_reaches_the_cached_read_path(repo):
+    """The same staleness, the other direction and the more expensive one: a belief that exists in no
+    file here arrives only over the wire, and int:team-reconciliation says it must participate in local
+    drift. Until the replica was an input, a pull left the view untouched, so the edit hook kept
+    answering from a graph the teammate's assertion had never entered."""
+    from yigraf import graphdb
+
+    config = _config(repo)
+    graphdb.rebuild(repo, config)
+    _, cached = graphdb.load_or_build(repo, config)
+    assert cached is True, "precondition: an unchanged workspace serves the view"
+
+    _teammate_belief(repo, config, symbol_content_hash(repo, SYM, config))
+
+    graph, cached = graphdb.load_or_build(repo, config)
+    assert cached is False
+    assert "mem:teammate1" in graph, "their belief anchors to my code on the hook path too"
+
+
+def test_freshness_and_the_cached_read_agree_about_the_view(repo):
+    """One view, two readers, and they had opposite answers: `load_or_build` compares fingerprints while
+    `status` byte-compares the projection, so a value in the view that no input accounted for made the
+    cache serve a graph the status line called `behind` — the freshness signal firing with no source
+    change, and clearing only until the next thing that moved the replica."""
+    from yigraf import graphdb, status
+
+    _plan_repo(repo)
+    config = _config(repo)
+    _replica(repo).append(_task_assertion(repo))
+    _complete_the_task(repo)
+
+    def _agree() -> bool:
+        fresh = status.compute_status(build_graph(repo, config)[0], repo, config).freshness == "fresh"
+        return fresh is graphdb.load_or_build(repo, config)[1]
+
+    graphdb.rebuild(repo, config)
+    assert _agree(), "just materialized: the cache is served and the view is fresh"
+
+    _record_actor(repo)
+    assert _agree(), "the replica moved: not served, and honestly behind — then rebuilt by that read"
+    assert _agree(), "and fresh again after it, rather than behind forever"

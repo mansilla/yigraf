@@ -47,6 +47,7 @@ from typing import Any, Iterable
 
 import networkx as nx
 
+from yigraf.config import replica_path
 from yigraf.memory import DEFAULT_MATURITY, MEMORY_FAMILY, landing_maturity
 
 #: Families that carry the telemetry nudge — the durable "why"/spec nodes whose recurrence across
@@ -210,12 +211,9 @@ def log_survival(root: Path, config: dict) -> dict[str, int]:
     replica leaves every belief on the git clock, so a workspace that has never synced is unaffected —
     and costs nothing, since the ``online.project`` check short-circuits before any I/O.
     """
-    online = (config or {}).get("online") or {}
-    project = online.get("project")
-    if not project:
-        return {}
-    replica = Path(root) / "yigraf" / (online.get("replica") or "cache/replica.db")
-    if not replica.exists():
+    project = ((config or {}).get("online") or {}).get("project")
+    replica = replica_path(root, config or {})
+    if replica is None or not replica.exists():
         return {}
     try:
         from yigraf.onlinelog import SqliteAssertionStore
@@ -271,7 +269,11 @@ def apply_maturity(graph: nx.DiGraph, root: Path, config: dict, cache=None) -> N
     # :func:`git_tracks_any`). Graph-level, not per-node: the failure is a whole-substrate condition
     # (an untracked workspace, a repo with no history), never one file's business. It rides the
     # node-link round-trip, and `graphdb.load_or_build` re-runs this pass on a cache hit exactly when
-    # the floor is armed, so both the built and the loaded graph carry a current answer.
+    # the floor is armed, so both the built and the loaded graph carry a current answer. Git-derived
+    # like the per-node `survival` it gates, but deliberately NOT in `graph._VOLATILE_GRAPH_ATTRS`:
+    # stripping `survival` re-derives to the same number, while stripping this loses the distinction
+    # between "measured False" and "never asked", and a missing key reads as ARMED
+    # (:func:`survival_floor_applies`) — so dropping it would disarm a gate rather than recompute it.
     #
     # Computed ONLY when the floor is armed. With the floor off — the default, and every repo that
     # never opts in — the answer cannot change a single verdict, so paying a git call for it would buy

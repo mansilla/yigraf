@@ -9,13 +9,23 @@ target anyway (R1/R6). So the view lives under the gitignored ``yigraf/.local/``
 
 The view is keyed by a cheap **content fingerprint** of the graph's inputs — the source files
 :func:`yigraf.extract.build_graph` walks plus the authored intent/plan/memory markdown plus
-``config.yaml``. A read path (:func:`load_or_build`) loads the persisted view when the fingerprint
-still matches, skipping the tree-sitter rebuild; otherwise it rebuilds and re-materializes. This is
-*correct* because the persisted graph is a pure function of those inputs: the volatile / git-HEAD
-overlays (``survival``, telemetry, the ``settled`` verdict) are stripped at store time
-(:data:`yigraf.graph._VOLATILE_NODE_ATTRS`) and re-applied on the in-memory graph after a load, exactly
+``config.yaml`` plus, for a workspace bound to a project, the synced ``replica.db``. A read path
+(:func:`load_or_build`) loads the persisted view when the fingerprint still matches, skipping the
+tree-sitter rebuild; otherwise it rebuilds and re-materializes. This is *correct* because the persisted
+graph is a pure function of those inputs: the volatile / git-HEAD overlays (``survival``, telemetry, the
+``settled`` verdict) are stripped at store time (:data:`yigraf.graph._VOLATILE_NODE_ATTRS`,
+:data:`~yigraf.graph._VOLATILE_GRAPH_ATTRS`) and re-applied on the in-memory graph after a load, exactly
 as after a build. Never truth, always recomputable: any corruption / schema mismatch falls open to a
 full rebuild, and a view that cannot be *written* falls open to an uncached one (:class:`ViewUnwritable`).
+
+"Pure function of those inputs" is the whole warrant, and the replica is in the list because two things
+the view carries come from it and from nowhere else: a teammate's pulled assertion, folded onto the same
+base as the local artifacts, and the divergence verdict over the revisions that fold declined
+(:func:`yigraf.extract._fold_replica`). Leaving it out did not make the view cheaper — it made the
+cached read serve a *snapshot* of both, taken whenever the view was last materialized. The count that
+reached the agent was measured against a replica that had since moved, and the one action yigraf
+advertises for clearing a phantom count (``yigraf whoami``, which teaches the workspace its own actor)
+writes only the replica, so it could never invalidate the view it was trying to correct.
 """
 from __future__ import annotations
 
@@ -30,12 +40,13 @@ from pathlib import Path
 import networkx as nx
 
 from yigraf.astnorm import ANCHOR_ALGO, parse_file_target
+from yigraf.config import replica_path
 from yigraf.graph import _EDGES_KEY, _VOLATILE_NODE_ATTRS, empty_graph, to_node_link
 
 #: Bumped when the SQLite schema or the fingerprint recipe changes incompatibly (⇒ every existing view
 #: is treated as absent and rebuilt). Distinct from :data:`yigraf.graph.SCHEMA_VERSION` (the node-link
 #: shape) — this guards the DB layout + fingerprint, so either changing invalidates cached views.
-DB_SCHEMA_VERSION = 2
+DB_SCHEMA_VERSION = 3
 
 #: Where an *unresolved* ``file:`` locus is stashed. These are inputs whose ARRIVAL matters, so the
 #: fingerprint must watch them even though no node exists for them yet (see :func:`governed_file_paths`).
@@ -56,9 +67,12 @@ CREATE TABLE edges (source TEXT NOT NULL, target TEXT NOT NULL, relation TEXT,
 """
 
 #: Guidance from a materialize that failed, parked on ``graph.graph`` for a *write* seam's caller to
-#: surface — the same "property of this run, not of a belief" channel as ``diverged``
-#: (:func:`yigraf.extract._fold_replica`) and ``survival_measurable``. Popped at store time, so the
-#: derived signal can never land in the persisted view (design law #6).
+#: surface. A property of this run and not of the projection, so it is stripped at serialization
+#: (:data:`yigraf.graph._VOLATILE_GRAPH_ATTRS`) and can never land in the persisted view (design law
+#: #6). ``diverged`` and ``survival_measurable`` used to be named here as the other two members of that
+#: channel, and neither is one: both are properties of the *inputs* — see the reasons in that set's
+#: docstring. Misfiling ``diverged`` is what let a stale count reach the agent, since believing it was
+#: stripped at store time is also believing it could not be served from the view.
 _UNWRITABLE_KEY = "view_unwritable"
 
 
@@ -123,7 +137,16 @@ def load_workspace(root: Path) -> nx.DiGraph | None:
 def _input_files(root: Path, config: dict) -> list[Path]:
     """Every file whose content the materialized graph depends on: the source files
     :func:`yigraf.extract.build_graph` walks (same discovery + ignore rules) + the authored
-    intent/plan/memory markdown + ``config.yaml``. Returned as absolute paths.
+    intent/plan/memory markdown + ``config.yaml`` + the synced replica, when there is one. Returned as
+    absolute paths.
+
+    The replica is an input for the same reason every other entry here is: the build reads it
+    (:func:`yigraf.extract._fold_replica` folds a teammate's assertions onto the local base and records
+    which declined revisions diverge), so a view materialized before it moved is a view of different
+    inputs. It is named whether or not it exists yet — a bound workspace that has never synced has no
+    replica file, and its *arrival* is what starts the fold, exactly like a governed ``file:`` locus
+    (:func:`governed_file_paths`). Offline there is nothing to name: no ``online.project`` ⇒
+    :func:`~yigraf.config.replica_path` returns ``None`` ⇒ the digest is what it always was.
     """
     from yigraf.extract import _iter_source_files  # local: avoid an import cycle at module load
     from yigraf.languages import available_extractors, extension_map
@@ -141,6 +164,9 @@ def _input_files(root: Path, config: dict) -> list[Path]:
     config_path = ws / "config.yaml"
     if config_path.is_file():
         paths.append(config_path)
+    replica = replica_path(root, config)
+    if replica is not None:
+        paths.append(replica)
     return paths
 
 
@@ -230,8 +256,11 @@ def materialize(graph: nx.DiGraph, path: Path, fingerprint: str) -> None:
     id, say) is a real bug and must still surface as itself rather than be dressed up as bad permissions.
     """
     path = Path(path)
-    data = to_node_link(graph)  # detached from ``graph`` — stripping below can't edit the live graph
-    data["graph"].pop(_UNWRITABLE_KEY, None)  # a per-run signal never enters the view (law #6)
+    # The serializer strips the per-run graph attr (`view_unwritable`) along with the volatile node
+    # ones, so there is nothing left to pop here. It has to be there rather than here:
+    # `status._freshness` compares this same projection against a rebuild, and a key stripped only on
+    # the way to disk makes the two differ over a property neither the source nor the fold produced.
+    data = to_node_link(graph)  # detached from ``graph`` — never edits the live graph
     tmp = path.with_name(path.name + ".tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)

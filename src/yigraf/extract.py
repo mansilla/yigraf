@@ -24,6 +24,7 @@ import networkx as nx
 from yigraf import artifacts, counters, drift, filelog, memory
 from yigraf.astnorm import ANCHOR_ALGO
 from yigraf.cache import StructureCache, file_sha
+from yigraf.config import replica_path
 from yigraf.filelog import FILE_TRUTH_FAMILIES, FileLog
 from yigraf.fold import fold_assertions
 from yigraf.graph import empty_graph
@@ -202,12 +203,12 @@ def _fold_replica(graph: nx.DiGraph, root: Path, config: dict,
     today.
     """
     graph.graph.setdefault("diverged", [])
-    online = config.get("online") or {}
-    project = online.get("project")
-    if not project:
-        return 0
-    replica = Path(root) / "yigraf" / (online.get("replica") or "cache/replica.db")
-    if not replica.exists():
+    project = (config.get("online") or {}).get("project")
+    # One seam for the path, shared with the fingerprint that must watch exactly this file
+    # (:func:`yigraf.config.replica_path`): a cache key over a *different* path than the fold reads is a
+    # key that misses its own input, which is how a stale divergence verdict reached the agent.
+    replica = replica_path(root, config)
+    if replica is None or not replica.exists():
         return 0
     try:
         from yigraf.onlinelog import SqliteAssertionStore

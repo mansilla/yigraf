@@ -57,6 +57,32 @@ make it miss something rather than by reading it.
   re-stamps the wrong region.
 
 ### Fixed
+- **The divergence count the agent read came from the cached view, not from the replica.** Third
+  instance of the omission class the governed-`file:` fix below is the second of, and the sharpest,
+  because the surface it lied to is the agent's. `⚠ 45 diverged` in the SessionStart injection while
+  `yigraf status` in the same terminal said none: `_hook_graph` reads through `load_or_build`, so the
+  line served whatever the last materialize measured, while `status` always rebuilds. The replica was
+  not a fingerprint input, so nothing a *sync* does could invalidate the view — and `whoami`, the one
+  fix 1.5.2 advertises for a phantom count (a workspace that has only ever pulled learns its own actor
+  and its unpushed edits stop reporting), writes only the replica. The fix could not reach the surface
+  that showed the phantom. Two readers of one view disagreed on top of that: `load_or_build` compared
+  fingerprints and served the cache while `_freshness` byte-compared the projection and called it
+  `behind` — the freshness signal firing with byte-identical nodes and edges and no source change.
+  The replica is an input now (one `stat`, and only when `online.project` is set), which also fixes the
+  sibling staleness: a pulled belief left the view untouched, so the edit hook kept answering from a
+  graph a teammate's assertion had never entered, against `int:team-reconciliation`. `DB_SCHEMA_VERSION`
+  goes to 3 per its own contract (one rebuild on upgrade), and the enumeration that justifies the whole
+  cache is superseded rather than patched, for the reason its own predecessor gave — a live belief whose
+  soundness argument a reader can check and find false does not get to stand on the node that justifies
+  the cache (mem:1767afc5e6945e6e supersedes mem:9d39e40507126bf6).
+  `graphdb`'s comment had `diverged` filed as a per-run signal "popped at store time" *alongside* the
+  guidance flag, and it was neither popped nor per-run: believing it could not be persisted is what made
+  it invisible that it was being served. The per-run channel is now one attr with one owner
+  (`graph._VOLATILE_GRAPH_ATTRS`, stripped in the serializer so the store and the freshness comparison
+  see one projection). `survival_measurable` stays *in* the view on purpose and a test said so within a
+  minute of the attempt: stripping `survival` re-derives to the same number, stripping that one loses
+  the difference between measured-`False` and never-asked, and a missing key reads as ARMED
+  (mem:104fbd53251ad7f8).
 - **A dead section was reported as a benign `renamed`, onto a coincidence.** Two false negatives, in the
   one class this feature exists to remove. `mint_locus_node` scoped its rename rescue to one file and
   required a unique hit; `drift.resolve_renames` then did its own lookup in a graph-wide index and

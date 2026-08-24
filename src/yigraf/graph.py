@@ -35,6 +35,26 @@ _EDGES_KEY = "links"
 #: sidecar overlay. All are re-derived on read paths, so dropping them from the view loses nothing.
 _VOLATILE_NODE_ATTRS = ("survival", "usage", "last_seen", "upholds")
 
+#: The same rule one level up: ``g.graph`` attrs that describe *this run* rather than the projection.
+#: Only ``view_unwritable`` qualifies — guidance from the materialize that just failed
+#: (:data:`yigraf.graphdb._UNWRITABLE_KEY`), a fact about this process's write, about which the source
+#: files say nothing.
+#:
+#: Stripped *here*, in the serializer, rather than at the store seam, because the same projection feeds
+#: two consumers: the write, and the byte-comparison that decides freshness
+#: (:func:`yigraf.status._freshness`). An attr only one of them strips reads as "the view is behind the
+#: source" while nothing in the source moved.
+#:
+#: The two neighbours that look like members and are not, because *this* set is not "recomputable" but
+#: "not a property of the inputs at all":
+#:
+#: - ``survival_measurable`` is git-derived like ``survival``, but its absence is not its ``False``
+#:   (:func:`yigraf.counters.survival_floor_applies` reads a missing key as *armed*, on purpose), so
+#:   dropping it would silently disarm an operator's gate rather than re-derive to the same answer.
+#: - ``diverged`` is a verdict over the synced replica, which :func:`yigraf.graphdb.source_fingerprint`
+#:   watches, so it is exactly as derived-from-inputs as the folded assertions it is a verdict about.
+_VOLATILE_GRAPH_ATTRS = ("view_unwritable",)
+
 
 def empty_graph() -> nx.DiGraph:
     """A fresh, empty directed graph carrying the current schema version."""
@@ -60,6 +80,8 @@ def to_node_link(g: nx.DiGraph) -> dict:
     """
     data = nx.node_link_data(g, edges=_EDGES_KEY)
     data["graph"] = dict(data.get("graph") or {})  # detach: node_link_data returns g.graph by reference
+    for attr in _VOLATILE_GRAPH_ATTRS:  # R1, one level up: a property of this run is not the projection
+        data["graph"].pop(attr, None)
     for node in data["nodes"]:  # R1: the committed projection carries no volatile/read-time state
         for attr in _VOLATILE_NODE_ATTRS:
             node.pop(attr, None)

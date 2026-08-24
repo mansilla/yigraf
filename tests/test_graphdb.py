@@ -238,3 +238,30 @@ def test_a_programming_error_is_not_disguised_as_an_unwritable_view(tmp_path: Pa
     monkeypatch.setattr(graphdb.sqlite3, "connect", lambda *_a, **_k: _BuggyConn())
     with pytest.raises(sqlite3.IntegrityError):
         graphdb.materialize(graph, graphdb.db_path(root), "fp")
+
+
+# -- the synced replica is an input, not an ambient condition (the stale-divergence field bug) --------
+
+
+def test_the_synced_replica_is_an_input_to_the_fingerprint(tmp_path: Path):
+    """``_fold_replica`` reads the replica, so a view materialized before it moved is a view of other
+    inputs — and the count it carries was measured against a replica that no longer exists. Watched only
+    when this workspace is bound: offline the file is not named at all, so nothing about the digest of a
+    repo that has never synced changes."""
+    root = _repo(tmp_path)
+    offline = default_config()
+    online = default_config()
+    online["online"]["project"] = "proj"
+
+    replica = root / "yigraf" / "cache" / "replica.db"
+    replica.parent.mkdir(parents=True, exist_ok=True)
+
+    fp_absent = graphdb.source_fingerprint(root, online)
+    replica.write_bytes(b"a replica that has arrived")     # its ARRIVAL is what starts the fold
+    fp_present = graphdb.source_fingerprint(root, online)
+    assert fp_present != fp_absent
+
+    off_before = graphdb.source_fingerprint(root, offline)
+    replica.write_bytes(b"a replica that has since grown")  # stat-only: size moved
+    assert graphdb.source_fingerprint(root, online) != fp_present
+    assert graphdb.source_fingerprint(root, offline) == off_before, "offline names no replica"
