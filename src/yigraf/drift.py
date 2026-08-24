@@ -44,6 +44,11 @@ class DriftItem:
     new_locator: str | None = None  # the resolved locator, for a rename
     detail: str = ""
     relation: str = "implements"  # which drift-bearing relation drifted (implements | concerns)
+    #: The commit the drifted anchor was stamped at, when the edge recorded one
+    #: (:class:`yigraf.artifacts.Implements`) — what dates a STALE completion. ``None`` for a `concerns`
+    #: anchor (memories re-stamp through `reaffirm`, which reports its own outcome) and for any anchor
+    #: stamped before the field existed, so every reader must degrade rather than assume it.
+    stamped_at: str | None = None
 
 
 #: The anchor algos whose hash survives a rename, so a dangling edge can be re-anchored by matching it.
@@ -157,7 +162,7 @@ def compute_drift(graph: nx.DiGraph) -> list[DriftItem]:
         current = graph.nodes[dst].get("content_hash")
         if current is not None and current != anchor:
             items.append(DriftItem("soft", src, dst, detail="body changed since anchored",
-                                   relation=relation))
+                                   relation=relation, stamped_at=attrs.get("stamped_at")))
 
     for node_id, node_attrs in graph.nodes(data=True):
         if node_id in superseded:  # a superseded decision's dangling concern is historical — no nag
@@ -165,7 +170,7 @@ def compute_drift(graph: nx.DiGraph) -> list[DriftItem]:
         for relation, attr in _DRIFT_RELATIONS.items():
             for entry in node_attrs.get(attr, []):
                 items.append(DriftItem("hard", node_id, entry["sym"], detail="symbol not found",
-                                       relation=relation))
+                                       relation=relation, stamped_at=entry.get("stamped_at")))
 
     items.sort(key=lambda it: (it.kind, it.task_id, it.locator))
     return items

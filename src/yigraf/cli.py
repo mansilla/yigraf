@@ -24,7 +24,7 @@ from yigraf import (__version__, artifacts, counters, embeddings, graphdb, memor
 from yigraf import show as show_mod  # aliased: the module and the `show` command share a name
 from yigraf.astnorm import (ANCHOR_ALGO, DOC_SUFFIXES, locus_hash, parse_file_target,
                             parse_section_target, section_slugs)
-from yigraf.config import TOKEN_ENV, load_config
+from yigraf.config import TOKEN_ENV, load_config, replica_path
 from yigraf.drift import (compute_drift, is_reverifiable, is_stale_completion, is_surfaced,
                           stale_completions)
 from yigraf.extract import build_graph, symbol_content_hash
@@ -443,6 +443,63 @@ def intent(
     typer.echo(f"Created intent int:{slug.casefold()} ({dest})")
 
 
+#: Shared help for ``--why-file``, on every verb that takes a ``--why``.
+_WHY_FILE_HELP = ("Read --why from a file instead of the command line (mutually exclusive with it). "
+                  "For a long reasoning: a refused command is re-sent for the cost of a path rather "
+                  "than the whole argument, and nothing between you and the file expands `backticks`, "
+                  "$vars or !history. Newlines collapse to spaces — **Why:** is one line.")
+
+#: The separator repeated ``--rejected`` values are joined with. Not a parser token: it is the spelling
+#: the store already used, typed by hand in 12 of yigraf's own memories before the flag could repeat.
+_REJECTED_SEP = " || "
+
+
+def _why_text(why: str | None, why_file: Path | None) -> str | None:
+    """The reasoning from ``--why`` or ``--why-file`` — never both, ``None`` when neither was passed.
+
+    A long ``--why`` is the most expensive argument yigraf takes and the most fragile. Expensive because
+    a refusal costs the whole thing again: every capture guard exits 0 with guidance (design law #1), and
+    the agent's next move is to re-transmit the argument it just composed — which is what made a late
+    refusal on this path worth filing (feedback-v4 #15; the *ordering* half of that ask was already
+    satisfied, the empirical/evidence combination is refused before any build). Fragile because a shell
+    is a text transformer: backticks, ``$`` and ``!`` silently rewrite reasoning rather than failing,
+    and a mangled ``--why`` is unrecoverable prose, not a syntax error. A file is immune to both.
+
+    Collapsed to one line because ``**Why:**`` *is* one line (:func:`yigraf.memory._parse_body`), and a
+    file is the one input that naturally arrives with newlines in it. Collapsing here rather than
+    rejecting a multi-line file is the point of the flag — an agent writing a paragraph to a file must
+    not have to also flatten it.
+    """
+    if why_file is None:
+        return why or None
+    if why:
+        _guidance("pass --why or --why-file, not both — they fill the same field, and yigraf will not "
+                  "guess which one you meant to win. Drop whichever is the leftover.")
+    try:
+        raw = Path(why_file).read_text(encoding="utf-8")
+    except OSError as exc:
+        _guidance(f"couldn't read --why-file {why_file}: {exc}. Nothing was captured — write the "
+                  f"reasoning to that path and re-run the same command.")
+    text = " ".join(raw.split())  # one line: **Why:** is a single line, and a file arrives with newlines
+    if not text:
+        _guidance(f"--why-file {why_file} is empty, so there is no reasoning to capture. Write it there "
+                  f"and re-run, or drop the flag to capture the claim without a why.")
+    return text
+
+
+def _joined_rejected(rejected: list[str] | None) -> str | None:
+    """Join repeated ``--rejected`` values with :data:`_REJECTED_SEP`; ``None`` when none were passed.
+
+    ``--rejected`` was a single-value option, so a second one silently won and the first alternative was
+    gone — no warning, at capture time, on the most perishable content in the node (found recording two
+    ruled-out designs for one decision). Repeatable is the fix rather than a refusal: a decision often
+    rejects more than one thing, the store already spelled that ``a || b`` by hand, and a refusal would
+    make the caller do the joining that the flag can now do itself.
+    """
+    values = [r.strip() for r in (rejected or []) if r and r.strip()]
+    return _REJECTED_SEP.join(values) or None
+
+
 @app.command(name="supersede-intent")
 def supersede_intent(
     old_slug: str = typer.Argument(..., help="The intent slug being reversed (its int:<slug> is archived)."),
@@ -452,6 +509,7 @@ def supersede_intent(
     design: str = typer.Option(None, "--design", help="Optional approach / the 'how'."),
     type: str = typer.Option("requirement", "--type", help="requirement | goal | capability."),
     why: str = typer.Option("", "--why", help="Why the premise changed — captured as a memory serving the new intent."),
+    why_file: Path = typer.Option(None, "--why-file", help=_WHY_FILE_HELP),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
     """Reverse an intent: create the replacement, archive the old, and write a real int→int supersedes edge.
@@ -487,7 +545,8 @@ def supersede_intent(
 
     if why:
         node = _capture_memory(repo, workspace, statement=f"{new_id} supersedes {old_id}", type_="decision",
-                               why=why, serves=[new_id], concern_syms=[], rejected=None,
+                               why=_why_text(why, why_file) or "", serves=[new_id],
+                               concern_syms=[], rejected=None,
                                supersedes=[], promotable=False, force_new=True)
         _report_capture(node)
 
@@ -682,7 +741,8 @@ def link(
     if target.startswith("sym:") or target.startswith("file:"):
         config = load_config(workspace / "config.yaml")
         anchor, algo = _anchor_or_guide(repo, config, target)
-        artifacts.add_edge_to_plan(plan_file, task_id, "implements", target, anchor=anchor, anchor_algo=algo)
+        artifacts.add_edge_to_plan(plan_file, task_id, "implements", target, anchor=anchor,
+                                   anchor_algo=algo, stamped_at=counters._head_sha(repo))
         typer.echo(f"Linked {task_id} —implements→ {target} (anchored {anchor[:12]})")
     elif target.startswith("int:"):
         artifacts.add_edge_to_plan(plan_file, task_id, "tracks", target)
@@ -897,6 +957,204 @@ def reanchor(
                + (" It stays a policy anchor (governs — never drifts)." if governs_move else ""))
 
 
+#: Frontmatter fields that can name a memory id and BLOCK a re-key. ``supersedes`` (memory) and
+#: ``left``/``right`` (resolution) are the *cascading* ones — inside their own node's id payload, so
+#: re-keying a node would re-key them too. ``pending_supersedes`` and the rejection premises do not
+#: cascade but still block: a human is mid-decision about that node, or another belief's rejection hangs
+#: on its liveness. ``equivalent_to`` needs no entry — a reconcile verdict always also writes the
+#: resolution artifact that names the pair, which is cascading and catches it.
+_MEMORY_BLOCKING_FIELDS = ("supersedes", "pending_supersedes",
+                           "rejected_valid_when", "rejected_invalidated_when")
+_RESOLUTION_REF_FIELDS = ("left", "right")
+
+
+def _amend_referrers(repo: Path, mem_id: str) -> tuple[list[str], list[Path]]:
+    """``(blockers, back_refs)`` for ``mem_id``: what forbids a re-key, and what merely needs re-pointing.
+
+    ``amend`` re-keys the node, unavoidably: the id is a content hash over exactly the statement / why /
+    rejected it repairs (``memid-v1``), and a test pins the on-disk id to that payload. So a referrer is
+    usually not a bookkeeping chore but a **cascade** — a successor's id hashes its own ``supersedes``
+    list and a resolution's hashes the pair it reconciles, so re-keying one node would re-key its
+    referrers, and theirs, each losing the telemetry and history that hung off the old id. Those refuse:
+    a belief something has already built on is corrected additively, by ``supersede``.
+
+    ``superseded_by`` is the one exception, and excluding it is not a convenience — it is the difference
+    between the verb working and not. A ``supersede`` takes a ``--why`` of its own, so the node most
+    likely to need repair is the successor that was just written, whose only referrer is the predecessor
+    pointing forward at it. That back-pointer is a stamp rather than an identity: it is absent from the
+    id payload (unlike ``supersedes``, its mirror), so re-pointing it costs nothing and cascades nowhere.
+    ``render_memory`` is lossless, so the predecessor is rewritten with only that field moved.
+    """
+    blockers: list[str] = []
+    back_refs: list[Path] = []
+    for path in sorted(memory.memory_dir(repo).glob("*.md")) if memory.memory_dir(repo).is_dir() else []:
+        meta, _ = memory._split_frontmatter(path.read_text(encoding="utf-8"))
+        if meta.get("id") == mem_id:
+            continue  # its own id is not a reference to itself
+        for field in _MEMORY_BLOCKING_FIELDS:
+            value = meta.get(field)
+            names = value if isinstance(value, list) else [value] if value else []
+            if mem_id in names:
+                blockers.append(f"{meta.get('id', path.name)} ({field})")
+        if meta.get("superseded_by") == mem_id:
+            back_refs.append(path)
+    res_dir = resolution.resolutions_dir(repo)
+    for path in sorted(res_dir.glob("*.md")) if res_dir.is_dir() else []:
+        meta, _ = memory._split_frontmatter(path.read_text(encoding="utf-8"))
+        if any(meta.get(f) == mem_id for f in _RESOLUTION_REF_FIELDS):
+            blockers.append(f"{meta.get('id', path.name)} ({meta.get('kind', 'resolution')})")
+    return blockers, back_refs
+
+
+def _pushed_ids(repo: Path, config: dict) -> set[str] | None:
+    """Assertion ids this workspace's shared log already holds — or ``None`` when that is unknowable.
+
+    ``None`` is the honest third answer and the reason this returns a tri-state: offline (no
+    ``online.project``) there is no shared log to contradict, and an unreadable replica means yigraf
+    cannot tell. Both must read as "no positive evidence it was pushed", so a caller can refuse only on
+    a *known* push and never on a broken cache (design law #5) — the same shape
+    ``counters.survival_floor_applies`` uses for a measurement it could not take.
+    """
+    project = (config.get("online") or {}).get("project")
+    path = replica_path(repo, config)
+    if not project or path is None or not path.exists():
+        return None
+    try:
+        from yigraf.onlinelog import SqliteAssertionStore
+
+        store = SqliteAssertionStore(path)
+        try:
+            return store.known_ids(project)
+        finally:
+            store.close()
+    except Exception:  # noqa: BLE001 - a broken replica must not block a local record repair
+        return None
+
+
+@app.command()
+def amend(
+    target: str = typer.Argument(..., help="The memory id (mem:...) whose RECORD is wrong."),
+    statement: str = typer.Option(None, "--statement", help="Replace the one-line claim (the H2 heading)."),
+    why: str = typer.Option(None, "--why", help="Replace the reasoning."),
+    why_file: Path = typer.Option(None, "--why-file", help=_WHY_FILE_HELP),
+    rejected: list[str] = typer.Option(None, "--rejected", help="Replace the rejected alternative (repeatable — joined with \' || \')."),
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+) -> None:
+    """Repair a botched RECORD — a shell-mangled --why, a typo in the claim — filing no mind-change.
+
+    The verb :func:`yigraf.memory._render_body` has been naming in its own refusal, for the gap the
+    field kept paying: a `--why` that a shell rewrote (backticks, `$`, `!`) is unrecoverable prose, and
+    the only exits were to delete the artifact by hand or to `supersede` — which files a mind-change
+    nobody had and leaves the mangled text standing as the "superseded" belief, in the trail that is the
+    most valuable structure in the graph. `reanchor` is the same argument for a moved locus, and this is
+    its sibling: the belief, its anchors, its grounding, its maturity and its history are untouched, and
+    no supersedes edge is written.
+
+    One meaning per verb. The claim is wrong → `supersede`. The locus moved → `reanchor`. The locus
+    drifted → `reaffirm`. **What you WROTE about an unchanged belief is wrong → `amend`.** If your mind
+    changed at all, this is the wrong verb: it rewrites the record rather than preserving both readings.
+
+    It re-keys the node, because it must: the id is a content hash over exactly the fields it repairs
+    (``memid-v1``), so the new record gets the new id, the old file is removed, and the accumulated
+    telemetry moves across (same belief, so its earned survival is not forfeited). That is also why it
+    refuses on a node anything else names, or one already pushed to a shared log — see
+    :func:`_amend_referrers` and the append-only note below.
+    """
+    workspace = _require_workspace(repo)
+    config = load_config(workspace / "config.yaml")
+    if not target.startswith("mem:"):
+        _guidance(f"amend repairs a memory record and takes a memory id (mem:...), got: {target}. "
+                  f"An intent's statement is revised with `yigraf supersede-intent`; a task's text is "
+                  f"the checkbox line in the plan file.")
+    path = memory.find_memory(repo, target)
+    if path is None:
+        _guidance(f"No memory node with id {target}. "
+                  f'Find the one you mean with `yigraf context "<topic>"` or `yigraf show <id>`.')
+    node = memory.read_memory(path)
+
+    new_why = _why_text(why, why_file)
+    new_rejected = _joined_rejected(rejected)
+    fields = {"statement": statement if statement is not None else node.statement,
+              "why": new_why if new_why is not None else node.why,
+              "alternatives": new_rejected if new_rejected is not None else node.alternatives}
+    if (fields["statement"], fields["why"], fields["alternatives"]) == (
+            node.statement, node.why, node.alternatives):
+        _guidance(f"nothing to amend on {target} — pass --statement, --why/--why-file or --rejected "
+                  f"with the corrected text. To see what it currently says: `yigraf show {target}`.")
+
+    # A retired belief's record is not worth re-keying: its successor carries the live claim, and the
+    # supersedes edge pointing here is exactly the cascading reference below.
+    if node.status == "superseded" or node.superseded_by:
+        _guidance(f"{target} is superseded — its record is history now, and the live claim is "
+                  f"{node.superseded_by or 'its successor'}. Amend that one instead; repairing a "
+                  f"retired node would re-key it and break the trail that explains why it was retired.")
+
+    blockers, back_refs = _amend_referrers(repo, target)
+    if blockers:
+        _guidance(f"{target} is named by {', '.join(blockers)}, so its record can't be repaired in "
+                  f"place: amend re-keys the node (the id hashes the statement/why/rejected it would "
+                  f"fix), and a referrer's own id hashes what it points at — the re-key would cascade "
+                  f"through every one of them. Something has already built on this belief, so correct "
+                  f"it additively: `yigraf supersede {target} \"<the claim, stated right>\"` keeps both "
+                  f"readings and leaves those references intact.")
+
+    # Append-only means never retractable: a pushed assertion is on other machines, and re-keying here
+    # would mint a SECOND live node saying almost the same thing — which for a content-addressed family
+    # arrives as a knowledge conflict, not a correction (extract._fold_replica). Only a KNOWN push
+    # refuses; unknown or offline proceeds, since then no shared log can be contradicted.
+    pushed = _pushed_ids(repo, config)
+    if pushed is not None and target in pushed:
+        _guidance(f"{target} has already been pushed to the shared log, and an append-only log has no "
+                  f"retraction — amending it locally would mint a second node while teammates keep the "
+                  f"one they pulled, surfacing as a knowledge conflict rather than a fix. Say it again "
+                  f"properly instead: `yigraf supersede {target} \"<the claim, stated right>\"`.")
+
+    new_id = memory.memory_id(
+        node.type, fields["statement"], fields["why"], fields["alternatives"], list(node.serves),
+        [c.sym for c in node.concerns], [e.ref for e in node.evidence], list(node.supersedes),
+        rejected_valid_when=list(node.rejected_valid_when),
+        rejected_invalidated_when=list(node.rejected_invalidated_when))
+    changed = [name for name, value in
+               (("statement", statement), ("why", new_why), ("rejected", new_rejected))
+               if value is not None]
+
+    # Splice rather than re-render: the body may carry hand-written prose the three markers do not
+    # describe, and re-deriving it from the fields would delete that (memory._render_body refuses to).
+    node.body = memory.splice_body(node.body or "", statement=statement, why=new_why,
+                                   alternatives=new_rejected)
+    node.statement, node.why, node.alternatives = (
+        fields["statement"], fields["why"], fields["alternatives"])
+    node.id = new_id
+    node.slug = memory.slugify(fields["statement"])
+    dest = memory.hashed_memory_path(repo, node.slug, new_id)
+    node.source_file = f"memory/{dest.name}"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(memory.render_memory(node), encoding="utf-8")
+    if dest.resolve() != path.resolve():
+        path.unlink()  # one record, one file: the old id is not a second live belief
+    for ref in back_refs:  # the predecessor's forward stamp, re-pointed (never an identity — see above)
+        predecessor = memory.read_memory(ref)
+        predecessor.superseded_by = new_id
+        ref.write_text(memory.render_memory(predecessor), encoding="utf-8")
+
+    # The belief is the same one, so it keeps what it earned — upholds/usage are keyed by id and would
+    # otherwise silently reset to zero, demoting a settled node for a typo fix (counters.apply_maturity).
+    try:
+        telemetry = counters.load_telemetry(repo)
+        if target in telemetry:
+            telemetry[new_id] = telemetry.pop(target)
+            counters.telemetry_path(repo).write_text(json.dumps(telemetry, indent=2), encoding="utf-8")
+    except (OSError, ValueError):
+        pass  # a machine-local sidecar must never fail a write that already landed (design law #5)
+
+    _rebuild(repo)
+    typer.echo(f"Amended {target} ({' + '.join(changed)}) — now {new_id}. The belief, its anchors and "
+               f"its history are unchanged, and no supersede was recorded; the id moved because it is "
+               f"a hash of the text that was repaired."
+               + (f" Re-pointed the superseded_by stamp on {len(back_refs)} predecessor(s)."
+                  if back_refs else ""))
+
+
 def _resolve_concerns(repo: Path, config: dict, graph, syms: list[str],
                       was_anchored: set[str] | None = None,
                       *, typed: bool = True) -> tuple[list[memory.Concern], list[str]]:
@@ -967,7 +1225,37 @@ def _resolve_evidence(repo: Path, config: dict, graph, refs: list[str]) -> tuple
                                 + _symbol_suggestion(graph, ref, repo))
         else:
             evidence.append(memory.Evidence(ref=ref))  # opaque (commit:/url/text) — no anchor, no drift
+            warnings += _commit_evidence_note(repo, ref)
     return evidence, warnings
+
+
+def _commit_evidence_note(repo: Path, ref: str) -> list[str]:
+    """Say what a ``commit:<sha>`` citation actually resolves to — or that it resolves to nothing.
+
+    ``commit:`` is deliberately *opaque* evidence: immutable, so it never drifts, so nothing downstream
+    ever re-examines it. That is exactly why it was the one grounding ref accepted with no feedback at
+    all, and the field's report is the consequence: a claim about what a human observed on one date was
+    grounded in a record produced the day after, "accepted silently… it makes an unrelated artifact look
+    like the basis for a claim" (feedback-v4 #16).
+
+    yigraf cannot judge that — the observation's date lives in the prose, not in the graph — so it does
+    the one thing that lets the *author* judge it while the capture is still cheap to redo: resolve the
+    sha and show its date and subject. A wrong citation is usually obvious the moment its subject line
+    is read next to the claim. An unresolvable sha is a stronger signal and gets its own line: a typo,
+    or a sha from another clone. Both are warnings, never refusals — a commit may legitimately not be
+    fetched yet, and evidence is captured as asserted (the ``--concerns`` forward-reference rule).
+    """
+    sha = ref[len("commit:"):].strip() if ref.startswith("commit:") else ""
+    if not sha:
+        return []
+    # %cs is the committer date as YYYY-MM-DD — the field a plausibility question is actually asked in.
+    shown = counters._git(repo, "show", "-s", "--format=%h %cs %s", f"{sha}^{{commit}}")
+    if not shown or not shown.strip():
+        return [f"⚠ --evidence {ref} doesn't resolve to a commit in this repo — a typo, an abbreviation "
+                f"that no longer disambiguates, or a sha from another clone. It is captured as you "
+                f"wrote it and will never drift or be re-checked, so nothing else will catch it."]
+    return [f"↳ --evidence {ref} is {shown.strip()} — confirm that dates and reads like the observation "
+            f"this claim rests on; a commit that merely mentions the topic is not evidence for it."]
 
 
 def _resolve_governs(repo: Path, config: dict, graph, refs: list[str],
@@ -1092,7 +1380,11 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
         _guidance("--grounding empirical means confirmed by a live observation — name what confirmed "
                   "it with --evidence sym:<path>#<test> | file:<path> | commit:<sha> | <url> "
                   "(repeatable). If it's a reasoned assertion rather than an observation, use "
-                  "--grounding inferred (the default).")
+                  "--grounding inferred (the default). "
+                  # Refused before any build, so this costs no work — but it does cost the caller the
+                  # --why it just composed, which is the actual expense the field filed (v4 #15).
+                  "Re-sending a long --why to clear this? Put it in a file and pass --why-file "
+                  "<path> — then a refusal costs a path, not the argument.")
     pending_supersedes = pending_supersedes or []
     rejected_valid_when = rejected_valid_when or []
     rejected_invalidated_when = rejected_invalidated_when or []
@@ -1220,10 +1512,11 @@ def remember(
     statement: str = typer.Argument(..., help="The claim in one line (the H2 heading)."),
     type: str = typer.Option("decision", "--type", help=f"One of: {', '.join(memory.MEMORY_TYPES)}."),
     why: str = typer.Option("", "--why", help="The reasoning (ReCAP's T) — what /clear loses."),
+    why_file: Path = typer.Option(None, "--why-file", help=_WHY_FILE_HELP),
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
     concerns: list[str] = typer.Option(None, "--concerns", help="The locus this governs: sym:<path>#<name>, file:<path>[:L<a>-L<b>] or — in markdown — file:<path>#<section> (repeatable, anchored)."),
     governs: list[str] = typer.Option(None, "--governs", help=_GOVERNS_HELP),
-    rejected: str = typer.Option(None, "--rejected", help="The rejected alternative + why (the most perishable content)."),
+    rejected: list[str] = typer.Option(None, "--rejected", help="The rejected alternative + why (the most perishable content) (repeatable — joined with ' || ')."),
     rejected_valid_when: list[str] = typer.Option(None, "--rejected-valid-when", help="A premise the rejection depends on: int:<slug> | mem:<id> | sym:<path>#<name> | file:<path> (repeatable). The rejection surfaces ONLY while every one of these still holds."),
     rejected_invalidated_when: list[str] = typer.Option(None, "--rejected-invalidated-when", help="A condition that WITHDRAWS the rejection once true (same locator forms, repeatable), e.g. --rejected \"no Redis in deploy\" --rejected-invalidated-when file:infra/redis.tf."),
     grounding: str = typer.Option(None, "--grounding", help=f"How the belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred). empirical = confirmed by a live observation."),
@@ -1234,8 +1527,10 @@ def remember(
 ) -> None:
     """Capture a decision/rationale/learned-fact as a memory node (serves an intent, concerns code)."""
     workspace = _require_workspace(repo)
-    node = _capture_memory(repo, workspace, statement=statement, type_=type, why=why,
-                           serves=serves or [], concern_syms=concerns or [], rejected=rejected,
+    node = _capture_memory(repo, workspace, statement=statement, type_=type,
+                           why=_why_text(why, why_file) or "",
+                           serves=serves or [], concern_syms=concerns or [],
+                           rejected=_joined_rejected(rejected),
                            supersedes=[], promotable=False, force_new=new, grounding=grounding,
                            evidence_refs=evidence or [], rejected_valid_when=rejected_valid_when or [],
                            rejected_invalidated_when=rejected_invalidated_when or [], pinned=pin,
@@ -1249,8 +1544,9 @@ def note_constraint(
     concerns: list[str] = typer.Option(None, "--concerns", help="The locus this constrains: sym:<path>#<name>, file:<path>[:L<a>-L<b>] or — in markdown — file:<path>#<section> (repeatable, anchored)."),
     governs: list[str] = typer.Option(None, "--governs", help=_GOVERNS_HELP),
     why: str = typer.Option("", "--why", help="Why the constraint holds (optional)."),
+    why_file: Path = typer.Option(None, "--why-file", help=_WHY_FILE_HELP),
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
-    rejected: str = typer.Option(None, "--rejected", help="The ruled-out alternative + why (a constraint often exists *because* one was rejected)."),
+    rejected: list[str] = typer.Option(None, "--rejected", help="The ruled-out alternative + why (a constraint often exists *because* one was rejected) (repeatable — joined with ' || ')."),
     rejected_valid_when: list[str] = typer.Option(None, "--rejected-valid-when", help="A premise the rejection depends on: int:<slug> | mem:<id> | sym:<path>#<name> | file:<path> (repeatable). The rejection surfaces ONLY while every one of these still holds."),
     rejected_invalidated_when: list[str] = typer.Option(None, "--rejected-invalidated-when", help="A condition that WITHDRAWS the rejection once true (same locator forms, repeatable)."),
     grounding: str = typer.Option(None, "--grounding", help=f"How the belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred). empirical = confirmed by a live observation."),
@@ -1261,8 +1557,10 @@ def note_constraint(
 ) -> None:
     """Capture a constraint memory (flagged promotable to an enforced check; capture-flow §0a)."""
     workspace = _require_workspace(repo)
-    node = _capture_memory(repo, workspace, statement=rule, type_="constraint", why=why,
-                           serves=serves or [], concern_syms=concerns or [], rejected=rejected,
+    node = _capture_memory(repo, workspace, statement=rule, type_="constraint",
+                           why=_why_text(why, why_file) or "",
+                           serves=serves or [], concern_syms=concerns or [],
+                           rejected=_joined_rejected(rejected),
                            supersedes=[], promotable=True, force_new=new, grounding=grounding,
                            evidence_refs=evidence or [], rejected_valid_when=rejected_valid_when or [],
                            rejected_invalidated_when=rejected_invalidated_when or [], pinned=pin,
@@ -1329,10 +1627,11 @@ def propose(
     type: str = typer.Option(None, "--type", help=f"One of: {', '.join(memory.MEMORY_TYPES)} (default: constraint for review, decision for mined)."),
     concerns: list[str] = typer.Option(None, "--concerns", help="The locus this candidate governs: sym:<path>#<name>, file:<path>[:L<a>-L<b>] or — in markdown — file:<path>#<section> (repeatable, anchored — this is what re-surfaces it at the edit hook)."),
     governs: list[str] = typer.Option(None, "--governs", help=_GOVERNS_HELP),
-    rejected: str = typer.Option(None, "--rejected", help="The anti-pattern (review) / rejected alternative (mined) — the ruled-out shape the finding warns against."),
+    rejected: list[str] = typer.Option(None, "--rejected", help="The anti-pattern (review) / rejected alternative (mined) — the ruled-out shape the finding warns against (repeatable — joined with ' || ')."),
     rejected_valid_when: list[str] = typer.Option(None, "--rejected-valid-when", help="A premise the rejection depends on: int:<slug> | mem:<id> | sym:<path>#<name> | file:<path> (repeatable). The rejection surfaces ONLY while every one of these still holds."),
     rejected_invalidated_when: list[str] = typer.Option(None, "--rejected-invalidated-when", help="A condition that WITHDRAWS the rejection once true (same locator forms, repeatable)."),
     why: str = typer.Option("", "--why", help="The reasoning behind the candidate (optional)."),
+    why_file: Path = typer.Option(None, "--why-file", help=_WHY_FILE_HELP),
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable)."),
     origin: str = typer.Option(None, "--origin", help="Free-text provenance detail for the audit trail, e.g. 'security-review', 'commit abc123', 'docs/DESIGN.md'."),
     grounding: str = typer.Option(None, "--grounding", help=f"How the belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred)."),
@@ -1357,8 +1656,10 @@ def propose(
     provenance = {"source": from_}
     if origin:
         provenance["origin"] = origin
-    node = _capture_memory(repo, workspace, statement=statement, type_=type_, why=why,
-                           serves=serves or [], concern_syms=concerns or [], rejected=rejected,
+    node = _capture_memory(repo, workspace, statement=statement, type_=type_,
+                           why=_why_text(why, why_file) or "",
+                           serves=serves or [], concern_syms=concerns or [],
+                           rejected=_joined_rejected(rejected),
                            supersedes=[], promotable=(type_ == "constraint"), force_new=new,
                            grounding=grounding, evidence_refs=evidence or [], provenance=provenance,
                            rejected_valid_when=rejected_valid_when or [],
@@ -1373,10 +1674,11 @@ def supersede(
     statement: str = typer.Argument(..., help="The new claim in one line."),
     type: str = typer.Option(None, "--type", help=f"One of: {', '.join(memory.MEMORY_TYPES)} (default: inherited from the superseded node)."),
     why: str = typer.Option("", "--why", help="Why the mind changed."),
+    why_file: Path = typer.Option(None, "--why-file", help=_WHY_FILE_HELP),
     serves: list[str] = typer.Option(None, "--serves", help="An intent/plan id this serves (repeatable; default: inherited from the superseded node)."),
     concerns: list[str] = typer.Option(None, "--concerns", help="A symbol this governs (repeatable, anchored; default: inherited from the superseded node)."),
     governs: list[str] = typer.Option(None, "--governs", help=_GOVERNS_HELP + " Default: inherited from the superseded node."),
-    rejected: str = typer.Option(None, "--rejected", help="The rejected alternative + why."),
+    rejected: list[str] = typer.Option(None, "--rejected", help="The rejected alternative + why (repeatable — joined with ' || ')."),
     rejected_valid_when: list[str] = typer.Option(None, "--rejected-valid-when", help="A premise the rejection depends on: int:<slug> | mem:<id> | sym:<path>#<name> | file:<path> (repeatable). The rejection surfaces ONLY while every one of these still holds."),
     rejected_invalidated_when: list[str] = typer.Option(None, "--rejected-invalidated-when", help="A condition that WITHDRAWS the rejection once true (same locator forms, repeatable)."),
     grounding: str = typer.Option(None, "--grounding", help=f"How the new belief is grounded: {' | '.join(memory.GROUNDINGS)} (default inferred)."),
@@ -1416,8 +1718,8 @@ def supersede(
     # was dropped with no flag anywhere to restore it, in a verb that ADVERTISES what it carried.
     type_ = type if type is not None else old_node.type
     node = _capture_memory(
-        repo, workspace, statement=statement, type_=type_, why=why,
-        serves=serves_ids, concern_syms=concern_syms, rejected=rejected,
+        repo, workspace, statement=statement, type_=type_, why=_why_text(why, why_file) or "",
+        serves=serves_ids, concern_syms=concern_syms, rejected=_joined_rejected(rejected),
         supersedes=[] if human_attested else [old_id],
         pending_supersedes=[old_id] if human_attested else [],
         promotable=old_node.promotable, grounding=grounding, evidence_refs=evidence or [],
@@ -1553,6 +1855,7 @@ def dispute(
     left: str = typer.Argument(..., help="A belief id (mem:NNN / int:<slug>) — one side of the disagreement."),
     right: str = typer.Argument(..., help="The belief it contradicts."),
     why: str = typer.Option("", "--why", help="What the disagreement is, for whoever resolves it."),
+    why_file: Path = typer.Option(None, "--why-file", help=_WHY_FILE_HELP),
     origin: str = typer.Option(None, "--origin", help="Free-text provenance detail for the audit trail."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
@@ -1576,7 +1879,7 @@ def dispute(
             _guidance(f"dispute takes two belief ids (mem:NNN or int:<slug>); got: {belief_id}")
         if not _known_belief(repo, belief_id):
             _guidance(f'No belief with id {belief_id}. Find it with `yigraf context "<topic>"`.')
-    _author_resolution(repo, "dispute", left, right, why, origin)
+    _author_resolution(repo, "dispute", left, right, _why_text(why, why_file) or "", origin)
     typer.echo(f"Disputed {left} ↔ {right} — an open conflict, now on the log for the team. "
                f"Resolve with `yigraf reconcile` (both true) or `yigraf supersede` (a mind-change).")
 
@@ -1586,6 +1889,7 @@ def reconcile(
     left: str = typer.Argument(..., help="A memory id (mem:NNN) — the pair's first belief."),
     right: str = typer.Argument(..., help="A memory id (mem:NNN) — the belief it is compatible with."),
     why: str = typer.Option("", "--why", help="Why they are compatible (recorded when the verdict is a resolution artifact)."),
+    why_file: Path = typer.Option(None, "--why-file", help=_WHY_FILE_HELP),
     origin: str = typer.Option(None, "--origin", help="Free-text provenance detail for the audit trail."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
@@ -1626,7 +1930,7 @@ def reconcile(
     # Duplicate detection lives in _author_resolution (by content-addressed verdict id). Legacy
     # ``equivalent_to`` frontmatter deliberately does NOT block: promoting one to a real append is how
     # a pre-sync workspace makes its old, purely-local reconciliations visible to the team.
-    _author_resolution(repo, "reconcile", left, right, why, origin)
+    _author_resolution(repo, "reconcile", left, right, _why_text(why, why_file) or "", origin)
     typer.echo(f"Reconciled {left} ↔ {right} (equivalent_to) — the co-anchored pair is marked "
                f"compatible, so the coherence sweep no longer surfaces it. Both stay live.")
 

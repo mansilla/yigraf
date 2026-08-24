@@ -167,6 +167,16 @@ class Implements:
     sym: str
     anchor: str | None = None
     anchor_algo: str | None = None
+    #: The commit ``HEAD`` pointed at when ``yigraf link`` last stamped this anchor — the answer to
+    #: "when did this completion go stale", which nothing else in the repo can give (feedback-v4 #14).
+    #: The field reported reasoning from ``git log`` to a wrong conclusion, because the anchor is
+    #: re-stamped on every ``link`` and git history is therefore a *different timeline* from anchor
+    #: history: an earlier commit touching the file says nothing about when the anchor was last taken.
+    #: A sha rather than a wall-clock time so the value is derived from the repo rather than the
+    #: machine, and so two agents linking the same symbol at the same commit still mint the same task
+    #: revision (:func:`yigraf.filelog._plan_assertions` hashes this body) instead of a phantom
+    #: divergence. ``None`` on every anchor stamped before this existed, and on a repo with no commits.
+    stamped_at: str | None = None
 
 
 @dataclass
@@ -228,7 +238,8 @@ def read_plan(path: Path) -> Plan:
 def _read_impl(entry: Any) -> Implements:
     if isinstance(entry, str):
         return Implements(sym=entry)
-    return Implements(sym=entry["sym"], anchor=entry.get("anchor"), anchor_algo=entry.get("anchor_algo"))
+    return Implements(sym=entry["sym"], anchor=entry.get("anchor"),
+                      anchor_algo=entry.get("anchor_algo"), stamped_at=entry.get("stamped_at"))
 
 
 def set_task_state(path: Path, num: int, done: bool) -> bool:
@@ -292,7 +303,8 @@ def render_plan(slug: str, title: str, tasks: list[str]) -> str:
 
 
 def add_edge_to_plan(path: Path, task_id: str, relation: str, target: str,
-                     anchor: str | None = None, anchor_algo: str | None = None) -> None:
+                     anchor: str | None = None, anchor_algo: str | None = None,
+                     stamped_at: str | None = None) -> None:
     """Write a ``tracks`` or ``implements`` edge for ``task_id`` into the plan's frontmatter.
 
     ``tracks`` is a single intent id; ``implements`` appends a (deduplicated) ``sym:``/``file:`` entry
@@ -317,6 +329,8 @@ def add_edge_to_plan(path: Path, task_id: str, relation: str, target: str,
         impls = spec.setdefault("implements", [])
         entry = {"sym": target, "anchor": anchor,
                  "anchor_algo": (anchor_algo or ANCHOR_ALGO) if anchor else None}
+        if anchor and stamped_at:  # only meaningful alongside an anchor it dates (see Implements)
+            entry["stamped_at"] = stamped_at
         for existing in impls:
             if existing.get("sym") == target:
                 existing.update(entry)
@@ -486,11 +500,14 @@ def _project_task_edges(graph: nx.DiGraph, task: Task) -> None:
             if impl.anchor is not None:
                 attrs["anchor"] = impl.anchor
                 attrs["anchor_algo"] = impl.anchor_algo or ANCHOR_ALGO
+                if impl.stamped_at:
+                    attrs["stamped_at"] = impl.stamped_at  # dates a STALE line (retrieval._stale_line)
             graph.add_edge(task.id, impl.sym, **attrs)
         else:
             # Keep the anchor so M3 can re-anchor a rename by content match (docs/m3-notes.md §3).
             _stash(graph, task.id, "dangling_implements",
-                   {"sym": impl.sym, "anchor": impl.anchor, "anchor_algo": impl.anchor_algo})
+                   {"sym": impl.sym, "anchor": impl.anchor, "anchor_algo": impl.anchor_algo,
+                    "stamped_at": impl.stamped_at})
 
 
 def _stash(graph: nx.DiGraph, node_id: str, attr: str, value: str) -> None:

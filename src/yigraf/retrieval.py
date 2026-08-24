@@ -447,11 +447,22 @@ def _stale_line(item) -> str:
     verified because its evidence changed, so the agent must decide whether the change UPHOLDS it (then
     re-``link`` to re-anchor) or REGRESSED it (then reopen the task). STALE is not ``false`` — never an
     auto-verb, which would be the rubber-stamp mem:031/mem:039/mem:056 guard against.
+
+    **It dates itself when it can** (feedback-v4 #14), because this line's failure mode is not a wrong
+    verb but correct-looking reasoning about *when*: the field read ``git log``, found earlier commits
+    touching the file, and concluded the staleness predated the session — invalid, because an anchor is
+    re-stamped by every ``link``, so anchor history is a different timeline from commit history and its
+    own session's edits were the cause. Nothing in the old line contradicted that inference. Naming the
+    commit the anchor was taken at both answers the question and forecloses the wrong route to it, and
+    the clause is silent on an anchor stamped before the field existed (:class:`~yigraf.artifacts.Implements`)
+    rather than guessing — an undated stale line is exactly the one whose age is unknown.
     """
     what = "changed since it was checked off" if item.kind == "soft" else "is gone"
-    return (f"  ⚠ {item.task_id}: completion STALE — {item.locator} {what}; re-verify it still holds, "
-            f"then re-`link` {item.task_id} to re-anchor, or `close {item.task_id} --reopen` if the "
-            f"change undid it.")
+    # Short, because it is read not typed; `git show` accepts an abbreviated sha.
+    dated = f" (anchor last stamped at {item.stamped_at[:12]})" if getattr(item, "stamped_at", None) else ""
+    return (f"  ⚠ {item.task_id}: completion STALE — {item.locator} {what}{dated}; re-verify it still "
+            f"holds, then re-`link` {item.task_id} to re-anchor, or `close {item.task_id} --reopen` if "
+            f"the change undid it.")
 
 
 def _stale_block(items: list, config: dict | None = None) -> list[str]:
@@ -857,7 +868,8 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
             conflict_lines: list[str] | None = None,
             obligation_groups: list[list[str]] | None = None,
             stale_lines: list[str] | None = None,
-            parent: dict[str, tuple[str, str]] | None = None) -> ContextResult:
+            parent: dict[str, tuple[str, str]] | None = None,
+            signals_first: bool = False) -> ContextResult:
     capture_lines = capture_lines or []
     task_reconcile_lines = task_reconcile_lines or []
     conflict_lines = conflict_lines or []
@@ -998,17 +1010,33 @@ def _render(graph: nx.DiGraph, ranked: list[str], query: str, drift_lines: list[
         _place(node_id, cap=None)
 
     rendered = len(rendered_ids)
-    for fam in _FAMILY_ORDER:
-        if by_family.get(fam):
-            out.append(f"{_FAMILY_HEADING[fam]}:")
-            out.extend(by_family[fam])
-            out.append("")
 
-    for heading, lines in blocks:  # the same table the frame accounting above paid for
-        if lines:
-            out.append(heading)
-            out.extend(lines)
-            out.append("")
+    def _emit_blocks() -> None:
+        for heading, lines in blocks:  # the same table the frame accounting above paid for
+            if lines:
+                out.append(heading)
+                out.extend(lines)
+                out.append("")
+
+    def _emit_slice() -> None:
+        for fam in _FAMILY_ORDER:
+            if by_family.get(fam):
+                out.append(f"{_FAMILY_HEADING[fam]}:")
+                out.extend(by_family[fam])
+                out.append("")
+
+    # Which half leads is a property of what the packet is FOR, not a house style (feedback-v4 #13,
+    # whose "ordering is the half that survives `| head`" is the same point about a finite window).
+    #
+    # A PUSH packet — the edit hook, SessionStart — speaks unbidden, and only because something governs
+    # the locus or is wrong with it (design law #4: silence otherwise). The signal *is* the message, so
+    # burying it under a ranked slice inverts the packet: the field watched an obligation block go
+    # unread by the fourth edit of a session, and noted a relevant one would have been skipped too.
+    # A PULL query asked a question, and there the slice is the answer; leading with warnings would
+    # answer something the caller did not ask. The elidable half goes last either way — the slice is
+    # what carries an elision hint, the blocks are capped and complete.
+    (_emit_blocks() if signals_first else _emit_slice())
+    (_emit_slice() if signals_first else _emit_blocks())
 
     elided = len(renderable) - rendered
     if elided > 0:
@@ -1226,6 +1254,7 @@ def context_for_locus(graph: nx.DiGraph, file_relpath: str, config: dict,
     reconcile = _verified_reconcile(graph, drifted_edges)
     obligations = _proof_obligations(graph, seeds)  # what this edit must keep true (int:proof-obligations)
     return _render(graph, ranked, f"editing {file_relpath}", _drift_block(drift_items, config), reconcile, budget,
+                   signals_first=True,  # a push packet leads with why it spoke at all (v4 #13)
                    root=root, config=config, obligation_groups=obligations, parent=parent)
 
 
@@ -1330,7 +1359,8 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
     result = _render(graph, ranked, "active plan & governing intents", drift_lines,
                      reconcile, max(0, budget - reserved // 3), root=root, config=config,
                      capture_lines=capture, task_reconcile_lines=task_reconcile,
-                     conflict_lines=conflicts, stale_lines=stale_lines, parent=parent)
+                     conflict_lines=conflicts, stale_lines=stale_lines, parent=parent,
+                     signals_first=True)  # orientation: obligations are not an appendix (v4 #13)
 
     # Emit the slice for anything it actually has to say — nodes OR a warning. Gating this on `seeds`
     # alone would have re-created the very hole the global obligations above close, one level down: a

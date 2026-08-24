@@ -44,8 +44,15 @@ CONF = "EXTRACTED"  # agent-asserted at a commit boundary, not inferred
 #: Epistemic-grounding axis (int:memory-grounding, C#6): *how* a belief was arrived at — orthogonal to
 #: maturity (has it survived?) and attestation (who endorsed it?). ``inferred`` is the default for an
 #: agent-asserted decision (it may be a guess); ``docs`` for one distilled from committed docs/rationale;
-#: ``empirical`` for one confirmed by a live observation (a spike, a test, a prod signal). A low-grounding
-#: (``inferred``) node surfaces as a re-verify TODO in ``context`` and can be upgraded once evidence lands.
+#: ``empirical`` for one confirmed by a live observation (a spike, a test, a prod signal). It can be
+#: upgraded once evidence lands (``reaffirm --grounding empirical --evidence``), and ``empirical`` is
+#: *demoted* when the evidence it names drifts (:mod:`yigraf.drift`) — but a low tier is never itself a
+#: nag: an ``inferred`` node is surfaced by relevance like any other and no surface asks it to re-verify.
+#: That asymmetry is deliberate. Grounding records how a belief was ARRIVED at, and for a whole class —
+#: a ``preference`` a human stated in conversation — there is nothing in the repo to re-derive it from,
+#: so a standing "re-verify me" would be a demand no verb can satisfy. Who vouches for such a belief is
+#: the *attestation* axis's question (``yigraf attest`` ⇒ ``human``), which is why the field asked for a
+#: fourth "observed, but the observation was a conversation" tier and does not need one.
 GROUNDINGS = ("inferred", "docs", "empirical")
 DEFAULT_GROUNDING = "inferred"
 
@@ -372,6 +379,67 @@ def _render_body(memory: Memory) -> str:
     if memory.alternatives:
         lines += ["", f"**Rejected:** {memory.alternatives}"]
     return "\n".join(lines) + "\n"
+
+
+def splice_body(body: str, *, statement: str | None = None, why: str | None = None,
+                alternatives: str | None = None) -> str:
+    """Replace the statement / why / rejected LINES in an authored body, carrying everything else verbatim.
+
+    The splice :func:`_render_body` refuses to perform by re-derivation, and the reason ``amend`` is a
+    verb rather than a re-capture: a body may carry hand-written prose those three markers do not
+    describe, and re-rendering from the fields would delete it. Each marker occupies a single line
+    (:func:`_parse_body` reads one), so a record repair is a line substitution — and a marker the body
+    lacks is *inserted* in the canonical order rather than appended, so an amended body reads like a
+    captured one. ``None`` means "leave this field alone", which is why a caller must distinguish an
+    unpassed flag from an empty one.
+
+    A duplicate marker is collapsed rather than replaced twice: :func:`_parse_body` reads the LAST
+    ``**Why:**`` line, so leaving a later one in place would silently defeat the amend that just
+    rewrote the first.
+    """
+    out: list[str] = []
+    seen_heading = done_why = done_rejected = False
+    for line in body.splitlines():
+        if not seen_heading and _HEADING.match(line) is not None:
+            seen_heading = True
+            out.append(f"## {statement}" if statement is not None else line)
+            continue
+        if why is not None and _WHY.match(line.strip()) is not None:
+            if not done_why:
+                out.append(f"**Why:** {why}")
+                done_why = True
+            continue
+        if alternatives is not None and _REJECTED.match(line.strip()) is not None:
+            if not done_rejected:
+                out.append(f"**Rejected:** {alternatives}")
+                done_rejected = True
+            continue
+        out.append(line)
+
+    def _after(pattern) -> int:
+        """The index of the last line matching ``pattern``, or ``-1`` — the insertion anchor."""
+        return max((i for i, ln in enumerate(out) if pattern.match(ln.strip()) is not None), default=-1)
+
+    def _insert(text: str, *anchors) -> None:
+        """Put ``text`` after the first anchor pattern present, or at the end if the body has none.
+
+        A blank line rides with it so the result is the shape a fresh capture composes
+        (:func:`_render_body`): heading, blank, ``**Why:**``, blank, ``**Rejected:**``.
+        """
+        at = next((i for i in map(_after, anchors) if i >= 0), len(out) - 1)
+        out[at + 1:at + 1] = ["", text]
+
+    # A marker can be *missing* as well as wrong, and the heading is the case that bites: a body someone
+    # hand-edited the ``## `` line out of would take the new statement on the field and not in the text,
+    # and `_render_body`'s guard then raises rather than silently dropping it — a raw traceback out of a
+    # repair verb, which is the abandonment design law #1 exists to prevent. So all three insert.
+    if statement is not None and not seen_heading:
+        out[0:0] = [f"## {statement}", ""]
+    if why is not None and not done_why:
+        _insert(f"**Why:** {why}", _HEADING)
+    if alternatives is not None and not done_rejected:
+        _insert(f"**Rejected:** {alternatives}", _WHY, _HEADING)
+    return "\n".join(out).rstrip("\n") + "\n"
 
 
 def render_memory(memory: Memory) -> str:

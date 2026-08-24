@@ -144,6 +144,20 @@ def run_reanchor(repo: str | None, target: str, old: str, new: str) -> str:
     return _run_cli("reanchor", [target, old, new], repo)
 
 
+def run_amend(repo: str | None, target: str, statement: str | None = None, why: str | None = None,
+              rejected: list[str] | None = None) -> str:
+    """``amend`` over MCP. No ``why_file`` counterpart, deliberately: that flag exists to keep a shell
+    from rewriting the reasoning, and there is no shell on this path — ``_run_cli`` passes an argv list
+    to a subprocess, so the text arrives exactly as the model wrote it."""
+    args = [target]
+    if statement is not None:
+        args += ["--statement", statement]
+    if why is not None:
+        args += ["--why", why]
+    args += _multi("--rejected", rejected)
+    return _run_cli("amend", args, repo)
+
+
 def run_conflicts(repo: str | None) -> str:
     """`conflicts` takes its repo as a positional (drift's sibling), so it bypasses ``_run_cli``.
 
@@ -417,6 +431,28 @@ def build_server(default_repo: str | None = None):
                 "file:<path>#<section>".
         """
         return run_reanchor(repo or default_repo, target, old, new)
+
+    @server.tool()
+    def amend(target: str, statement: str | None = None, why: str | None = None,
+              rejected: list[str] | None = None, repo: str | None = None) -> str:
+        """Repair a botched RECORD of a memory — a garbled why, a typo in the claim — filing no
+        mind-change.
+
+        For when the belief is right and what was WRITTEN about it is wrong. `reanchor`'s sibling: no
+        supersedes edge, and the anchors, grounding, maturity and history are untouched. Your mind
+        changed → `supersede` instead, which keeps both readings; the locus moved → `reanchor`.
+
+        The id follows the text, because a memory id is a hash of its statement/why/rejected — so the
+        reply names a NEW id for the same belief. It refuses (with the reason) on a node another
+        artifact names, or one already pushed to a shared log, where the honest verb is `supersede`.
+
+        Args:
+            target: the memory id to repair, e.g. "mem:1678ce10ad2fcc15".
+            statement: replacement one-line claim; omit to keep it.
+            why: replacement reasoning; omit to keep it.
+            rejected: replacement ruled-out alternatives (joined with " || "); omit to keep them.
+        """
+        return run_amend(repo or default_repo, target, statement, why, rejected)
 
     @server.tool()
     def conflicts(repo: str | None = None) -> str:

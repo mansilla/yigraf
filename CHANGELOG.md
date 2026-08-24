@@ -42,6 +42,36 @@ release exists to remove, which is the argument for reviewing a drift-detection 
 make it miss something rather than by reading it.
 
 ### Added
+- **`yigraf amend <mem:id>`** — repair a botched *record* (a `--why` the shell rewrote, a typo in the
+  claim) with **no supersedes trail**. `memory._render_body` had been naming this verb inside its own
+  refusal for a while, because the two exits were both wrong: delete the artifact by hand, or
+  `supersede` — filing a mind-change nobody had and leaving the mangled text standing as the superseded
+  belief, in the trail that is the most valuable structure in the graph. `reanchor` is the same argument
+  for a moved locus; this is its sibling for the text.
+  It **re-keys** the node, because it must: `memory_id` hashes the statement/why/rejected it repairs and
+  a test pins the on-disk id to that payload, so the reply names a new id for the same belief, the old
+  file is removed, and the earned telemetry moves across (a typo fix must not demote a settled node).
+  The refusals are the design. Any *referrer* blocks it, because a referrer's own id hashes what it
+  points at — a successor's `supersedes` list, a resolution's reconciled pair — so a re-key would
+  cascade transitively, each node losing the history hanging off its old id; `supersede` is the additive
+  correction there. `superseded_by` is the one exception, and excluding it is what makes the verb usable
+  rather than a nicety: `supersede` takes a `--why` of its own, so the node most likely to need repair
+  is the successor just written, and that back-pointer is a stamp rather than an identity (absent from
+  the id payload), so it is re-pointed. A **pushed** assertion refuses for a different reason — an
+  append-only log has no retraction, and a local re-key would mint a second node while teammates keep
+  the one they pulled, arriving as a knowledge conflict rather than a fix. Only a *known* push refuses;
+  offline or an unreadable replica proceeds (design law #5). Also on MCP. (mem:fab4f6d457eb41ae)
+- **`--why-file <path>`** on every verb that takes a `--why`. A shell is a text transformer: backticks,
+  `$` and `!` inside a quoted string silently rewrite the reasoning, and a mangled `--why` is
+  unrecoverable prose rather than a syntax error. A file is immune, and it also answers what was left of
+  **v4 #15** — the *ordering* half of that ask turned out to be already satisfied (an
+  `--grounding empirical` with no `--evidence` is refused in 0.2s, before any build), so the real cost
+  was never the refusal but re-transmitting the argument it discarded; that refusal now names the flag.
+  Newlines collapse to spaces, because `**Why:**` is one line.
+- **`--rejected` is repeatable**, joined with ` || `. It was a single-value option, so a second
+  `--rejected` silently won and the first ruled-out design was gone — unwarned, at capture time, on the
+  most perishable content in the node. Found while recording two rejected designs for one decision; 12
+  memories in this repo had had the separator typed in by hand.
 - **`file:<path>#<section>`** on `--concerns`, `--governs`, `--evidence`, the rejection premises,
   `link` and `reanchor` (CLI and MCP). The slug is the heading title, case-folded, with each run of
   other characters collapsed to a single `-` — deliberately not GitHub's rule, which keeps one `-` per
@@ -57,6 +87,47 @@ make it miss something rather than by reading it.
   re-stamps the wrong region.
 
 ### Fixed
+- **A push packet buried its own reason for speaking** (v4 #13). The edit hook and SessionStart emitted
+  the ranked slice *above* the obligation/drift blocks — inverting a packet that exists only because
+  something governs the locus or is wrong with it (design law #4 keeps it silent otherwise). The field
+  watched that block go unread by the fourth edit of a session and noted a *relevant* obligation would
+  have been skipped with the rest. Signals now lead the two push surfaces; a `context "<topic>"` query
+  still leads with the slice, because there the slice is the answer and warnings would answer something
+  else. Emit order only — the frame accounting, caps and four budgeting passes are untouched. The
+  *suppression* half of the ask is deliberately not done: it means ranking an intent's criteria against
+  the edited symbol, where a wrong call suppresses a criterion that *did* govern the edit — strictly
+  worse than showing one that did not — and the reporters' evidence predates the 1.5.0 digest latch that
+  already removed the repetition they identified as the cause. (mem:297e29b61c78ba25)
+- **A stale completion said nothing about when it went stale, and the obvious reconstruction was wrong**
+  (v4 #14). Not a wrong verb but correct-looking reasoning: the field read `git log`, found earlier
+  commits touching the file, and concluded the staleness predated the session — invalid, because `link`
+  re-stamps the anchor on every call, so anchor history is a different timeline from commit history and
+  their own edits that session were the cause. Nothing in the line contradicted the inference. `link`
+  now records the commit `HEAD` the anchor was taken at and the STALE line names it. A sha rather than a
+  clock, and that is load-bearing: `filelog._plan_assertions` hashes the task body into its revision id,
+  so a per-machine timestamp would make two agents linking the same symbol mint two revisions of one
+  task — manufacturing exactly the phantom divergence fixed above. Silent on an anchor stamped before
+  the field existed, since an undated stale line is precisely the one whose age is unknown. The **actor**
+  half stays deferred, now with a second reason beyond the v3 review's (it is a provenance-model decision
+  for the online line): an actor in the assertion body would make identical links diverge by
+  construction. (mem:6cc8adbe021beee9)
+- **A `commit:` evidence ref was the one grounding citation accepted with no feedback at all** (v4 #16).
+  It is opaque by design — immutable, so it never drifts, so nothing downstream ever re-examines it — and
+  the field grounded a claim about what a human observed on one date in a record produced the day after,
+  accepted silently: "it makes an unrelated artifact look like the basis for a claim." yigraf cannot
+  judge that (the observation's date is in the prose, not the graph), so it now resolves the sha and
+  echoes its **date and subject** at capture, while the capture is still cheap to redo — a wrong citation
+  is usually obvious the moment its subject line is read next to the claim. An unresolvable sha gets a
+  sharper line, because nothing else will ever catch it. Both warn, never refuse. (mem:16a30e5faaee8b66)
+- **A grounding tier for "observed, but in a conversation" was asked for and is refused** (v4 #17) — the
+  ask rested on a cost that does not exist. `memory.py` claimed a low-grounding node "surfaces as a
+  re-verify TODO in `context`", which *would* make `inferred` a standing demand no verb can satisfy for
+  a belief a human merely stated. Measured: it does not. Nothing reads the tier as a nag; the only
+  grounding-driven surfacing is the *demotion* of `empirical` when its named evidence drifts, which needs
+  evidence and so cannot fire here. So `inferred` carries no penalty, and `--type preference` plus
+  `yigraf attest` (⇒ `attestation: human`) already carry the semantics. The real defect was the
+  docstring promising a surface that was never built — fixed there, with the asymmetry stated so the next
+  reader doesn't re-derive the ask. (mem:4af3d78cca577b37)
 - **The divergence count the agent read came from the cached view, not from the replica.** Third
   instance of the omission class the governed-`file:` fix below is the second of, and the sharpest,
   because the surface it lied to is the agent's. `⚠ 45 diverged` in the SessionStart injection while

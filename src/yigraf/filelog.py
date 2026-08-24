@@ -197,6 +197,8 @@ def _plan_assertions(plan: Plan) -> list[Assertion]:
             extra = {}
             if impl.anchor is not None:  # project_into only stamps the anchor when it exists
                 extra = {"anchor": impl.anchor, "anchor_algo": impl.anchor_algo or ANCHOR_ALGO}
+                if impl.stamped_at:  # when the anchor was taken, for a STALE line to date itself
+                    extra["stamped_at"] = impl.stamped_at
             edges.append(_edge("implements", impl.sym, **extra))
             if _is_log_id(impl.sym):
                 parents.append(impl.sym)

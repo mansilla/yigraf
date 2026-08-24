@@ -32,6 +32,7 @@ Every tool also takes `repo?` (the call's repo override); it's omitted below for
 | `close`   | `task`, `reopen?`, `force?` | Mark a task done by writing its checkbox in the plan file — the second half of finishing one, right after `link`. Refuses a task that implements nothing (an unanchored completion can never go STALE) unless `force`; `reopen` undoes it. |
 | `unlink`  | `task`, `target` | Retire a declaration that is no longer true — a symbol gone for good, or an anchor wrongly declared. Also takes `mem:<id>` to retire a memory's `concerns` or `grounded_by` ref. No mind-change is recorded. |
 | `reanchor` | `target`, `old`, `new` | Move ONE of a memory's anchors to where its subject moved. A locus repair, **not** a mind-change — no supersedes edge is written. |
+| `amend` | `target`, `statement?`, `why?`, `rejected?` | Repair a botched **record** — a garbled why, a typo in the claim — when the belief itself is right. `reanchor`'s sibling: no supersedes edge, anchors and history untouched. The reply names a NEW id, because a memory id hashes its own text. Refuses on a node another artifact names, or one already pushed. |
 
 **Write — capture the why**
 

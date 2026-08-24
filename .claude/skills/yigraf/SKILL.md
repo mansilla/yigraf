@@ -59,6 +59,15 @@ plus the rejected option is enough; capture at the *conclusion*, not mid-thinkin
   supersedes trail** — a locus repair is not a mind-change, and filing it as one writes a false entry
   into the most valuable structure in the graph. An anchor that never belonged at all →
   `yigraf unlink mem:<id> <ref>` (works for `concerns` and `grounded_by`).
+- Decision holds but what you WROTE about it is wrong (a `--why` your shell mangled, a typo in the
+  claim)? `yigraf amend mem:<id> --why "<the reasoning, stated right>"` repairs the record, also with
+  no supersedes trail. It reports a NEW id — a memory id is a hash of its own statement/why/rejected —
+  and it refuses on a node something else already names or that has been pushed, where the honest verb
+  is `supersede`. Don't reach for it if your mind changed at all: it rewrites rather than keeping both.
+- Composing a long `--why`? Write it to a file and pass `--why-file <path>` instead. A shell rewrites
+  backticks, `$vars` and `!history` inside a quoted string and yigraf cannot tell — a mangled `--why`
+  is unrecoverable prose, not a syntax error — and a refused command then costs a path to re-send
+  rather than the whole argument. Every capture verb takes it.
 - A belief about how a file is *used* rather than what it contains ("status.md holds ONLY status")?
   `--governs file:<path>` (or `file:<path>#<section>`): surfaces at the edit hook exactly like
   `--concerns` but carries no content
@@ -125,7 +134,8 @@ A pure rename auto-re-anchors and never surfaces. Re-verify the code still satis
 - a decision's `concerns` that still holds → `yigraf reaffirm mem:<id>` (never re-`remember` — that
   duplicates; never `supersede` unless your mind actually changed)
 - a decision's anchor whose subject MOVED → `yigraf reanchor mem:<id> <old> <new>` (a locus repair,
-  no supersedes trail); one that never belonged → `yigraf unlink mem:<id> <ref>`
+  no supersedes trail); one that never belonged → `yigraf unlink mem:<id> <ref>`. A botched *record*
+  rather than a moved anchor (garbled why, typo in the claim) → `yigraf amend mem:<id> --why "…"`
 - `grounded_by` → `yigraf reaffirm mem:<id> --grounding empirical --evidence <ref>` if you re-observed
   the evidence — **the `--evidence` re-stamp is what clears it**; without it the command is refused
   rather than exiting clean over a standing ⚠. Otherwise downgrade the claim to `inferred`, or retire
