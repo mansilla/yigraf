@@ -4,6 +4,42 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.7.1] — 2026-08-25
+
+**Three questions, three places to look.**
+
+The statusline was one flat `·` list, so `169 dec` sat between `132 task ✓` and `no drift`. An ambient
+surface exists to answer two things at a glance — *is anything wrong* and *how big is this* — and
+neither was answerable by position: both meant reading the whole line and knowing which token belonged
+to which question.
+
+It now renders as three rule-separated groups: brand + this **session** (context gauge, update nudge),
+then graph **health** (every warning, freshness last), then graph **scale** (`task/open` first, then
+`sym`, `int`, `dec`, `sem`).
+
+```
+yigraf ctx 94% 236k/1M · ⬆ 1.8.0 | ⚠ 3 drift · ⚠ 1 conflict · ⚠ 2 stale · fresh | 132 task/4 open · 2037 sym · 32 int · 169 dec · sem 236
+yigraf | no drift · fresh | 133 task ✓ · 2039 sym · 32 int · 170 dec · sem 237
+```
+
+Two orderings inside the groups are deliberate. Freshness sits at the **end** of the health group: it
+is a status fact and belongs there, but it is not a warning, and mid-list it split the run of ⚠
+segments in two — the exact scanning cost the grouping removes. And `task/open` **leads** the scale
+group, because open work is the one stat there that is actionable; `sym`/`int`/`dec`/`sem` are the
+size of the graph, read once and slow to move, so the number that changes now sits at a fixed offset
+from the rule.
+
+An empty group is dropped rather than rendered as an empty cell — a host that supplies no context data
+is the common case, and `yigraf |  | …` reads as a value that failed to load rather than one that was
+never offered. The brand still prefixes the first group with a space rather than joining it as a
+segment (it labels the line; it is not a datum), so the plain render still begins `yigraf ` byte for
+byte.
+
+Layout only. Every segment keeps its own text, color and suppression rule, `--json` is untouched, and
+the three settled decisions on these renderers — the task-state triple, the ASCII brand contract, and
+the knee-relative context percent with its physical denominator — were re-verified rather than assumed
+out of reach of a cosmetic change.
+
 ## [1.7.0] — 2026-08-24
 
 **Two rescues that never reached the file, and a deletion the log never heard.**
