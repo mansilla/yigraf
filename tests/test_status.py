@@ -172,6 +172,26 @@ def test_render_line_is_a_single_compact_line(tmp_path: Path):
     assert line.startswith("yigraf ") and "fresh" in line and "no drift" in line
 
 
+def test_the_line_reads_as_three_groups_session_then_health_then_scale(tmp_path: Path):
+    """One flat `·` list put `dec` between the task count and the drift verdict, so answering either
+    "is anything wrong?" or "how big is this?" meant re-reading the whole line. The groups make both
+    answerable by position, and freshness sits at the END of the health group so the ⚠s stay
+    contiguous."""
+    s = _summary(_repo(tmp_path), ctx_used=40_000, ctx_limit=200_000)
+    session, health, scale = s.render_line().split(" | ")
+    assert session == "yigraf ctx 20% 40k/200k"
+    assert health == "no drift · fresh"
+    assert scale.endswith(" dec") and " sym" in scale and " int" in scale
+    assert " │ " in s.render_line(color=True, icon=status.SPIN[0])  # the styled rule
+
+
+def test_a_host_that_supplies_no_context_leaves_no_empty_cell(tmp_path: Path):
+    """The brand LABELS the line rather than being a datum in it, so with nothing else in the session
+    group it stands alone — never `yigraf |  | …`."""
+    line = _summary(_repo(tmp_path)).render_line()
+    assert line.startswith("yigraf | ") and "|  |" not in line
+
+
 def test_plain_render_has_no_ansi_but_color_does(tmp_path: Path):
     s = _summary(_repo(tmp_path), ctx_used=40_000, ctx_limit=200_000)
     assert "\x1b[" not in s.render_line()  # plain stays escape-free (pipes/tests/agent injection)

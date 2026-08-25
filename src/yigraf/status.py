@@ -67,6 +67,26 @@ def _fmt_tokens(n: int) -> str:
     return (f"{scaled:.1f}".removesuffix(".0") if scaled < 10 else f"{scaled:.0f}") + unit
 
 
+def _groups(brand: str, session: list[str], health: list[str], scale: list[str],
+            *, sep: str, rule: str) -> str:
+    """Join the line as three rules-separated groups, brand-first: what SESSION this is, what the
+    graph's HEALTH is, and how big it is.
+
+    One flat ``·`` list put ``169 dec`` between ``132 task ✓`` and ``no drift``, so the eye had to
+    re-read the whole line to answer either "is anything wrong?" or "how big is this?" — the two
+    questions an ambient surface exists to answer at a glance. Grouping costs nothing and makes
+    both answerable by position: **left** is this session (brand, context gauge, update nudge),
+    **middle** is every warning plus freshness, **right** is scale. Freshness sits at the END of
+    the health group rather than mid-list, so the ⚠ segments stay contiguous.
+
+    The brand prefixes the first group with a space rather than joining as a segment — it labels
+    the line, it is not a datum — and an empty group is dropped rather than rendered as an empty
+    cell, so a host that supplies no context data yields ``yigraf | … | …`` and never ``yigraf |  |``.
+    """
+    first = brand + (" " + sep.join(session) if session else "")
+    return rule.join(g for g in (first, sep.join(health), sep.join(scale)) if g)
+
+
 @dataclass
 class StatusSummary:
     """A compact, host-agnostic snapshot of the graph. ``ctx_*`` are adapter-supplied and optional."""
@@ -164,51 +184,60 @@ class StatusSummary:
             tasks = f"{self.tasks_total} task/{self.tasks_open} open"
         else:
             tasks = f"{self.tasks_total} task ✓"
-        parts = [f"{brand} {self.symbols} sym", f"{self.intents} int", tasks, f"{self.decisions} dec",
-                 f"⚠ {self.drifting} drift" if self.drifting else "no drift", self.freshness]
-        if self.conflicts:  # only when there are open conflicts — silent when coherent (design law #4)
-            parts.append(f"⚠ {self.conflicts} conflict")
-        if self.stale:  # done completions whose evidence drifted (int:drift-as-stale) — shown only when >0
-            parts.append(f"⚠ {self.stale} stale")
-        if self.diverged:  # another workspace holds a different revision no git merge will reconcile
-            parts.append(f"⚠ {self.diverged} diverged")
-        if self.semantic:
-            parts.append(f"sem {self.embedded}")
+
+        session = []
         if self.ctx_pct is not None:
-            parts.append(f"ctx {self.ctx_pct}%" + (f" {self.ctx_fill}" if self.ctx_fill else ""))
+            session.append(f"ctx {self.ctx_pct}%" + (f" {self.ctx_fill}" if self.ctx_fill else ""))
         if self.update:
-            parts.append(f"⬆ {self.update}")
-        return " · ".join(parts)
+            session.append(f"⬆ {self.update}")
+
+        health = [f"⚠ {self.drifting} drift" if self.drifting else "no drift"]
+        if self.conflicts:  # only when there are open conflicts — silent when coherent (design law #4)
+            health.append(f"⚠ {self.conflicts} conflict")
+        if self.stale:  # done completions whose evidence drifted (int:drift-as-stale) — shown only when >0
+            health.append(f"⚠ {self.stale} stale")
+        if self.diverged:  # another workspace holds a different revision no git merge will reconcile
+            health.append(f"⚠ {self.diverged} diverged")
+        health.append(self.freshness)
+
+        scale = [f"{self.symbols} sym", f"{self.intents} int", tasks, f"{self.decisions} dec"]
+        if self.semantic:
+            scale.append(f"sem {self.embedded}")
+        return _groups(brand, session, health, scale, sep=" · ", rule=" | ")
 
     def _pretty(self, icon: str | None) -> str:
         """Styled render: bold numbers, dim labels, shape-coded drift/freshness, a context gauge."""
         spin_y = icon if icon is not None else BRAND  # the rotating (or static) head of [Yigraf]
         brand = _c(f"[{spin_y}{_IGRAF}]", "1;36")  # spinning Y + monospace "igraf", bracketed
         kv = lambda n, label: _c(str(n), "1") + _c(f" {label}", "2")  # bold number · dim label
-        segs = [
-            brand + " " + kv(self.symbols, "sym"),
+
+        session = []
+        if self.ctx_pct is not None:
+            session.append(self._ctx_gauge())
+        if self.update:  # a newer yigraf is on PyPI — gentle, brand-colored nudge
+            session.append(_c(f"⬆ {self.update}", "1;36"))
+
+        health = [_c(f"⚠ {self.drifting} drift", "1;33") if self.drifting else _c("✓ clear", "32")]
+        if self.conflicts:  # coherence-dirty (mem:062): open conflicts for a principal, shown only when >0
+            health.append(_c(f"⚠ {self.conflicts} conflict", "1;33"))
+        if self.stale:  # int:drift-as-stale: done completions whose evidence drifted, shown only when >0
+            health.append(_c(f"⚠ {self.stale} stale", "1;33"))
+        if self.diverged:  # another workspace holds a different revision no git merge will reconcile
+            health.append(_c(f"⚠ {self.diverged} diverged", "1;33"))
+        health.append({"fresh": _c("● fresh", "32"), "behind": _c("○ behind", "33")}.get(
+            self.freshness, _c("○ none", "2")))
+
+        scale = [
+            kv(self.symbols, "sym"),
             kv(self.intents, "int"),
             _c(str(self.tasks_total), "1") + _c(" task", "2")
             + (_c(f"/{self.tasks_open}", "33") + _c(" open", "2") if self.tasks_open
                else _c(" ✓", "32") if self.tasks_total else ""),
             kv(self.decisions, "dec"),
-            _c(f"⚠ {self.drifting} drift", "1;33") if self.drifting else _c("✓ clear", "32"),
-            {"fresh": _c("● fresh", "32"), "behind": _c("○ behind", "33")}.get(
-                self.freshness, _c("○ none", "2")),
         ]
-        if self.conflicts:  # coherence-dirty (mem:062): open conflicts for a principal, shown only when >0
-            segs.append(_c(f"⚠ {self.conflicts} conflict", "1;33"))
-        if self.stale:  # int:drift-as-stale: done completions whose evidence drifted, shown only when >0
-            segs.append(_c(f"⚠ {self.stale} stale", "1;33"))
-        if self.diverged:  # another workspace holds a different revision no git merge will reconcile
-            segs.append(_c(f"⚠ {self.diverged} diverged", "1;33"))
         if self.semantic:
-            segs.append(_c("✦", "35") + _c(f" sem {self.embedded}", "2"))
-        if self.ctx_pct is not None:
-            segs.append(self._ctx_gauge())
-        if self.update:  # a newer yigraf is on PyPI — gentle, brand-colored nudge
-            segs.append(_c(f"⬆ {self.update}", "1;36"))
-        return _c(" · ", "2").join(segs)
+            scale.append(_c("✦", "35") + _c(f" sem {self.embedded}", "2"))
+        return _groups(brand, session, health, scale, sep=_c(" · ", "2"), rule=_c(" │ ", "2"))
 
     def _ctx_gauge(self) -> str:
         """A tiny 4-cell bar + percent, colored green→yellow→red as the budget fills, trailed by the
