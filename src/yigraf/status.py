@@ -76,8 +76,10 @@ def _groups(brand: str, session: list[str], health: list[str], scale: list[str],
     re-read the whole line to answer either "is anything wrong?" or "how big is this?" — the two
     questions an ambient surface exists to answer at a glance. Grouping costs nothing and makes
     both answerable by position: **left** is this session (brand, context gauge, update nudge),
-    **middle** is every warning plus freshness, **right** is scale. Freshness sits at the END of
-    the health group rather than mid-list, so the ⚠ segments stay contiguous.
+    **middle** is every warning plus freshness, **right** is scale. Two orderings inside the groups
+    are deliberate: freshness sits at the END of the health group rather than mid-list, so the ⚠
+    segments stay contiguous; and the task count LEADS the scale group, because open work is the one
+    stat there that is actionable — the rest are the size of the graph, read once and slow to move.
 
     The brand prefixes the first group with a space rather than joining as a segment — it labels
     the line, it is not a datum — and an empty group is dropped rather than rendered as an empty
@@ -200,7 +202,7 @@ class StatusSummary:
             health.append(f"⚠ {self.diverged} diverged")
         health.append(self.freshness)
 
-        scale = [f"{self.symbols} sym", f"{self.intents} int", tasks, f"{self.decisions} dec"]
+        scale = [tasks, f"{self.symbols} sym", f"{self.intents} int", f"{self.decisions} dec"]
         if self.semantic:
             scale.append(f"sem {self.embedded}")
         return _groups(brand, session, health, scale, sep=" · ", rule=" | ")
@@ -228,11 +230,11 @@ class StatusSummary:
             self.freshness, _c("○ none", "2")))
 
         scale = [
-            kv(self.symbols, "sym"),
-            kv(self.intents, "int"),
             _c(str(self.tasks_total), "1") + _c(" task", "2")
             + (_c(f"/{self.tasks_open}", "33") + _c(" open", "2") if self.tasks_open
                else _c(" ✓", "32") if self.tasks_total else ""),
+            kv(self.symbols, "sym"),
+            kv(self.intents, "int"),
             kv(self.decisions, "dec"),
         ]
         if self.semantic:

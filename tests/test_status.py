@@ -181,6 +181,7 @@ def test_the_line_reads_as_three_groups_session_then_health_then_scale(tmp_path:
     session, health, scale = s.render_line().split(" | ")
     assert session == "yigraf ctx 20% 40k/200k"
     assert health == "no drift · fresh"
+    assert scale.startswith("1 task"), "open work leads the scale group — it is the actionable stat"
     assert scale.endswith(" dec") and " sym" in scale and " int" in scale
     assert " │ " in s.render_line(color=True, icon=status.SPIN[0])  # the styled rule
 
