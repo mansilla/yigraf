@@ -1,6 +1,6 @@
 [project]
 name = "yigraf"
-version = "1.7.1"
+version = "1.8.0"
 description = "A harness primitive for AI coding agents: one connected graph over code, intent, plan, and memory — legible (token-cheap retrieval) and enforceable (intent↔code drift checks)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -92,6 +92,14 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/yigraf"]
+
+# The changelog ships INSIDE the package, not merely in the sdist (feedback-v5 C). Three upgrades in a
+# row, the release notes had to be fetched from GitHub out-of-band — and because 1.5.2 and 1.6.0 never
+# reached PyPI, a user coming from 1.5.1 received four releases' worth of change with nothing installed
+# that could say so. `yigraf changelog [--since <version>]` reads this copy, so the answer travels with
+# the tool instead of living somewhere the tool cannot reach.
+[tool.hatch.build.targets.wheel.force-include]
+"CHANGELOG.md" = "yigraf/CHANGELOG.md"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

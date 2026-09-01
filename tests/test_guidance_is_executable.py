@@ -344,7 +344,8 @@ def test_the_skill_install_writes_matches_the_one_this_repo_reads():
     grows without a single failing test. Caught while adding the section-anchor guidance, which landed in
     the file and not in the constant.
     """
-    from yigraf.hooks import SKILL_MD
+    from yigraf.hooks import skill_text as _skill_text
+    SKILL_MD = _skill_text()
 
     checked_in = Path(__file__).resolve().parent.parent / ".claude" / "skills" / "yigraf" / "SKILL.md"
     assert checked_in.is_file(), "this repo self-hosts the skill it ships"
@@ -410,7 +411,8 @@ def test_the_skill_frontmatter_install_writes_is_valid_yaml():
 
     import yaml
 
-    from yigraf.hooks import SKILL_MD
+    from yigraf.hooks import skill_text as _skill_text
+    SKILL_MD = _skill_text()
 
     meta = _re.match(r"---\n(.*?)\n---\n", SKILL_MD, _re.DOTALL)
     assert meta, "SKILL.md must open with a front-matter block"

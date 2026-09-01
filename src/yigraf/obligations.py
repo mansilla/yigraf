@@ -40,7 +40,7 @@ from pathlib import Path
 import networkx as nx
 
 from yigraf.contradiction import detect_conflicts
-from yigraf.drift import compute_drift, is_surfaced, stale_completions
+from yigraf.drift import compute_drift, is_surfaced, pending_renames, stale_completions
 from yigraf.retrieval import drift_verbs
 
 #: Obligation kinds, in the order they are announced — most-actionable first. ``conflict`` leads
@@ -51,7 +51,14 @@ from yigraf.retrieval import drift_verbs
 #: conflict showed five stale lines and "… 12 more not shown", so the one item only this reader could
 #: resolve was the one the notice dropped — measured on the field's own repo shape (feedback-v3 #1,
 #: which reported the conflict as reaching "nothing"; it was computed, then crowded out).
-KIND_ORDER = ("conflict", "stale", "drift")
+#: ``rename`` sits second, above ``stale`` and ``drift``, on a different axis from the argument above:
+#: not "who can resolve it" but "does it stop being resolvable". Drift and stale wait — the anchor is
+#: wrong today and equally wrong tomorrow, and the verb that clears it works either way. An unsettled
+#: rename **expires**: the graph re-anchored it by matching the content hash, so the next semantic edit
+#: to that body destroys the match and leaves hard drift no verb repairs (feedback-v5 D#1). A signal
+#: with a deadline outranks a larger one without, or the cap drops the only item that could go stale
+#: in the sense of "no longer fixable".
+KIND_ORDER = ("conflict", "rename", "stale", "drift")
 
 #: Default cap on announced lines per turn. The host caps hook output at 10,000 chars, but the real
 #: limit is attention: a notice longer than a few lines is skimmed, which is the failure this channel
@@ -124,6 +131,24 @@ def _stale(item) -> Obligation:
         verb=(f"yigraf link {item.task_id} <sym>   — re-link once re-verified, or "
               f"yigraf close {item.task_id} --reopen if the change undid the work" if gone
               else f"re-verify, then: yigraf link {item.task_id} {item.locator}"),
+    )
+
+
+def _rename(item) -> Obligation:
+    """A rename the build re-anchored in the graph that the artifact has not written down.
+
+    The one obligation here that is not a doubt — nothing needs re-verifying, because the content hash
+    matched — and the only one with a **deadline**. ``resolve_renames`` repairs the edge on every build
+    by matching that hash; the next semantic edit to the body changes it, and the subject is then
+    unreachable from the locator the file still names. So the verb is bookkeeping, and the urgency is
+    entirely in the expiry (feedback-v5 D#1).
+    """
+    return Obligation(
+        kind="rename", key=f"rename::{item.task_id}::{item.locator}",
+        subject=item.task_id, locator=item.locator,
+        detail=(f"subject moved to {item.new_locator} — re-anchored in the graph, not in the artifact; "
+                f"the next edit to that body ends the rescue"),
+        verb="yigraf gc --apply   — settles every pending rename; no claim or completion is touched",
     )
 
 
@@ -217,8 +242,8 @@ def obligations(graph: nx.DiGraph, root: Path, config: dict, index=None) -> list
     """Every unresolved obligation in ``graph``, ordered by :data:`KIND_ORDER`.
 
     Pure and additive: it re-shapes what :func:`~yigraf.drift.stale_completions`,
-    :func:`~yigraf.contradiction.detect_conflicts` and :func:`~yigraf.drift.compute_drift` already
-    return — no new detection, no new thresholds. ``index`` is the optional pre-loaded embedding index
+    :func:`~yigraf.drift.pending_renames`, :func:`~yigraf.contradiction.detect_conflicts` and
+    :func:`~yigraf.drift.compute_drift` already return — no new detection, no new thresholds. ``index`` is the optional pre-loaded embedding index
     (a caller holding one passes it through so the conflict sweep doesn't re-read it); absent an index
     the *cosine sweep* contributes nothing (silence over noise, design law #4) — but a nominated
     dispute still surfaces, because a nomination is an asserted verdict rather than a measurement and
@@ -226,6 +251,7 @@ def obligations(graph: nx.DiGraph, root: Path, config: dict, index=None) -> list
     never no conflicts at all.
     """
     found: list[Obligation] = [_stale(it) for it in stale_completions(graph)]
+    found += [_rename(it) for it in pending_renames(graph)]
     found += [_conflict(c, graph) for c in detect_conflicts(graph, root, config, index=index)]
     found += [_drift(it, graph) for it in compute_drift(graph)
               if it.kind in ("soft", "hard") and is_surfaced(graph, it)]

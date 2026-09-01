@@ -592,6 +592,126 @@ def find_memory(root: Path, mem_id: str) -> Path | None:
     return None
 
 
+def find_archived_memory(root: Path, mem_id: str) -> Path | None:
+    """The artifact path for a memory ``gc`` moved to ``memory/archive/``, or ``None``.
+
+    Deliberately a *separate* lookup from :func:`find_memory` rather than a widened glob: the archive is
+    out of the active graph by design, and a reader that silently merged the two would resurrect
+    retracted beliefs into every scan. Only the by-id surfaces call this, and they say "archived" when
+    they do (feedback-v5 E#1) — the promise ``gc --help`` makes is "never deleted, kept for history",
+    and an id that answers "no such node" does not read like history being kept.
+    """
+    d = memory_dir(root) / "archive"
+    if not d.is_dir():
+        return None
+    for path in sorted(d.glob("*.md")):
+        meta, _ = _split_frontmatter(path.read_text(encoding="utf-8"))
+        if meta.get("id") == mem_id:
+            return path
+    return None
+
+
+#: Ids a ``--why`` can name. Only ``mem:`` is followed (below): an intent states a contract, it does
+#: not carry the argument for a belief, so deferring to one is not the pathology this catches.
+_WHY_ID = re.compile(r"\b(?:mem|int):[A-Za-z0-9][\w.-]*")
+
+#: Prose that says "the argument is somewhere else". A closed list on purpose — this fires a refusal,
+#: so a marker that guesses is worse than one that misses.
+_DEFERRAL_MARKERS = (
+    "argument is", "argument lives", "argument stays", "argument sits",
+    "reasoning is", "reasoning lives", "rationale is", "rationale lives",
+    "the why is", "why lives", "see ", "as in ", "as per ", "same as", "same argument",
+    "same reasoning", "unchanged", "no change", "locus repair", "repair only", "rename only",
+    "carried over", "documented in", "recorded in", "captured in", "stated in",
+)
+
+#: Prose that points at the node THIS one supersedes without naming its id — the pointer form the
+#: edge set can see and no reader ever followed. The four nodes that motivated this check are all
+#: "LOCUS REPAIR ONLY — the belief is unchanged and the argument is in the node this supersedes."
+_SUPERSEDES_DEFERRALS = (
+    "this supersedes", "it supersedes", "the superseded", "node superseded",
+    "its predecessor", "the predecessor", "the previous node", "the prior node",
+    "this replaces", "it replaces",
+)
+
+#: A residue this short is a bare pointer whatever else it says (``--why "mem:abc123"``).
+_BARE_POINTER_WORDS = 3
+
+
+def ids_named_in(text: str) -> list[str]:
+    """Every ``mem:``/``int:`` id written in prose — a reference the EDGE set cannot see.
+
+    ``refs_in`` counts edges, so an id a caller wrote into a ``--why`` is invisible to every count that
+    decides what is collectable. This is how ``gc`` sees it (feedback-v5 amendment #2).
+    """
+    return list(dict.fromkeys(_WHY_ID.findall(text or "")))
+
+
+def deferring_why(why: str, supersedes: "list[str] | tuple[str, ...]" = (),
+                  *, max_words: int = 25) -> str | None:
+    """The node id a ``--why`` DEFERS its argument to, or ``None`` when it argues for itself.
+
+    A ``--why`` is a pointer rather than an argument when it names somewhere else and has almost
+    nothing left once you remove the pointer: ``"mem:abc123"``, ``"see mem:abc123"``, ``"the belief is
+    unchanged and the argument is in the node this supersedes"``. The residue length is what keeps a
+    real argument that happens to *cite* a node out of it — an argument is longer than its citation.
+
+    Nothing here reads the filesystem: this is the shape test. Whether the argument is actually THERE
+    is :func:`deferral_verdict`, and only that one warns.
+    """
+    text = (why or "").strip()
+    if not text or max_words <= 0:
+        return None
+    named = _WHY_ID.findall(text)
+    residue = _WHY_ID.sub(" ", text)
+    words = residue.split()
+    lowered = " " + " ".join(residue.lower().split()) + " "
+    marked = any(m in lowered for m in _DEFERRAL_MARKERS)
+    if named and (len(words) <= _BARE_POINTER_WORDS or (marked and len(words) <= max_words)):
+        return named[0]
+    if (supersedes and marked and len(words) <= max_words
+            and any(p in lowered for p in _SUPERSEDES_DEFERRALS)):
+        return list(supersedes)[0]
+    return None
+
+
+def deferral_verdict(root: Path, why: str, supersedes: "list[str] | tuple[str, ...]" = (),
+                     *, max_words: int = 25) -> tuple[str, str, list[str]] | None:
+    """Follow a deferring ``--why`` to where the argument is supposed to be; ``None`` if it is there.
+
+    Returns ``(target, verdict, chain)`` — ``missing`` (no such node), ``archived`` (``gc`` moved it
+    out of the active graph), ``hollow`` (it resolves and carries no ``--why`` of its own, so the
+    chain bottoms out in nothing) or ``loop``. ``chain`` is what was walked, nearest first.
+
+    Silence when the argument is real (design law #4): the whole value of the check is that it fires
+    only on a pointer to nothing. Files are truth (#6) — it reads the artifacts, not the graph, so it
+    works at capture time, before the node being captured exists.
+    """
+    target = deferring_why(why, supersedes, max_words=max_words)
+    if target is None or not target.startswith("mem:"):
+        return None
+    chain: list[str] = []
+    seen: set[str] = set()
+    current = target
+    while current.startswith("mem:"):
+        if current in seen:
+            return target, "loop", chain
+        seen.add(current)
+        chain.append(current)
+        path = find_memory(root, current)
+        if path is None:
+            kind = "archived" if find_archived_memory(root, current) is not None else "missing"
+            return target, kind, chain
+        node = read_memory(path)
+        if not (node.why or "").strip():
+            return target, "hollow", chain
+        onward = deferring_why(node.why, node.supersedes, max_words=max_words)
+        if onward is None:
+            return None  # the argument is really there
+        current = onward
+    return None  # the chain left the memory family — out of scope, see _WHY_ID
+
+
 def project_into(graph: nx.DiGraph, root: Path) -> None:
     """Add memory nodes + their ``serves``/``concerns``/``supersedes`` edges to ``graph``.
 

@@ -26,12 +26,23 @@ import networkx as nx
 
 from yigraf import graphdb
 from yigraf.contradiction import open_conflict_count
-from yigraf.drift import compute_drift, is_surfaced, stale_completions
+from yigraf.drift import compute_drift, is_surfaced, pending_renames, stale_completions
 from yigraf.embeddings import load_index
 from yigraf.graph import to_node_link
 
 #: Structure kinds that are *containers*, not symbols — excluded from the symbol count.
 _CONTAINER_KINDS = frozenset({"file", "module"})
+
+def is_symbol(attrs: dict) -> bool:
+    """Whether a ``structure`` node counts toward the ``sym`` number on the status line.
+
+    Its own function because a second reader now needs to agree with it exactly: ``cli.gc`` reports how
+    far this count moved when a collection released placeholder anchors (feedback-v5 E#3), and a report
+    that explains a number by recomputing it slightly differently is worse than no report. Note that a
+    ``file-anchor`` placeholder *does* count — that is precisely why the number can fall after a `gc`.
+    """
+    return attrs.get("kind") not in _CONTAINER_KINDS
+
 
 # ── Presentation (human-facing only) ──────────────────────────────────────────────────────────────
 # ANSI styling for the *human* ambient surface (statusline / TTY). Dependency-free (no rich/colorama)
@@ -89,6 +100,17 @@ def _groups(brand: str, session: list[str], health: list[str], scale: list[str],
     return rule.join(g for g in (first, sep.join(health), sep.join(scale)) if g)
 
 
+#: The plain (uncolored) render of each non-``fresh`` freshness state. Each carries its remedy inline,
+#: because the ambient line is often the *only* place the state is ever named — and a bare token that
+#: names a condition without naming its exit is what sent a field session diagnosing a lost graph after
+#: a routine upgrade (feedback-v5 A). ``fresh`` and ``behind`` are absent: ``fresh`` needs no remedy, and
+#: ``behind`` already reads as "a read will catch it up".
+_FRESHNESS_PLAIN = {
+    "old-schema": "old-schema (rebuilds on next read)",
+    "absent": "absent (rebuilds on next read)",
+}
+
+
 @dataclass
 class StatusSummary:
     """A compact, host-agnostic snapshot of the graph. ``ctx_*`` are adapter-supplied and optional."""
@@ -99,8 +121,12 @@ class StatusSummary:
     tasks_total: int
     tasks_open: int
     decisions: int  # active (non-superseded) memory nodes
-    drifting: int  # soft + hard drift items (the re-verify count); renames auto-re-anchor, so excluded
-    freshness: str  # "fresh" | "behind" | "absent" — the gitignored SQLite view vs the rebuilt graph
+    drifting: int  # soft + hard drift items (the re-verify count); a rename is not one of them — it
+    # auto-re-anchors, so it is counted separately as `renames` below, never folded in here
+    freshness: str  # "fresh" | "behind" | "old-schema" | "absent" — the gitignored SQLite view vs the
+    # rebuilt graph. "old-schema" is a view a previous yigraf wrote that this one declines: an upgrade
+    # produced it, the next read rebuilds it, and nothing is lost — which is exactly what folding it
+    # into "absent" could not say (feedback-v5 A).
     # (graph.json + its whole-graph merge lock are retired, mem:059; see _freshness below).
     # "behind", not "stale": bare "stale" is reserved for stale COMPLETIONS (the `stale` count below),
     # and one word carrying two health dimensions cost a field session six commands (feedback-v3 #13).
@@ -108,6 +134,11 @@ class StatusSummary:
     embedded: int  # nodes in that index
     head: str | None  # short HEAD sha, informational
     update: str | None = None  # a newer yigraf version on PyPI, if the daily check found one
+    skill_behind: str | None = None  # the version stamp on an installed SKILL.md that this yigraf did
+    # not write. An upgrade replaces the CLI and leaves the skill untouched, so the doc can describe a
+    # yigraf that is several releases old — naming verbs that no longer exist and omitting the ones
+    # that do (feedback-v5 D). Only ever set when a stamp is PRESENT and differs; an unstamped or
+    # missing skill says nothing, because "I cannot tell" is not "you are behind".
     ctx_used: int | None = None  # context tokens in use, if a host supplied it
     ctx_limit: int | None = None  # context window size, if a host supplied it
     ctx_soft_limit: int = 250_000  # usable-budget knee the gauge scales to (config status.ctx_soft_limit; mem:053)
@@ -116,6 +147,10 @@ class StatusSummary:
     # Named after what it counts so the JSON key matches the rendered "⚠ n conflict" (feedback-v3 #1).
     stale: int = 0  # done-task completions whose implementing symbol drifted (int:drift-as-stale): the
     # completion is no longer verified. Principal-facing, shown only when >0 — never at the edit hook (mem:056)
+    renames: int = 0  # anchors re-anchored in the graph but not yet settled into the artifact
+    # (drift.pending_renames). The one signal with an EXPIRY — the next semantic edit to that body ends
+    # the content-hash match that makes the rescue possible — so it belongs on the surface every agent
+    # already checks before handing off, not only in `yigraf gc` (feedback-v5 D#1). Shown only when >0.
     diverged: int = 0  # locators ANOTHER PRINCIPAL's log revision differs on (extract._fold_replica) —
     # your own replaced revisions are classified as history upstream, whether the replacement reached the
     # log (OnlineLog.superseded_revisions) or is still sitting unpushed on disk (pending_local_revisions),
@@ -192,15 +227,22 @@ class StatusSummary:
             session.append(f"ctx {self.ctx_pct}%" + (f" {self.ctx_fill}" if self.ctx_fill else ""))
         if self.update:
             session.append(f"⬆ {self.update}")
+        if self.skill_behind:  # the doc the agent reads was written by a different yigraf
+            session.append(f"⬆ skill {self.skill_behind}")
 
         health = [f"⚠ {self.drifting} drift" if self.drifting else "no drift"]
         if self.conflicts:  # only when there are open conflicts — silent when coherent (design law #4)
             health.append(f"⚠ {self.conflicts} conflict")
         if self.stale:  # done completions whose evidence drifted (int:drift-as-stale) — shown only when >0
             health.append(f"⚠ {self.stale} stale")
+        if self.renames:  # unsettled renames — the expiring signal (feedback-v5 D#1), shown only when >0
+            health.append(f"⚠ {self.renames} rename")
         if self.diverged:  # another workspace holds a different revision no git merge will reconcile
             health.append(f"⚠ {self.diverged} diverged")
-        health.append(self.freshness)
+        # The two non-fresh states carry their own remedy, because the surface that NAMES the state is
+        # not the surface that clears it — a reader who is told only the word goes looking for damage
+        # (feedback-v5 A). Kept to three words; the full sentence is `yigraf status`'s note, below.
+        health.append(_FRESHNESS_PLAIN.get(self.freshness, self.freshness))
 
         scale = [tasks, f"{self.symbols} sym", f"{self.intents} int", f"{self.decisions} dec"]
         if self.semantic:
@@ -218,15 +260,22 @@ class StatusSummary:
             session.append(self._ctx_gauge())
         if self.update:  # a newer yigraf is on PyPI — gentle, brand-colored nudge
             session.append(_c(f"⬆ {self.update}", "1;36"))
+        if self.skill_behind:  # the installed skill predates this CLI (feedback-v5 D)
+            session.append(_c(f"⬆ skill {self.skill_behind}", "1;36"))
 
         health = [_c(f"⚠ {self.drifting} drift", "1;33") if self.drifting else _c("✓ clear", "32")]
         if self.conflicts:  # coherence-dirty (mem:062): open conflicts for a principal, shown only when >0
             health.append(_c(f"⚠ {self.conflicts} conflict", "1;33"))
         if self.stale:  # int:drift-as-stale: done completions whose evidence drifted, shown only when >0
             health.append(_c(f"⚠ {self.stale} stale", "1;33"))
+        if self.renames:  # unsettled renames, the one signal with an expiry (feedback-v5 D#1)
+            health.append(_c(f"⚠ {self.renames} rename", "1;33"))
         if self.diverged:  # another workspace holds a different revision no git merge will reconcile
             health.append(_c(f"⚠ {self.diverged} diverged", "1;33"))
-        health.append({"fresh": _c("● fresh", "32"), "behind": _c("○ behind", "33")}.get(
+        health.append({"fresh": _c("● fresh", "32"), "behind": _c("○ behind", "33"),
+                       # Dim, not a warning color: an upgrade did this, the next read fixes it, and the
+                       # graph is intact. `○ none` said "damage" for the one state that is routine.
+                       "old-schema": _c("○ old-schema (rebuilds)", "2")}.get(
             self.freshness, _c("○ none", "2")))
 
         scale = [
@@ -272,6 +321,25 @@ class StatusSummary:
                 f"well before a long window is physically full, so the gauge tracks that knee. "
                 f"Set status.ctx_soft_limit: 0 to gauge the raw window instead.")
 
+    def freshness_note(self) -> str | None:
+        """The one-sentence explanation of a non-``fresh`` view — or ``None`` when there is nothing to
+        explain (design law #4).
+
+        The ambient line can only afford three words, and three words cannot distinguish "a previous
+        yigraf wrote this view" from "your graph is gone". This is where the difference is spelled out,
+        for a human at a real terminal — the same split :meth:`ctx_note` makes.
+        """
+        if self.freshness == "old-schema":
+            return ("  the materialized view was written by an older yigraf and is being declined on "
+                    "its schema version — an upgrade does this. Nothing is lost: the view is a derived, "
+                    "recomputable projection (files are truth), and the next `yigraf context`, `show` "
+                    "or hook rebuilds it. `status` deliberately does not, because a surface that "
+                    "rebuilds the view it is reporting on can only ever report `fresh`.")
+        if self.freshness == "absent":
+            return ("  no materialized view yet — the next `yigraf context`, `show` or hook builds it. "
+                    "The graph itself is the files; the view is only a cache of them.")
+        return None
+
     def as_dict(self) -> dict:
         """The full summary as JSON-ready data — for a host adapter that wants to render it itself."""
         return asdict(self)
@@ -284,7 +352,22 @@ def _freshness(root: Path, graph: nx.DiGraph) -> str:
     the persisted view and the fresh rebuild means the view reflects the current source + landed maturity
     (the volatile git-HEAD overlays are stripped from both). Absent/unreadable ⇒ no claim of freshness
     rather than a crash (fail-open). Pure read: comparing never re-materializes the view.
+
+    **Why this stays a pure read, even though it holds a freshly built graph.** Materializing here would
+    make the freshness question answer itself — every run would report ``fresh`` because the run just
+    wrote what it is comparing against — so the one surface whose job is to report the view's state
+    would be the one surface that could never report a stale one. The rebuild belongs on the read paths
+    that actually use the view (``load_or_build``), and it is already there.
+
+    ``old-schema`` is separated out from ``absent`` because they are different events with different
+    reassurance (feedback-v5 A): ``absent`` means there is no view, while ``old-schema`` means a
+    previous yigraf's view was declined by this one — the ordinary consequence of an upgrade, and self-
+    healing on the next ``context``/``show``/hook. Reported as one word, ``absent``, it was diagnosed as
+    a damaged graph.
     """
+    state = graphdb.view_state(graphdb.db_path(root))
+    if state == "old-schema":
+        return "old-schema"
     persisted = graphdb.load(graphdb.db_path(root))
     if persisted is None:
         return "absent"
@@ -305,7 +388,7 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
     for _, a in graph.nodes(data=True):
         family = a.get("family")
         if family == "structure":
-            if a.get("kind") not in _CONTAINER_KINDS:
+            if is_symbol(a):
                 symbols += 1
         elif family == "intent":
             intents += 1
@@ -321,12 +404,18 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
                 decisions += 1
 
     # Count only surfaced re-verify drift: a done task's implements drift is provenance, not a nag
-    # (int:drift-done-suppression); renames auto-re-anchor so they never count.
+    # (int:drift-done-suppression). A rename auto-re-anchors, so it is never a re-verify prompt and
+    # never counts HERE — it is its own count (`renames`), for its own reason (an expiry, not a doubt).
     drifting = sum(1 for d in compute_drift(graph)
                    if d.kind in ("soft", "hard") and is_surfaced(graph, d))
     # The complement (int:drift-as-stale): a DONE task whose implementing symbol drifted — a stale
     # completion, principal-facing here and in context/session, never at the edit hook (mem:056/mem:81edb).
     stale = len(stale_completions(graph))
+    # Neither drift nor stale: a rename the build re-anchored in memory that the artifact still misses
+    # (feedback-v5 D#1). It is counted here — on the surface the working loop checks before it reports
+    # done — because it is the one condition that STOPS being repairable if it is not acted on: the next
+    # semantic edit to that body breaks the content-hash match the rescue depends on.
+    renames = len(pending_renames(graph))
 
     index = load_index(root, config)
     embedded = len(index.ids) if index else 0
@@ -345,6 +434,13 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
     from yigraf import __version__, update
     available = update.available(root, __version__)
 
+    # Is the SKILL.md on disk the one THIS yigraf writes? A cheap 4 KB read of one file, no network.
+    # It is the agent's instruction sheet, so a stale one is not cosmetic: it is the agent being told
+    # the wrong verbs by the tool itself (feedback-v5 D).
+    from yigraf.hooks import installed_skill_version
+    stamped = installed_skill_version(root)
+    skill_behind = stamped if stamped and stamped != __version__ else None
+
     # The gauge scales to a usable budget, not the raw window (int:status-surface); default 250k.
     soft_limit = config.get("status", {}).get("ctx_soft_limit", 250_000)
 
@@ -352,10 +448,11 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
         symbols=symbols, intents=intents, plans=plans,
         tasks_total=tasks_total, tasks_open=tasks_open, decisions=decisions,
         drifting=drifting, freshness=_freshness(root, graph), conflicts=conflicts, stale=stale,
+        renames=renames,
         # Computed at fold time (only the fold sees what it declined) and carried on the graph, so a
         # statusline read costs nothing extra — extract._fold_replica.
         diverged=len(graph.graph.get("diverged") or ()),
         semantic=embedded > 0, embedded=embedded,
-        head=head[:7] if head else None, update=available,
+        head=head[:7] if head else None, update=available, skill_behind=skill_behind,
         ctx_used=ctx_used, ctx_limit=ctx_limit, ctx_soft_limit=soft_limit,
     )

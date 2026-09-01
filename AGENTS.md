@@ -12,5 +12,6 @@ non-obvious choices (with
 Before you report done, run `yigraf status`: "up to date" means **no drift AND no stale**, which is not
 the same as no open tasks. `yigraf drift` explains the drift; `yigraf drift --stale` lists the stale
 completions; `yigraf conflicts` lists the open knowledge-conflicts (`⚠ n conflict`) with the verbs
-that resolve them. `yigraf cheatsheet` prints every verb and flag.
+that resolve them. `yigraf cheatsheet` prints every verb and flag; `yigraf changelog --since <version>` says what changed
+under you after an upgrade.
 <!-- yigraf:end -->

@@ -268,6 +268,36 @@ def _structure_detail(graph: nx.DiGraph, node_id: str, attrs: dict) -> list[str]
     return out
 
 
+def _hollow_why(graph: nx.DiGraph, node_id: str, attrs: dict, root: Path,
+                config: dict | None) -> list[str]:
+    """Say so when this node's ``Why`` is a pointer at an argument that was never written.
+
+    ``show`` is where anyone holding an id reads the reasoning, so it is where a hollow pointer is
+    found — the field found four of them by hand, years after they were filed. Capture refuses new
+    ones (``cli._hollow_why_guard``); this is the surface for the ones already in the store, and it
+    names ``amend`` because that is the verb that repairs a record without filing a mind-change.
+    Silent whenever the argument is really there.
+    """
+    from yigraf.memory import deferral_verdict
+
+    supersedes = [t for _, t, r in graph.out_edges(node_id, data="relation") if r == "supersedes"]
+    found = deferral_verdict(root, attrs.get("why") or "", supersedes,
+                             max_words=(config or {}).get("hollow_why_words", 25))
+    if found is None:
+        return []
+    _target, verdict, chain = found
+    end = chain[-1]
+    lands = {"missing": f"no node {end} exists",
+             "archived": f"{end} is archived — out of the active graph",
+             "hollow": f"{end} carries no Why of its own",
+             "loop": f"{end} defers back here"}[verdict]
+    return ["", "⚠ Hollow Why:",
+            f"  it defers to {' → '.join(chain)}, and {lands} — so this node's stated reasoning "
+            f"resolves to nothing.",
+            f"  Write it down where it is read: `yigraf amend {node_id} --why \"<the argument>\"` "
+            f"(no supersedes trail)."]
+
+
 def node_detail(graph: nx.DiGraph, node_id: str, root: Path | None = None,
                 config: dict | None = None) -> str:
     """The full, unbudgeted rendering of one node: content, links, live drift, and open conflicts."""
@@ -283,6 +313,9 @@ def node_detail(graph: nx.DiGraph, node_id: str, root: Path | None = None,
         out = _structure_detail(graph, node_id, attrs)
     else:
         out = [f"{node_id}  [{family or 'node'}]", "", *_wrap("  Label    ", attrs.get("label", ""))]
+
+    if family == "memory" and root is not None:
+        out += _hollow_why(graph, node_id, attrs, root, config)
 
     items = _drift_on(graph, node_id)
     links = None

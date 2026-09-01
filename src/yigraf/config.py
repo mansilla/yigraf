@@ -69,6 +69,22 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # has aged this many commits un-referenced. Only the quarantine tier expires by silence — a genuine
     # working/settled decision never does (mem:033). 0 would expire same-commit; keep a real grace window.
     "proposed_ttl": 30,
+    # The reaffirm burst guard (feedback-v5, still-open #1). `reaffirm` accepts an id with no evidence
+    # the claim was read, so a per-id `for` loop takes a drift count to zero with a success line each
+    # and no refusal — which *feels* like progress and is the exact dishonesty the reaffirm/supersede
+    # split exists to prevent. Past `reaffirm_burst` single-id reaffirms inside
+    # `reaffirm_burst_window` seconds, the next one must carry `--verified "<what you checked>"`. Not a
+    # rate limit: an honest caller is never blocked, only asked to say what they read — one line a loop
+    # cannot meaningfully fill. Set reaffirm_burst: 0 to switch the guard off entirely.
+    "reaffirm_burst": 3,
+    "reaffirm_burst_window": 300,
+    # The hollow-`--why` guard (feedback-v5 amendment). A `--why` whose whole content is a pointer at
+    # another node ("the argument is in the node this supersedes") defers an argument nobody ever
+    # checked was written — and four such pointers in a real store resolved to nodes with no argument
+    # at all. Capture refuses when the pointer bottoms out in nothing. This is the longest residue —
+    # the --why with the ids it names removed — that still counts as *only* a pointer; above it, a
+    # --why that cites a node is read as an argument that happens to cite one. 0 switches it off.
+    "hollow_why_words": 25,
     # Retrieval (M4) — seeding, bounded traversal, and ranking of the token-budgeted context slice.
     "retrieval": {
         "seeds": 5,
@@ -239,6 +255,10 @@ maturity_survival_floor: 0     # optional git-durability gate (commits since int
                                # Ignored (not enforced) where neither survival clock can measure —
                                # e.g. a gitignored workspace with no shared log; `build` warns.
 proposed_ttl: 30               # GC archives a never-confirmed `proposed` candidate after this many commits (task #7)
+reaffirm_burst: 3              # after this many single-id reaffirms in the window, the next needs --verified "<what you checked>" (0 = off)
+reaffirm_burst_window: 300     # seconds the burst counter looks back over
+hollow_why_words: 25           # a --why this short that only POINTS at another node is refused when
+                               # the node it points at carries no argument either (0 = off)
 
 # --- Retrieval (M4) — how the token-budgeted context slice is seeded, traversed, and ranked ---
 retrieval:

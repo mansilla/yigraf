@@ -4,6 +4,178 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.8.0] — 2026-09-01
+
+**An expiring signal every cheap surface refused to mention, and eight other places where yigraf knew
+something it would not say.**
+
+Field feedback on 1.7.1 (the second send) reported eight findings, then an amendment that retracted one
+of them and replaced it with a better one. All nine are closed here. They look unrelated and are not:
+most are the same failure — a state yigraf had already computed correctly, reported through a surface
+that could not act on it, in a word that meant something else. The last one is the exception, and the
+one worth reading: a field yigraf never checked at all.
+
+### A rename on a closed task was invisible to everything an agent runs
+
+1.7.0 made an unsettled rename an expiring obligation and surfaced it at the edit hook, in a topic
+query, and in `yigraf drift`. It was still invisible on a **done** task — which is the likely case,
+since work ships and *then* somebody refactors its symbol. `drift.is_surfaced` withholds every
+`implements` item on a closed task (int:drift-done-suppression), and the rename kind rode along.
+
+The suppression is right and stays. What it withholds is a **re-verification prompt**: a closed task
+has no honest re-verification, so relinking it is rubber-stamping. A rename is not that. The content
+hash *matched* — positive proof the body did not change — so there is nothing to re-verify and nothing
+to rubber-stamp, only a locator to write down. Reported as `No drift.` while `yigraf gc` listed the
+pending rename, the effect was that the one signal with a **deadline** was reachable only through the
+one verb nobody runs before handing off, and on a large store that verb takes minutes.
+
+So: renames are exempt from the done-task suppression, and the count now rides the surfaces an agent
+already checks. `yigraf status` carries `⚠ n rename` beside `⚠ n stale` (and `renames` in `--json`),
+the Stop-hook notice carries it as its own obligation kind, and SessionStart re-injects it — a
+`/clear` being exactly when the agent forgets it renamed anything. In the notice it ranks **above**
+stale and drift, on a different axis from the existing ordering argument: not who can resolve it, but
+whether it stops being resolvable. Drift and stale wait; this one expires.
+
+### `absent` meant three things, and an upgrade only ever produces the third
+
+After upgrading, `yigraf status` read `absent` where 1.5.1 said `fresh`. The view was present and
+11.6 MB; it was being declined on its schema version, which is what an upgrade does and what
+`load_or_build` silently repairs on the next read. One token spanned *missing*, *corrupt* and
+*stale-schema*, and the diagnosis was mostly spent discovering that "absent" did not mean "missing".
+
+Freshness now distinguishes them: `old-schema (rebuilds on next read)` for a view a previous yigraf
+wrote, `absent (rebuilds on next read)` for no view at all, and `yigraf status` at a terminal spells
+out the sentence. Both non-fresh states carry their remedy inline, because the surface that names the
+state is not the surface that clears it. `status` still deliberately does **not** rebuild: a surface
+that materializes the view it is reporting on could only ever report `fresh`.
+
+### A section locator had to be a slug, and the one refusal that could have said so did not
+
+`mdsec-v1` is the newest anchor kind, so a returning user reaches for it first — and reaches for it
+with the heading's own capitalisation. `file:docs/design.md#Rules` did not resolve, and the refusal
+read as "sections are not indexed yet". The "did you mean" tail that would have fixed it in one retry
+was already written: `_symbol_suggestion` serves both locator families, but only when passed `repo`,
+and the reanchor refusal was the single call site that omitted it. That is now one argument.
+
+The slug rule itself is enforced in a better place. It exists because a locator *is* a node id, so one
+spelling must be canonical — but that was enforced at the *user*, who had to know that `## Turning
+Radius` is addressed as `#turning-radius`. It is now enforced on the **input**: a typed heading is
+canonicalized onto the addressable slug before it can become an id, so exactly one string is ever
+stored. Narrow by construction — only when the typed form does not resolve and the slugified one does,
+and only through the same function that mints the slugs. Two headings that slug identically are still
+refused by the check that owns that question.
+
+### The cure for prose false-drift did not compose with the batch that clears it
+
+`yigraf reaffirm file:doc.md` reported success and cleared nothing on a belief anchored to
+`file:doc.md#a-section`. Since section anchors are the recommended cure for a prose document's false
+drift, the cure and the batch-clear were disjoint. A whole-file locus now **covers the section anchors
+inside it**, and names each one it touched. This is honest rather than merely convenient: re-verifying
+a document is re-verifying the sections it is made of, and the re-stamp is a no-op for every section
+that did not change — which is what the section anchor bought. Containment is one-way (naming a
+section never reaches the whole file) and excludes line ranges, which are positional.
+
+### `gc` kept the file and lost the id
+
+"Never delete, always reversible, kept for history" was true of the artifact and not of the id. After
+archiving, `yigraf show <id>` answered "No node", so any prose outside the graph citing that id
+pointed at nothing the CLI could resolve — and nothing warns, because the citations do not live in the
+graph. A field audit found 9 of 65 cited ids had gone superseded.
+
+Two changes. The dry run now says the ids are about to stop resolving, while there is still time to
+repoint them, and recommends citing the `yigraf context` query rather than the id — the query survives
+a supersede, the id does not. And `yigraf show` falls back to the archive: an archived id prints its
+claim, its `why`, and its successor, marked `ARCHIVED`, which makes the promise in `--help` literally
+true. `gc` also now reports the placeholder symbol nodes a collection releases: a `sym` count that
+*drops* after a garbage collection is alarming to read, and the cause (a retired memory's anchor was
+the only thing projecting that node) was left to be derived.
+
+### The generated skill could describe a yigraf several releases old
+
+An upgrade replaces the CLI and leaves `.claude/skills/yigraf/SKILL.md` byte-identical, so a 1.5.1
+skill happily instructs a 1.7.1 agent — naming none of `close`, `tasks`, `amend`, `gc` or the section
+anchor, i.e. telling its reader a task could not be closed at all. The file could not report that,
+because it carried no claim about which yigraf wrote it. It now carries a version stamp, and
+`yigraf status` says so when the installed skill was written by a different version. An unstamped or
+missing skill says nothing: "I cannot tell" is not "you are behind".
+
+Six defects in the skill's own text are fixed with it. `*.sh` was offered as a whole-file `file:`
+example while `.sh` is indexed as code, so the example was refused by the rule in the same sentence.
+A bare `reaffirm` on grounds-drift was described as "refused" when it succeeds, exits 0, re-stamps
+`concerns` and prints that the grounds-drift still stands — a clean exit is not proof. The
+`grounded_by` suppression (soft grounds-drift is withheld once the tier is no longer `empirical`) was
+undocumented, along with its corollary that an `--evidence` ref on an `inferred` belief can go stale
+silently. The "task reconcile" prompt appeared in `context` and at the edit hook and in no skill,
+though it is the natural trigger for `close`. And two things a reader would otherwise learn the hard
+way now have a line each: a guidance refusal exits **0** on purpose, so `$?` cannot detect a refused
+capture, and "edited the body" means *semantically* edited, so a rename plus a comment is still a
+rename.
+
+### `yigraf changelog`
+
+Three upgrades running, the release notes had to be fetched out-of-band: the wheel carried METADATA
+and the license and nothing else. Worse, 1.5.2 and 1.6.0 never reached PyPI, so a user coming from
+1.5.1 received four releases' worth of change with nothing installed that could say so. `CHANGELOG.md`
+now ships inside the wheel, and `yigraf changelog --since <version>` prints what changed under you,
+naming how many releases arrived at once.
+
+### A guard against reaffirming without reading
+
+`reaffirm` is the one verb whose entire meaning is "I read this and it still holds", and the one verb
+that asked for no evidence of the reading. Five ids in a `for` loop took a drift count from 5 to 0
+with five success lines and no refusal — and the counter going down *feels* like progress. It cost a
+field session an active decision certified as re-verified while carrying a clause that session's own
+edit had falsified, caught only because a human asked whether the agent was reaffirming without
+looking.
+
+Past three single-id reaffirms inside five minutes with nothing recorded about what was checked, the
+next one must carry `--verified "<what you actually re-read>"` — one line, echoed and kept in a
+machine-local ledger. It never blocks an honest caller, it exits 0 with guidance like every other
+recoverable refusal, and it is scoped to the **id** form: the locus form is already bounded by an act,
+and rate-limiting it would punish the honest batch to catch the dishonest loop. `reaffirm_burst: 0`
+turns it off. This replaces a prose prohibition in a session preamble, and the argument for the guard
+is that the preamble is precisely the artifact a hurrying agent skips.
+
+### A `--why` that only points at an argument nobody ever wrote
+
+Reported first as a `gc` defect — archiving a parent had broken a live node's `Why`-chain — and then
+retracted by the reporter, who went and read the parents: every one was a single statement line. The
+pointers had always been hollow. `gc` destroyed nothing; it made a years-old gap visible by making the
+target unresolvable. The verb was correct on all three of its jobs.
+
+The real defect is upstream of `gc` and had never been named. A `--why` may defer its argument to
+another node — *"LOCUS REPAIR ONLY — the belief is unchanged and the argument is in the node this
+supersedes"* — and **nothing ever checked the argument was there.** For four beliefs in a real store
+the reasoning now exists only in a host's notes, not in yigraf at all: the supersedes trail was
+load-bearing and empty at the same time, and `--why` is the field that was supposed to prevent that.
+
+So the pointer is checked at the moment it is created, when checking costs one lookup — rather than
+by the archaeology session that is the only other way to find out, years later, when the argument is
+gone. A `--why` counts as a *pointer* rather than an argument when it names somewhere else and has
+almost nothing left once the name is removed (`--why "mem:abc123"`, `see mem:abc123`, the locus-repair
+sentence above). Capture then follows it: if it lands on a node that argues its case, nothing is said
+— citing a node is legitimate and silence is a feature. If it lands on a node that does not exist, is
+archived, or carries no `--why` of its own, capture exits 0 with guidance and nothing is written.
+
+Three surfaces, one wording, all naming `amend` — the verb that writes the argument down without
+filing a mind-change nobody had:
+
+- **Capture** (`remember` / `supersede` / `note-constraint` / `propose` / `amend --why`) refuses the
+  pointer, before the build, and names where the chain bottoms out. On a supersede it adds the verb
+  the act actually wanted: a supersede whose `--why` says the belief is *unchanged* is a locus repair,
+  and `reanchor` moves the anchor without writing a false entry into the trail.
+- **`gc`** reads the live `why` *text* for the ids this run archives. `refs_in=0` counts **edges**,
+  and an id written in prose is a reference the edge set cannot see — as is a deferral riding the
+  supersedes edge `gc` discounts by definition. A `why` that merely *cites* one is a single summary
+  line (they stay readable: `show` resolves an archived node), because a dozen ⚠ nobody can act on is
+  how a surface teaches its reader to skim. A `why` that **defers its argument** to one gets a line of
+  its own and says which case it is: copy a real argument across before the pointer stops resolving,
+  or hear that the pointer was hollow all along and archiving destroys nothing.
+- **`show`** reports `⚠ Hollow Why` on a node already in the store — the surface where the field found
+  their four by hand.
+
+`hollow_why_words: 0` turns the guard off. Run against yigraf's own 214-memory store it flags nothing.
+
 ## [1.7.1] — 2026-08-25
 
 **Three questions, three places to look.**

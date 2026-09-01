@@ -192,8 +192,18 @@ def is_surfaced(graph: nx.DiGraph, item: DriftItem) -> bool:
     ``retrieval._verified_reconcile``, which needs a done task's stale link to flag its ``satisfied``
     intent as no-longer-verified. Done-ness is the build-derived ``state`` attr (checkboxes are truth,
     R6) — never stored drift state.
+
+    A **rename is exempt from that suppression** (feedback-v5 D#1). The done-task rule withholds a
+    *re-verification prompt*, and a rename is not one: the content hash MATCHED, which is positive proof
+    the body did not change, so there is nothing to re-verify and nothing to rubber-stamp — only a
+    locator to write down. Suppressing it made the one drift kind with an **expiry** invisible to
+    ``yigraf drift`` whenever the task was closed, and a closed task is the *likely* case for a rename
+    (the work shipped, then someone refactored its symbol). The next semantic edit to that body ends the
+    rescue window and leaves hard drift no verb repairs, so silence here is not the restraint design law
+    #4 asks for — it is a signal dropped exactly where it was still actionable.
     """
-    if item.relation == "implements" and item.task_id in graph.nodes:
+    if (item.relation == "implements" and item.kind != "renamed"
+            and item.task_id in graph.nodes):
         if graph.nodes[item.task_id].get("state") == "done":
             return False
     # SOFT ``grounded_by`` drift defends the *empirical tier* — "the evidence changed, so that certainty
@@ -255,6 +265,25 @@ def is_stale_completion(graph: nx.DiGraph, item: DriftItem) -> bool:
     """
     return (item.relation == "implements" and item.kind in ("soft", "hard")
             and graph.nodes.get(item.task_id, {}).get("state") == "done")
+
+
+def pending_renames(graph: nx.DiGraph) -> list[DriftItem]:
+    """Renames re-anchored in the graph but not yet written into the artifact (feedback-v5 D#1).
+
+    The named counterpart to :func:`stale_completions`, and it exists for the same reason: every
+    surface that reports this condition must count *one* set. :func:`resolve_renames` repairs the edge
+    in the derived graph on every build, so the rescue is real but lives only in memory — the authored
+    file still names the locator the subject left, and ``cli._settle_renames`` (``yigraf gc --apply``)
+    is what makes it durable.
+
+    This is the only drift kind with an **expiry**: the re-anchor works by matching the content hash,
+    so the *next semantic edit* to that body changes the hash and the match is gone for good, leaving
+    hard drift that no verb repairs. It was reachable only through ``yigraf gc`` — a whole-store scan
+    nobody runs before handing off — and invisible to ``status``, ``drift`` (when the task was done),
+    the statusline and the Stop hook. A signal that expires must appear on the cheap surfaces, or the
+    only agents who see it are the ones who did not need to.
+    """
+    return [it for it in compute_drift(graph) if it.kind == "renamed"]
 
 
 def stale_completions(graph: nx.DiGraph) -> list[DriftItem]:

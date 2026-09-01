@@ -23,7 +23,7 @@ from yigraf import (__version__, artifacts, counters, embeddings, graphdb, memor
                     obligations, relations, resolution, retrieval, status, update)
 from yigraf import show as show_mod  # aliased: the module and the `show` command share a name
 from yigraf.astnorm import (ANCHOR_ALGO, DOC_SUFFIXES, locus_hash, parse_file_target,
-                            parse_section_target, section_slugs)
+                            parse_section_target, section_slug, section_slugs)
 from yigraf.config import TOKEN_ENV, load_config, replica_path
 from yigraf.drift import (compute_drift, is_reverifiable, is_stale_completion, is_surfaced,
                           stale_completions)
@@ -71,6 +71,69 @@ def _section_suggestion(repo: Path | None, target: str) -> str:
         return " Did you mean: " + ", ".join(f"file:{relpath}#{c}" for c in close) + "?"
     shown = ", ".join(slugs[:8]) + (" …" if len(slugs) > 8 else "")
     return f" Headings in {relpath}: {shown}."
+
+
+def _canonical_locus(repo: Path | None, target: str) -> str:
+    """Canonicalize a typed ``file:<path>#<heading>`` onto the addressable slug, when that is what the
+    caller plainly meant (feedback-v5 B).
+
+    The slug rule is real and stays: a section's locator *is* its node id, so one spelling has to be
+    canonical or a single heading splits into two identities. What changed is where that rule is
+    enforced. It used to be enforced at the *user*, who had to know that ``## Turning Radius`` is
+    addressed as ``#turning-radius`` — and the failure was a refusal indistinguishable from "sections
+    are not indexed", because a heading typed with its own capitalisation and spaces resolves to
+    nothing. Now it is enforced on the *input*: what the caller types is mapped onto the canonical
+    spelling before it can become an id, so exactly one string is ever stored.
+
+    Deliberately narrow, in both directions:
+
+    * only when the typed fragment is **not** already addressable and its slugified form **is**. A slug
+      that resolves is never touched, and a heading that exists in neither spelling falls through
+      untouched to the normal guidance, which lists the file's real headings.
+    * only ever ``section_slug`` — the same function that mints the slugs, so the mapping cannot
+      disagree with the index it is matching against.
+
+    This adds no ambiguity: two headings that slug identically are already refused by
+    :func:`_guide_section_locus`, which is the check that owns that question, and it runs after this.
+    """
+    relpath, slug = parse_section_target(target)
+    if repo is None or not slug:
+        return target
+    canonical = section_slug(slug)
+    if canonical == slug:
+        return target
+    slugs = section_slugs(repo, relpath)
+    if slug in slugs or canonical not in slugs:
+        return target  # already addressable, or the correction wouldn't resolve either — say nothing
+    return f"file:{relpath}#{canonical}"
+
+
+def _covered_loci(target: str, carried: set[str]) -> set[str]:
+    """Which of the loci a node ``carried`` the locus-form batch ``target`` covers.
+
+    Exact match, plus one containment rule: a **whole-file** ``file:<path>`` covers every section
+    anchor ``file:<path>#<slug>`` inside it (feedback-v5 D#4). Section anchors are the recommended cure
+    for a prose document's false drift, so without this the cure and the batch-clear did not compose —
+    ``reaffirm file:doc.md`` reported success on a document whose beliefs are all anchored to its
+    sections and cleared none of them.
+
+    Honest, not merely convenient: re-verifying a document is re-verifying the sections it is made of,
+    and the re-stamp is a **no-op for every section that did not change** — that is what the section
+    anchor bought. So the batch touches exactly the sections whose text moved, which is the same set
+    the caller just read. A line range is deliberately NOT covered: it is a positional pin, and an edit
+    anywhere above it moves what it points at without the file-level reader ever seeing the difference.
+    Containment is one-way — naming a section never reaches the whole file, which would be a claim the
+    caller did not make.
+    """
+    if not target.startswith("file:") or "#" in target or ":L" in target:
+        return {c for c in carried if c == target}
+    prefix = target + "#"
+    return {c for c in carried if c == target or c.startswith(prefix)}
+
+
+def _canonical_loci(repo: Path | None, targets: list[str] | None) -> list[str]:
+    """:func:`_canonical_locus` over a repeatable option's values (``--concerns``, ``--evidence``, …)."""
+    return [_canonical_locus(repo, t) for t in (targets or [])]
 
 
 def _symbol_suggestion(graph, target: str, repo: Path | None = None) -> str:
@@ -937,6 +1000,9 @@ def reanchor(
         _guidance(f"No memory node with id {target}. "
                   f'Find the decision you mean with `yigraf context "<topic>"` or `yigraf show <id>`.')
     node = memory.read_memory(path)
+    # Both ends canonicalize (feedback-v5 B): `old` so a heading typed as written still MATCHES the
+    # slug the node stores, `new` so the repair lands on the addressable spelling.
+    old, new = _canonical_locus(repo, old), _canonical_locus(repo, new)
     in_concerns = old in {c.sym for c in node.concerns}
     in_evidence = old in {e.ref for e in node.evidence}
     if not in_concerns and not in_evidence:
@@ -968,7 +1034,11 @@ def reanchor(
             # "repair" would just trade hard drift on the old locus for hard drift on the new one.
             _guidance(f"{new} doesn't resolve in the current source — a locus repair points at code that "
                       f"exists (capture allows a forward-reference; a repair does not)."
-                      + _symbol_suggestion(graph, new))
+                      # `repo` is what lets the tail serve a SECTION locator too (feedback-v5 B). Every
+                      # capture-path call site passed it; this one did not, so the one refusal a
+                      # returning user meets first — `mdsec-v1` is the newest anchor kind — was also the
+                      # only one that dropped the "did you mean" and read as "sections aren't indexed".
+                      + _symbol_suggestion(graph, new, repo))
     moved = []
     if in_concerns:
         anchor, algo = (None, memory.GOVERNS_ALGO) if governs_move else content_anchor
@@ -1144,6 +1214,13 @@ def amend(
                   f"one they pulled, surfacing as a knowledge conflict rather than a fix. Say it again "
                   f"properly instead: `yigraf supersede {target} \"<the claim, stated right>\"`.")
 
+    # `amend` is the verb the hollow-why refusal recommends, so it is the one place a hollow --why must
+    # not arrive through the back door. Last of the refusals on purpose: the three above say amend is
+    # the wrong VERB here, and sending someone off to rewrite a --why for a node they cannot amend
+    # would be guidance that does not lead anywhere.
+    if new_why is not None:
+        _hollow_why_guard(repo, config, new_why, list(node.supersedes) + list(node.pending_supersedes))
+
     new_id = memory.memory_id(
         node.type, fields["statement"], fields["why"], fields["alternatives"], list(node.serves),
         [c.sym for c in node.concerns], [e.ref for e in node.evidence], list(node.supersedes),
@@ -1215,6 +1292,7 @@ def _resolve_concerns(repo: Path, config: dict, graph, syms: list[str],
     warnings: list[str] = []
     was_anchored = was_anchored or set()
     for sym in syms:
+        sym = _canonical_locus(repo, sym)  # `#Turning Radius` → `#turning-radius` (feedback-v5 B)
         if not (sym.startswith("sym:") or sym.startswith("file:")):
             _guidance(f"--concerns must be a symbol (sym:<path>#<name>), a file "
                       f"(file:<path>[:L<a>-L<b>], for infra/glue with no symbol) or a markdown "
@@ -1248,6 +1326,7 @@ def _resolve_evidence(repo: Path, config: dict, graph, refs: list[str]) -> tuple
     evidence: list[memory.Evidence] = []
     warnings: list[str] = []
     for ref in refs:
+        ref = _canonical_locus(repo, ref)  # a typed heading canonicalizes to its slug (feedback-v5 B)
         if ref.startswith("sym:") or ref.startswith("file:"):
             if ref.startswith("sym:") and "#" not in ref:
                 _refuse_bare_sym(graph, ref, "--evidence")
@@ -1313,6 +1392,7 @@ def _resolve_governs(repo: Path, config: dict, graph, refs: list[str],
             # missing node makes the edge dangle and hard drift says it (see `_anchor`'s ``guide``).
             out.append(memory.Concern(sym=ref, anchor=None, anchor_algo=memory.GOVERNS_ALGO))
             continue
+        ref = _canonical_locus(repo, ref)  # a typed heading canonicalizes to its slug (feedback-v5 B)
         if not (ref.startswith("sym:") or ref.startswith("file:")):
             _guidance(f"--governs must be sym:<path>#<name>, file:<path> or file:<path>#<section>, got: {ref}")
         if ref.startswith("sym:"):
@@ -1365,6 +1445,48 @@ def _dedup_guard(repo: Path, config: dict, graph, statement: str, why: str,
             f"If you're changing your mind, `yigraf supersede {hit[0]} \"<new>\"`; "
             f"otherwise re-run with --new to capture it anyway."
         )
+
+
+def _hollow_why_guard(repo: Path, config: dict, why: str, supersedes: list[str]) -> None:
+    """Refuse a ``--why`` that only POINTS at an argument nobody ever wrote (feedback-v5 amendment).
+
+    A deferring ``--why`` — *"the belief is unchanged and the argument is in the node this
+    supersedes"* — is a promise the store has no way to keep. Nothing checked that the target carried
+    an argument, and by the time a reader follows the pointer the only way to find out is archaeology:
+    in the field, four such pointers all resolved to nodes whose entire body was a single statement
+    line. **The trail was load-bearing and empty at the same time, and ``--why`` was the field that was
+    supposed to prevent that.** Catching it at creation costs one lookup; catching it as the field did
+    costs a session years later, by which time the argument exists nowhere.
+
+    Silent when the argument is really there (design law #4): a ``--why`` may cite a node freely, and
+    deferring to a node that argues its case is legitimate shorthand — only a pointer that bottoms out
+    in nothing is refused. A supersede gets a second sentence, because a supersede whose ``--why`` says
+    the belief is *unchanged* is not a mind-change at all: it is the locus repair ``reanchor`` exists
+    for, filed under the verb that writes a false entry in the supersedes trail.
+    """
+    max_words = config.get("hollow_why_words", 25)
+    found = memory.deferral_verdict(repo, why, supersedes, max_words=max_words)
+    if found is None:
+        return
+    _target, verdict, chain = found
+    end = chain[-1]
+    lands = {
+        "missing": f"no node {end} exists",
+        "archived": f"{end} is archived — `gc` moved it out of the active graph",
+        "hollow": f"{end} carries no --why of its own",
+        "loop": f"{end} defers back to a node that defers here",
+    }[verdict]
+    _guidance(
+        f"this --why argues nothing — it defers to {' → '.join(chain)}, and {lands}, so a reader "
+        f"following the pointer lands on nothing. Nothing else will ever check this, which is why it "
+        f"is checked here: write the argument into the --why you are composing now."
+        + (f" If it belongs on {end} instead, `yigraf amend {end} --why \"<the argument>\"` puts it "
+           f"there — no supersedes trail, no re-stated belief."
+           if verdict in ("hollow", "loop") else "")
+        + (" And a supersede whose --why says the belief is UNCHANGED is not a mind-change: that is a "
+           "locus repair, and `yigraf reanchor <mem:id> <old-locus> <new-locus>` moves the anchor "
+           "without writing a false entry into the supersedes trail." if supersedes else "")
+        + f" (config: hollow_why_words: 0 turns this off.)")
 
 
 def _premise_already_holds(repo: Path, graph, ref: str) -> bool:
@@ -1450,6 +1572,9 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
                   f"governs use --concerns sym:<path>#<name>.")
 
     config = load_config(workspace / "config.yaml")
+    # Before the build, like the empirical-grounding refusal above: a --why that only points somewhere
+    # costs nothing to reject, and rejecting it costs the caller one short sentence to rewrite.
+    _hollow_why_guard(repo, config, why, list(supersedes) + list(pending_supersedes))
     graph, _ = build_graph(repo, config)  # built once, reused for concern/serves resolution + dedup
     concerns, warnings = _resolve_concerns(repo, config, graph, concern_syms, was_anchored,
                                            typed=typed_loci)
@@ -2053,12 +2178,93 @@ def _dead_grounds(repo: Path, config: dict, node: memory.Memory) -> list[str]:
             and _anchor(repo, config, e.ref, guide=False)[0] is None]
 
 
+def _reaffirm_ledger(root: Path) -> Path:
+    """The machine-local ledger of recent single-id reaffirms (``yigraf/.local/reaffirms.json``).
+
+    Volatile, gitignored, never the graph — the same rule that keeps usage/last_seen out of the
+    projection (design law #6). It is not belief state: it records *that a re-verification was claimed*
+    and, when one was given, the caller's own one-line account of what they checked. That makes it the
+    one thing the graph could never hold — an audit trail of the claim rather than the claim.
+    """
+    return Path(root) / "yigraf" / ".local" / "reaffirms.json"
+
+
+def _read_reaffirm_ledger(root: Path) -> list[dict]:
+    """The ledger, or ``[]`` — fail-open in the permissive direction. A guard that cannot read its own
+    history must let the caller through, not block real work over a corrupt sidecar (design law #5)."""
+    try:
+        data = json.loads(_reaffirm_ledger(root).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [e for e in data if isinstance(e, dict) and isinstance(e.get("at"), (int, float))] \
+        if isinstance(data, list) else []
+
+
+def _record_reaffirm_claim(root: Path, target: str, verified: str | None) -> None:
+    """Append one reaffirm to the ledger, keeping the last 50. Silent on any I/O failure."""
+    entries = _read_reaffirm_ledger(root)[-49:]
+    entries.append({"at": time.time(), "target": target, "verified": verified or None})
+    try:
+        path = _reaffirm_ledger(root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(entries), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _guard_reaffirm_burst(repo: Path, config: dict, target: str, verified: str | None) -> None:
+    """Past N unverified single-id reaffirms in a window, require ``--verified "<what you checked>"``.
+
+    ``reaffirm`` is the one verb whose whole meaning is "I read this and it still holds", and it is the
+    one verb that asks for no evidence of the reading. So a `for` loop over ids clears a drift count to
+    zero, prints a success line each time, and the counter going down *feels* like progress — while an
+    active decision can be certified as re-verified carrying a clause the same session's edit already
+    falsified (feedback-v5, still-open #1).
+
+    Three properties this deliberately has:
+
+    * it never blocks the honest caller. The first few are free, and past that the cost is one sentence
+      naming what you checked — which somebody who actually read the claim can write and a loop cannot.
+    * it exits **0** with guidance, like every other recoverable refusal (design law #1), so it teaches
+      the retry instead of teaching the agent that yigraf fails.
+    * it is scoped to the **id** form. The locus form is already bounded by an act — you re-verified
+      one locus — and rate-limiting it would punish the honest batch to catch the dishonest loop.
+
+    A prose prohibition in the session preamble is what this replaces, and the argument for the guard is
+    that the preamble is precisely the artifact a hurrying agent skips.
+    """
+    limit = int(config.get("reaffirm_burst", 3) or 0)
+    if limit <= 0 or verified:
+        return
+    window = float(config.get("reaffirm_burst_window", 300) or 0)
+    cutoff = time.time() - window
+    recent = [e for e in _read_reaffirm_ledger(repo)
+              if e["at"] >= cutoff and not e.get("verified")]
+    if len(recent) < limit:
+        return
+    ids = ", ".join(dict.fromkeys(e.get("target", "?") for e in recent[-limit:]))
+    _guidance(
+        f"That is {len(recent)} reaffirms in the last {int(window // 60) or 1} minute(s) "
+        f"({ids}) with nothing recorded about what was checked — so this one needs "
+        f'`--verified "<what you actually re-read, in one line>"`.\n'
+        f"  Reaffirm means \"I read this claim and it still holds\". Nothing in the command proves the "
+        f"reading, and a clearing drift count feels like progress whether or not it happened — so past "
+        f"a few in a row, say what you checked.\n"
+        f"  Read it first if you have not: `yigraf show {target}`. Then:\n"
+        f'    yigraf reaffirm {target} --verified "<e.g. re-read the retry policy; the 3-attempt cap '
+        f'is still what the code does>"\n'
+        f"  If the claim did NOT survive your reading, the verb is not this one: "
+        f'`yigraf supersede {target} "<the restated belief>" --why "<what changed>"`.\n'
+        f"  (Turn this off with reaffirm_burst: 0 in yigraf/config.yaml.)")
+
+
 @app.command()
 def reaffirm(
     target: str = typer.Argument(..., help="A memory id (mem:NNN → reaffirm its concerns) or a locus (sym:<path>#<name> or file:<path> → reaffirm every memory concerning it)."),
     concerns: list[str] = typer.Option(None, "--concerns", help="With a mem: id, re-anchor only these loci (default: all the node's concerns)."),
     grounding: str = typer.Option(None, "--grounding", help=f"With a mem: id, upgrade its grounding in place ({' | '.join(memory.GROUNDINGS)}) — e.g. a live spike just confirmed an inferred decision."),
     evidence: list[str] = typer.Option(None, "--evidence", help="With a mem: id, name/re-anchor the observation grounding it (required to reach empirical): sym:<path>#<test> | file:<path> | commit:<sha> | <url> (repeatable)."),
+    verified: str = typer.Option(None, "--verified", help="One line naming what you actually re-read. Required past a burst of unverified single-id reaffirms; recorded in the local audit ledger."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
     """Re-verify a decision still holds and re-stamp its ``concerns`` anchors to the current code.
@@ -2085,6 +2291,10 @@ def reaffirm(
         if path is None:
             _guidance(f"No memory node with id {target} to reaffirm. "
                       f'Find the decision you mean with `yigraf context "<topic>"`.')
+        # Before anything is written: past a burst of unverified single-id reaffirms, this one must say
+        # what was checked (feedback-v5 still-open #1). Id form only — see the guard's docstring.
+        _guard_reaffirm_burst(repo, config, target, verified)
+        _record_reaffirm_claim(repo, target, verified)
         node = memory.read_memory(path)
         # Upsert any --evidence first: re-anchor a locus already grounding this node (grounds-drift:
         # re-observed) or add a fresh observation. Done before the empirical gate so the gate sees it.
@@ -2206,6 +2416,10 @@ def reaffirm(
                        f"drift-checks it. When you next confirm it, `yigraf reaffirm {target} "
                        f"--grounding empirical --evidence <locus>`; if it was really an inference, "
                        f"`yigraf reaffirm {target} --grounding inferred`.")
+        if verified:
+            # Echoed, and kept in the local ledger: an assertion the caller had to compose is the only
+            # evidence of reading this verb can ever have, so it must not vanish into the exit code.
+            typer.echo(f'  verified: "{verified}"')
         _record_reaffirm_uphold(repo, config, [target])  # an explicit re-verification → strong uphold
         return
 
@@ -2224,15 +2438,20 @@ def reaffirm(
     all_memories = memory.iter_memories(repo)
     superseded_ids = {old for m in all_memories for old in m.supersedes}
     matched, restamped_ids, gone_ids, matched_ids, skipped = 0, [], [], [], []
+    sections_reached: set[str] = set()
     for node in all_memories:
-        if target not in {c.sym for c in node.concerns}:
+        # A whole-file locus reaches the section anchors inside it, so the mdsec-v1 cure for prose
+        # false-drift composes with the batch-clear (feedback-v5 D#4).
+        covered = _covered_loci(target, {c.sym for c in node.concerns})
+        if not covered:
             continue
         if node.id in superseded_ids or node.status != "active":
             skipped.append(node.id)
             continue
         matched += 1
         matched_ids.append(node.id)
-        restamped, gone = _reaffirm_concerns(repo, config, node, {target})
+        sections_reached |= {c for c in covered if c != target}
+        restamped, gone = _reaffirm_concerns(repo, config, node, covered)
         if restamped or gone:
             memory.memory_file_path(repo, node).write_text(
                 memory.render_memory(node), encoding="utf-8")
@@ -2264,6 +2483,12 @@ def reaffirm(
     _rebuild(repo)
     # A gone locus is hard drift, not a survival — credit an uphold only to memories still anchored there.
     _record_reaffirm_uphold(repo, config, [m for m in matched_ids if m not in gone_ids])
+    if sections_reached:
+        # Never silently: the caller named a file and the batch touched anchors that name sections, so
+        # the echo says which. A count alone would leave them believing they re-stamped one thing.
+        shown = ", ".join(sorted(sections_reached)[:6])
+        more = f" (+{len(sections_reached) - 6} more)" if len(sections_reached) > 6 else ""
+        typer.echo(f"{target} covers {len(sections_reached)} section anchor(s) inside it: {shown}{more}")
     if restamped_ids:
         typer.echo(f"Reaffirmed {len(restamped_ids)} memory(ies) concerning {target} — drift cleared: "
                    f"{', '.join(restamped_ids)}.")
@@ -2331,6 +2556,36 @@ def _obligation_footer(graph) -> str:
     return f" · ⚠ {' · '.join(bits)}" if bits else ""
 
 
+def _show_archived(repo: Path, target: str) -> None:
+    """Print an archived memory's claim and its successor, then exit 0 — or return, if it isn't one.
+
+    The archive is out of the active graph on purpose (a retired belief must not surface in a scan), so
+    this renders from the artifact rather than the graph, and says plainly that the node is retired.
+    That is the whole difference between "kept for history" as a filesystem fact and as something a
+    reader can actually reach (feedback-v5 E#1).
+    """
+    if not target.startswith("mem:"):
+        return
+    path = memory.find_archived_memory(repo, target)
+    if path is None:
+        return
+    node = memory.read_memory(path)
+    successor = node.superseded_by
+    typer.echo(f"{node.id} — ARCHIVED (collected by `yigraf gc`; the artifact is kept at "
+               f"{path.relative_to(Path(repo))})")
+    typer.echo(f'  "{node.statement}"')
+    if node.why:
+        typer.echo(f"  why: {node.why}")
+    if successor:
+        typer.echo(f"  superseded by {successor} — `yigraf show {successor}` is the live belief.")
+    else:
+        typer.echo("  no successor recorded: it was collected as an abandoned proposed candidate "
+                   "(never confirmed by a real encounter), not as superseded churn.")
+    typer.echo("  It is out of the active graph, so `context` will not return it. To bring it back, "
+               f"move the file back into yigraf/memory/.")
+    raise typer.Exit(code=0)
+
+
 @app.command()
 def show(
     target: str = typer.Argument(..., help="A node id or unique prefix: mem:<id> | int:<slug> | task:<plan>/<n> | sym:<path>#<name> | file:<path>."),
@@ -2357,6 +2612,11 @@ def show(
         if candidates:
             _guidance(f"{target} matches {len(candidates)} nodes — name one: "
                       f"{', '.join(candidates[:10])}{' …' if len(candidates) > 10 else ''}")
+        # Before declaring the id unknown, look in the archive — `gc` promises "never delete, kept for
+        # history", and that promise was true of the FILE and not of the ID (feedback-v5 E#1). An id
+        # cited in prose outside the graph answered "no such node", which reads as *lost* rather than
+        # *retired*, and sent a reader looking for a deletion that never happened.
+        _show_archived(repo, target)
         _guidance(f'No node {target}. Find one by meaning with `yigraf context "<topic>"`, or by '
                   f"obligation with `yigraf drift` / `yigraf drift --stale` — both print ids.")
     typer.echo(show_mod.node_detail(graph, resolved, root=repo, config=config), nl=False)
@@ -2391,6 +2651,82 @@ def _verb_catalog() -> list[dict]:
                                 "help": (p.help or "").strip(), "required": bool(p.required)})
         verbs.append({"verb": name, "summary": summary, "args": args, "options": options})
     return verbs
+
+
+def _changelog_source() -> tuple[str, str] | None:
+    """``(text, where)`` for the changelog — the copy inside the installed package, else the repo's own.
+
+    The packaged copy is tried first *on purpose*: it is the one that describes the yigraf actually
+    running. A developer working in this repo gets the working-tree file as a fallback, which is the
+    same document one commit ahead.
+    """
+    try:
+        from importlib.resources import files
+        packaged = files("yigraf").joinpath("CHANGELOG.md")
+        if packaged.is_file():
+            return packaged.read_text(encoding="utf-8"), "the installed package"
+    except (ImportError, OSError, ModuleNotFoundError):
+        pass
+    local = Path(__file__).resolve().parent.parent.parent / "CHANGELOG.md"
+    if local.is_file():
+        return local.read_text(encoding="utf-8"), str(local)
+    return None
+
+
+def _version_key(raw: str) -> tuple:
+    """A sortable key for a ``1.7.1``-shaped version; non-numeric parts sort as 0 rather than raising."""
+    parts = []
+    for chunk in raw.strip().lstrip("v").split("."):
+        digits = "".join(c for c in chunk if c.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+
+@app.command()
+def changelog(
+    since: str = typer.Option(None, "--since", help="Only releases NEWER than this version (e.g. --since 1.5.1) — what an upgrade from it actually changed."),
+    limit: int = typer.Option(3, "--limit", help="How many releases to print when --since is not given (0 = all)."),
+) -> None:
+    """Print yigraf's release notes — from the copy that ships inside the wheel (feedback-v5 C).
+
+    An upgrade is the moment the notes are worth reading and the moment they are hardest to reach: the
+    tool is installed, the repo is not, and a version that never reached PyPI leaves a gap no installed
+    artifact can explain. ``--since <the version you were on>`` answers the only question an upgrader
+    actually has — *what changed under me* — including across releases that were skipped.
+    """
+    found = _changelog_source()
+    if found is None:
+        _guidance("No changelog is available in this install. It ships inside the wheel from 1.8.0 on; "
+                  "an older install predates that. The notes are also at "
+                  "https://github.com/mansilla/yigraf/blob/main/CHANGELOG.md")
+    text, where = found
+    # Split on the `## [x.y.z]` release headings; anything before the first is the file's own preamble.
+    chunks = re.split(r"^## \[", text, flags=re.MULTILINE)[1:]
+    releases = [(c.split("]", 1)[0], "## [" + c.rstrip()) for c in chunks]
+    if not releases:
+        typer.echo(text)
+        return
+    if since:
+        floor = _version_key(since)
+        selected = [(v, body) for v, body in releases if _version_key(v) > floor]
+        if not selected:
+            newest = releases[0][0]
+            _guidance(f"Nothing newer than {since} in the changelog — the newest release recorded is "
+                      f"{newest}. (If you expected more, you may be reading an older install's copy: "
+                      f"this one came from {where}, and reports itself as yigraf {__version__}.)")
+        skipped = ""
+        if len(selected) > 1:
+            # The specific thing that made this ask: 1.5.2 and 1.6.0 never reached PyPI, so an upgrade
+            # from 1.5.1 delivered four releases at once and nothing installed could say so.
+            skipped = (f"  ({len(selected)} releases are between {since} and {__version__} — an upgrade "
+                       f"can skip intermediate ones, and they all arrive at once.)")
+        typer.echo(f"yigraf {__version__} — what changed since {since}:")
+        if skipped:
+            typer.echo(skipped)
+        typer.echo("")
+    else:
+        selected = releases if limit <= 0 else releases[:limit]
+    typer.echo("\n\n".join(body for _, body in selected))
 
 
 @app.command()
@@ -2452,10 +2788,21 @@ def status_cmd(
     note = summary.ctx_note()
     if note and sys.stdout.isatty():
         typer.echo(note)
+    # Same split, for the view's state: the ambient line carries the token + its remedy, and the reason
+    # it happened at all lands here, where there is room for a sentence (feedback-v5 A).
+    fresh_note = summary.freshness_note()
+    if fresh_note and sys.stdout.isatty():
+        typer.echo(fresh_note)
     # A one-line "how to update" notice, only for a human at a real terminal (never a piped statusline).
     if summary.update and sys.stdout.isatty():
         typer.echo(f"⬆ yigraf {summary.update} is available — update with: "
                    f"uv tool upgrade yigraf  (or: pipx upgrade yigraf · pip install -U yigraf)")
+    # The skill is the agent's instruction sheet and an upgrade does not touch it, so a stale one keeps
+    # naming verbs that changed or are gone (feedback-v5 D). One line, only for a human at a terminal.
+    if summary.skill_behind and sys.stdout.isatty():
+        typer.echo(f"⬆ .claude/skills/yigraf/SKILL.md was written by yigraf {summary.skill_behind}, "
+                   f"not {__version__} — an upgrade does not rewrite it. Refresh it with: "
+                   f"yigraf install-claude-hooks")
 
 
 def _claude_ctx(data: dict) -> tuple[Path, int | None, int | None]:
@@ -3330,6 +3677,36 @@ def _settle_renames(repo: Path, graph, apply: bool) -> list[tuple[str, str, str,
     return sorted(settled)
 
 
+def _prose_citations(repo: Path, config: dict, doomed: set[str]) -> list[tuple[str, str, bool]]:
+    """Live memories whose ``why`` TEXT names a node ``gc`` is about to archive (amendment #2).
+
+    ``refs_in=0`` is a count of *edges*, and an id named in prose is a reference the edge set cannot
+    see — so is a ``--why`` that defers to "the node this supersedes", where the pointer rides an edge
+    ``gc`` deliberately discounts (every collectable node is superseded by definition). Both go
+    unresolvable the moment the target moves to the archive, and this is the last cheap moment to say
+    so. Returns ``(source, target, target_has_an_argument)``: the second half decides which sentence
+    the caller prints, because a pointer to a real argument is a repair and a pointer to an empty node
+    was never anything at all.
+    """
+    hits: list[tuple[str, str, str]] = []
+    for node in memory.iter_memories(repo):
+        if node.id in doomed or not (node.why or "").strip():
+            continue
+        deferred = memory.deferring_why(node.why, node.supersedes,
+                                        max_words=config.get("hollow_why_words", 25))
+        targets = [t for t in memory.ids_named_in(node.why) if t in doomed]
+        if deferred in doomed and deferred not in targets:
+            targets.append(deferred)
+        for target in targets:
+            if target != deferred:
+                hits.append((node.id, target, "cited"))
+                continue
+            path = memory.find_memory(repo, target)
+            argued = bool(path is not None and (memory.read_memory(path).why or "").strip())
+            hits.append((node.id, target, "deferred" if argued else "hollow"))
+    return hits
+
+
 @app.command()
 def gc(
     path: Path = typer.Argument(Path("."), help="Repo root (default: current dir)."),
@@ -3415,19 +3792,73 @@ def gc(
         why = reasons.get(actions[mem_id], actions[mem_id])
         typer.echo(f"  {'✓' if apply else '·'} {mem_id} → archive ({why}): {label}")
 
+    # The half of that which yigraf CAN see, and therefore must (feedback-v5 amendment #2): a live
+    # node's own `why` naming one of these. `refs_in=0` kept them collectable because it counts edges,
+    # and prose is not an edge. Printed above the general warning because this one is actionable — it
+    # names both ends and the verb that repairs it.
+    citations = _prose_citations(repo=path, config=config, doomed=set(actions))
+    # A plain citation is one line for ALL of them: on a real store there are a dozen or more, `show`
+    # still resolves every one of them out of the archive (feedback-v5 E#1), and a dozen ⚠ nobody can
+    # act on is how a surface teaches its reader to skim (design law #4). The deferrals below get a
+    # line each because they are rare and each names a repair.
+    cited = [(s, t) for s, t, kind in citations if kind == "cited"]
+    if cited:
+        typer.echo(f"  · {len(cited)} live `why` field(s) cite an id above — `refs_in` counts edges, "
+                   f"and prose is not an edge. They stay readable (`yigraf show <id>` resolves an "
+                   f"archived node), but `yigraf context` will no longer reach one: "
+                   f"{', '.join(f'{s}→{t}' for s, t in cited[:3])}"
+                   f"{f' (+{len(cited) - 3} more)' if len(cited) > 3 else ''}.")
+    for source, target, kind in citations:
+        if kind == "cited":
+            continue
+        typer.echo(f"  ⚠ {source}'s own `why` DEFERS its argument to {target}, which this run "
+                   f"archives — a pointer `refs_in` cannot see, because it counts edges and this is "
+                   f"prose.")
+        typer.echo("      " + (
+            f"Copy the argument across before the pointer stops resolving: `yigraf amend {source} "
+            f"--why \"<the argument, in full>\"` — no supersedes trail, no re-stated belief."
+            if kind == "deferred" else
+            f"And {target} carries no `why` of its own, so that pointer was always hollow: archiving "
+            f"destroys nothing, but the argument {source} claims to have is not in the store at all. "
+            f"`yigraf amend {source} --why \"<the argument>\"` puts it where it is read."))
+
+    # "Never delete, always reversible, kept for history" is true of the FILE and not of the ID, and the
+    # difference is invisible until something cites one (feedback-v5 E#1). An id written down outside
+    # the graph — a code comment, a design note, a PR description — stops resolving here, and nothing
+    # in the graph can warn about it, because the citation does not live in the graph. So the dry run
+    # says it, while the caller can still repoint the citations, which is the only moment it helps.
+    typer.echo(f"  ⚠ these ids stop resolving in the active graph: `yigraf show <id>` will report them "
+               f"as archived and name the successor; `yigraf context` reaches only the successor. If "
+               f"prose outside the graph cites one, repoint it first — cite the "
+               f"`yigraf context \"<query>\"` that finds the belief, not the id, since the query "
+               f"survives a supersede and the id does not.")
     if not apply:
         typer.echo(f"Dry run — {len(actions)} node(s) would be archived. Re-run with --apply.")
         return
 
     archive_dir = workspace / "memory" / "archive"
     archive_dir.mkdir(parents=True, exist_ok=True)
+    before_syms = sum(1 for _, a in graph.nodes(data=True)
+                      if a.get("family") == "structure" and status.is_symbol(a))
     for mem_id in sorted(actions):
         mem_path = memory.find_memory(path, mem_id)
         if mem_path is None:
             continue
         mem_path.rename(archive_dir / mem_path.name)  # out of memory/*.md → drops from the active graph
+    rebuilt, _ = build_graph(path, config)
     _rebuild(path)
     typer.echo(f"Archived {len(actions)} node(s) → {archive_dir.relative_to(path)}/.")
+    # A symbol count that DROPS after a garbage collection is an alarming thing to read on a graph you
+    # rely on, and the cause is benign: a retired memory's anchor projects a placeholder node for a
+    # symbol that no longer exists in source, so collecting the memory collects the placeholder with it.
+    # Correct, and previously unmentioned — so the reader had to derive it (feedback-v5 E#3).
+    after_syms = sum(1 for _, a in rebuilt.nodes(data=True)
+                     if a.get("family") == "structure" and status.is_symbol(a))
+    if after_syms < before_syms:
+        typer.echo(f"Also released {before_syms - after_syms} placeholder symbol node(s) that only a "
+                   f"collected memory referenced — they name symbols not in the current source, so the "
+                   f"`sym` count on `yigraf status` drops by that much. Nothing in your code was "
+                   f"touched; a rebuild holds at the new number.")
 
 
 @app.command(name="graph-merge", hidden=True)

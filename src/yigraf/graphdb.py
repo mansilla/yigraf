@@ -299,6 +299,36 @@ def materialize(graph: nx.DiGraph, path: Path, fingerprint: str) -> None:
         raise ViewUnwritable(path, exc) from exc
 
 
+def view_state(path: Path) -> str:
+    """Why the view at ``path`` is (un)loadable: ``"present"`` | ``"missing"`` | ``"old-schema"`` |
+    ``"unreadable"``.
+
+    :func:`load` collapses all three failures into ``None``, which is right for a *read path* — every
+    one of them means "rebuild" — but wrong for a surface that has to **name** the state. ``yigraf
+    status`` reported all three as ``absent``, and after a version upgrade the true state is neither
+    missing nor damaged: the previous yigraf wrote a lower ``db_schema_version``, this one declines it,
+    and :func:`load_or_build` rebuilds it on the next read. Told "absent", a reader diagnoses a lost
+    graph; told the schema is old, they know an upgrade did it and that nothing is lost (feedback-v5 A).
+
+    Cheap by construction — one small ``meta`` read, no nodes, no edges — so the statusline can afford
+    it on every refresh.
+    """
+    path = Path(path)
+    if not path.is_file():
+        return "missing"
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            rows = dict(conn.execute("SELECT key, value FROM meta").fetchall())
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return "unreadable"
+    if rows.get("db_schema_version") != str(DB_SCHEMA_VERSION):
+        return "old-schema"
+    return "present"
+
+
 def stored_meta(path: Path) -> tuple[str | None, list[str]]:
     """``(fingerprint, governed_files)`` for the view at ``path``; ``(None, [])`` if it's absent, corrupt
     or a stale schema — cheap (one small table read), so a read path can decide load-vs-rebuild without

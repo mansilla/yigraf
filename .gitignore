@@ -40,6 +40,10 @@ internal/
 /docs/hero-*
 /docs/figure_*
 /docs/SUBMISSION-*
+# Field-feedback correspondence and our replies to it: same rule again — it is a conversation with a
+# user about a release, not a reference an agent should be pointed at. The findings themselves land in
+# CHANGELOG.md and as tests named after them; the letter does not.
+/docs/feedback-response-*
 
 # --- yigraf's own workspace data (self-hosted): intents/memory/plans/config live on disk,
 # not in this repo's history. Anchored to root so it never matches the src/yigraf/ package. ---

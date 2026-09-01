@@ -1379,9 +1379,15 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
 
     drift_items: list = []
     stale_items: list = []
+    rename_items: list = []
     drifted_edges: set[tuple[str, str]] = set()
     for item in compute_drift(graph):
         if item.kind == "renamed":
+            # Global and unscoped, unlike the edit hook's copy: SessionStart is the orientation
+            # dashboard, and this is the one condition that stops being repairable while the agent is
+            # not looking at it (feedback-v5 D#1). A `/clear` is exactly when the agent loses the
+            # memory of having renamed anything, so re-injecting it here is what closes the window.
+            rename_items.append(item)
             continue
         drifted_edges.add((item.task_id, item.locator))  # full set — _verified_reconcile needs it
         if is_stale_completion(graph, item):  # int:drift-as-stale — principal-facing, never the edit hook
@@ -1415,10 +1421,12 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
     head_chars = sum(len(ln) + 1 for ln in head + pinned_lines)
     reserved = head_chars + manifest_cap * _MANIFEST_LINE_CHARS
     drift_lines, stale_lines = _drift_block(drift_items, config), _stale_block(stale_items, config)
+    rename_lines = _rename_block(rename_items, config)
     result = _render(graph, ranked, "active plan & governing intents", drift_lines,
                      reconcile, max(0, budget - reserved // 3), root=root, config=config,
                      capture_lines=capture, task_reconcile_lines=task_reconcile,
                      conflict_lines=conflicts, stale_lines=stale_lines, parent=parent,
+                     rename_lines=rename_lines,
                      signals_first=True)  # orientation: obligations are not an appendix (v4 #13)
 
     # Emit the slice for anything it actually has to say — nodes OR a warning. Gating this on `seeds`
@@ -1426,7 +1434,7 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
     # repo with no intents and every box checked seeds nothing, so its outstanding drift would have
     # been computed correctly and then thrown away with the empty frame that held it.
     has_body = bool(ranked or drift_lines or stale_lines or reconcile or capture
-                    or task_reconcile or conflicts)
+                    or task_reconcile or conflicts or rename_lines)
     body = [result.text.rstrip()] if has_body else []
     spent = head_chars + sum(len(p) + 2 for p in body)  # +2: the blank line joining each section
     manifest = _manifest(graph, config, exclude=set(result.rendered) | pinned_ids, cap=manifest_cap,
