@@ -4,26 +4,43 @@
 
 <h1 align="center">yigraf</h1>
 
-<p align="center"><em><strong>"Why I Graph?"</strong> — the memory your coding agent doesn't have.</em></p>
+<p align="center"><em><strong>"Why I Graph?"</strong> — a truth maintenance system for AI coding agents.</em></p>
 
-yigraf gives your AI coding agent a memory that survives `/clear`: one connected graph over your
-code, what it's *for*, what's *left to do*, and *why* it ended up this way — and it hands the agent
-exactly the right slice of that, right when it's working.
+Your agent acts on beliefs about your repo: what the code is *for*, what must *hold*, what's *left to
+do*, and *why* it ended up this way. yigraf holds those beliefs in one connected graph — each one
+justified, pinned to the code it's about, and checked against that code as it changes — and hands the
+agent the relevant slice at the moment it acts.
 
 It's a tool **for the agent**, not another dashboard for you. You're the principal: you set the
-direction and answer the occasional judgment call. The agent does the work — and now it does it
-without forgetting.
+direction and answer the judgment calls yigraf refuses to make on its own. The agent does the work —
+and now it does it on knowledge that is still true.
 
 ## Why
 
-Your agent is brilliant and amnesiac. Every `/clear` wipes what it knew. And the code itself never
-told the whole story: it records *what* runs, never *why* it's shaped that way, *what* it's supposed
-to guarantee, or *what* you were halfway through changing. So every session your agent relearns the
-repo from scratch, re-reads files it already understood, and re-litigates decisions you settled weeks
-ago — sometimes undoing them.
+Every `/clear` wipes what your agent knew. What *survives* — a doc, a comment, a note in a backlog —
+is the more dangerous half: it was true **once**. Source code records *what* runs, never what it's
+supposed to guarantee or why it's shaped that way, and nothing in it announces that a decision you
+settled weeks ago no longer holds.
 
-yigraf keeps that missing context as a living graph next to your code, and feeds the relevant piece
-back to the agent at the moment it acts. The agent stops starting over.
+So your agent has two failure modes, not one. It relearns the repo from scratch every session — or,
+worse, it acts with full confidence on something that stopped being true three commits ago, and
+re-litigates decisions you already made because nothing told it they were still standing.
+
+Storing knowledge only fixes the first. yigraf is built for the second: **justify, detect, revise.**
+
+- **Justify.** No free-floating facts. Every belief carries its reasoning, the alternatives that were
+  ruled out, and an anchor to the exact code it's about — so it can later be *checked* rather than
+  merely trusted. Beliefs also carry a grounding tier, so "we measured this" and "we assumed this"
+  never read as the same claim.
+- **Detect.** When anchored code changes, the belief that depended on it is flagged as drifted.
+  Anything yigraf infers arrives tagged `inferred` and never outranks the evidence behind it.
+- **Revise.** A flag is settled explicitly — reaffirm the belief, supersede it with what's true now,
+  or record the dispute when two live beliefs collide. yigraf never silently picks a winner, and the
+  superseded reasoning is kept as an edge rather than deleted, so your agent can see what the repo
+  used to believe and why it changed its mind.
+
+That loop is what makes retrieval worth trusting: the slice your agent gets back is knowledge that has
+survived contact with the current code, and says so when it hasn't.
 
 ## What yigraf gives your agent
 

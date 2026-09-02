@@ -4,6 +4,39 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.9.1] — 2026-09-02
+
+**"The memory your coding agent doesn't have" sold the half that everybody else also sells.**
+
+The old positioning was accurate and commoditized. Storage is the easy half — notes files, RAG indexes
+and half a dozen memory servers all promise an agent that stops forgetting. It also named only one of
+the two failure modes this engine handles, and the quieter one is the expensive one: an agent acting
+with full confidence on a belief that stopped being true three commits ago, because what survived the
+`/clear` was true **once** and nothing had checked it since. Framed as memory, drift detection — the
+part nothing else does — read as a side feature.
+
+That second failure mode has a name in the literature. A **truth maintenance system** (Doyle, 1979)
+holds justified beliefs, detects contradictions among them, and revises explicitly instead of
+silently — which is what yigraf has been doing all along: `--why` and `--rejected` on every memory,
+grounding tiers that keep "we measured this" from reading like "we assumed this", drift on anchored
+code, `reaffirm`/`supersede`/`dispute` with no silent winner, and `supersedes` kept as an *edge* so the
+retracted reasoning stays readable. The rebrand names shipped behavior; it promises nothing new.
+
+The public surfaces now lead with **justify, detect, revise** — README, the landing page, and the PyPI
+summary and keywords. The four questions and the graph algebra are unchanged; they are what the claim
+rests on.
+
+Deliberately **not** rebranded: the agent-facing strings — `--help`, the hook injections, `SKILL.md`,
+`AGENTS.md` — which still say "one connected graph over code, intent, plan, and memory." That sentence
+tells an agent what is *in* the graph, which is what it needs at the moment of action. "A truth
+maintenance system" is a phrase for a human deciding whether to install; in a hook injection it would
+cost tokens to say less. The design law applies to the branding too.
+
+One real gap closed along the way: the landing page carried no `og:`/`twitter:` tags at all, so every
+shared link rendered bare. Added, with the social card.
+
+Copy and packaging metadata only — no engine change, no behavior change, no schema change.
+
 ## [1.9.0] — 2026-09-01
 
 **Six surfaces that named the wrong thing — two of them told an agent a rescue was permanent damage,

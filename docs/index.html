@@ -1,5 +1,18 @@
-<title>yigraf — the memory your coding agent doesn't have</title>
-<meta name="description" content="yigraf gives your AI coding agent a persistent memory: one graph over code, intent, plan, and the why — fed back at the moment it acts.">
+<title>yigraf — a truth maintenance system for AI coding agents</title>
+<meta name="description" content="yigraf is a truth maintenance system for AI coding agents: what the code is for, what must hold, and why — each belief justified, pinned to the code it's about, and flagged the moment it stops holding.">
+
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mansilla.github.io/yigraf/">
+<meta property="og:site_name" content="yigraf">
+<meta property="og:title" content="yigraf — a truth maintenance system for AI coding agents">
+<meta property="og:description" content="Your agent acts on beliefs about your repo. yigraf keeps them justified, anchored to the code they concern, and flagged the moment one stops holding.">
+<meta property="og:image" content="https://raw.githubusercontent.com/mansilla/yigraf/main/assets/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="yigraf — a truth maintenance system for AI coding agents">
+<meta name="twitter:description" content="Your agent acts on beliefs about your repo. yigraf keeps them justified, anchored to the code they concern, and flagged the moment one stops holding.">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/mansilla/yigraf/main/assets/social-preview.png">
 
 <style>
   :root {
@@ -153,6 +166,7 @@
 
   /* hosts / channels */
   .channels { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .channels.three { grid-template-columns: repeat(3, 1fr); }
   .chan { border: 1px solid var(--line); border-radius: 12px; padding: 24px; background: var(--panel); }
   .chan h3 { font-family: var(--mono); font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--cyan); margin: 0 0 10px; }
   .chan p { margin: 0; color: var(--mute-2); font-size: 15.5px; }
@@ -170,7 +184,7 @@
   .foot-note .roadmap { color: var(--mute-2); }
 
   @media (max-width: 720px) {
-    .grid4, .channels { grid-template-columns: 1fr; }
+    .grid4, .channels, .channels.three { grid-template-columns: 1fr; }
     body { font-size: 16px; }
     .nav { display: none; }
     .lede, .problem p { font-size: 18px; }
@@ -205,8 +219,8 @@
       <span class="dim">● fresh</span>
     </div>
 
-    <h1>The memory your coding&nbsp;agent <span class="accent">doesn't have.</span></h1>
-    <p class="lede">yigraf keeps one connected graph over your code, what it's <b>for</b>, what's <b>left</b>, and <b>why</b> it ended up this way — and hands your agent exactly the right slice, right when it acts. It stops starting over.</p>
+    <h1>A truth&nbsp;maintenance system for <span class="accent">AI coding&nbsp;agents.</span></h1>
+    <p class="lede">Your agent acts on beliefs about your repo — what the code is <b>for</b>, what must <b>hold</b>, what's <b>left</b>, and <b>why</b> it ended up this way. yigraf holds those beliefs in one connected graph, each one <b>justified</b> and pinned to the code it's about, and tells your agent the moment one stops being true.</p>
 
     <div class="cta-row">
       <div class="install">
@@ -219,8 +233,22 @@
 
   <section class="problem" id="why">
     <div class="eyebrow">Why</div>
-    <div class="sec-head"><h2>Your agent is brilliant and amnesiac.</h2></div>
-    <p>Every <code style="font-family:var(--mono);color:var(--cyan-hi);font-size:0.85em;">/clear</code> wipes what it knew. And the code never told the whole story — it records <b>what</b> runs, never <b>why</b> it's shaped that way or <b>what</b> it must guarantee. So every session your agent relearns the repo, re-reads files it already understood, and sometimes undoes decisions you settled weeks ago. <span class="kick">yigraf remembers, so it doesn't.</span></p>
+    <div class="sec-head"><h2>A stale belief is worse than no belief.</h2></div>
+    <p>Every <code style="font-family:var(--mono);color:var(--cyan-hi);font-size:0.85em;">/clear</code> wipes what your agent knew. What does survive — a doc, a comment, a note in a backlog — is the more dangerous half: it was true <b>once</b>. Source records <b>what</b> runs, never what it must guarantee or why it's shaped that way, and it never announces that a decision you settled weeks ago no longer holds. So your agent either relearns the repo from scratch or acts with confidence on something that stopped being true three commits ago. <span class="kick">Nothing in your stack was maintaining the difference. yigraf does.</span></p>
+  </section>
+
+  <section>
+    <div class="eyebrow">How it maintains truth</div>
+    <div class="sec-head">
+      <h2>Justify, detect, revise.</h2>
+      <p>Storing knowledge is the easy half. A truth maintenance system is judged on what it does when the world moves underneath it.</p>
+    </div>
+    <div class="channels three">
+      <div class="chan"><h3>Justify</h3><p>No free-floating facts. Every belief carries its reasoning, the alternatives ruled out, and an anchor to the exact code it's about — so it can later be checked instead of merely trusted.</p></div>
+      <div class="chan"><h3>Detect</h3><p>When anchored code changes, the belief that depended on it is flagged as drifted. Inferences arrive tagged and never outrank the evidence behind them.</p></div>
+      <div class="chan"><h3>Revise</h3><p>A flag is settled explicitly: reaffirm it, supersede it with what's true now, or record the dispute when two live beliefs collide. yigraf never silently picks a winner.</p></div>
+    </div>
+    <p class="edge-note">The retracted reasoning is kept, not deleted — <code>supersedes</code> is an edge, so your agent can see what the repo used to believe and why it changed its mind.</p>
   </section>
 
   <section id="work">
@@ -303,7 +331,7 @@
         <a href="https://github.com/mansilla/yigraf/blob/main/docs/language-support.md">Languages</a>
       </div>
       <div class="foot-note">
-        <b style="color:var(--cyan-dim);">yigraf</b> — "Why I Graph?" A tool for your coding agent, not another dashboard for you.<br>
+        <b style="color:var(--cyan-dim);">yigraf</b> — "Why I Graph?" A truth maintenance system for your coding agent, not another dashboard for you.<br>
         <span class="roadmap">v1.x is local — one repo, no network, no account. Multi-user &amp; hosted is the 2.0 roadmap. MIT.</span>
       </div>
     </div>

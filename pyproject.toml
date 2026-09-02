@@ -1,12 +1,12 @@
 [project]
 name = "yigraf"
-version = "1.9.0"
-description = "A harness primitive for AI coding agents: one connected graph over code, intent, plan, and memory — legible (token-cheap retrieval) and enforceable (intent↔code drift checks)."
+version = "1.9.1"
+description = "A truth maintenance system for AI coding agents: one connected graph over code, intent, plan, and the why — every belief justified, anchored to the code it concerns, and flagged when it stops holding."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Ricardo Mansilla", email = "rick.mansilla@gmail.com" }]
-keywords = ["ai", "agents", "llm", "claude", "code-intelligence", "tree-sitter", "knowledge-graph"]
+keywords = ["ai", "agents", "llm", "claude", "truth-maintenance", "belief-revision", "drift-detection", "agent-memory", "code-intelligence", "tree-sitter", "knowledge-graph"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
