@@ -33,6 +33,21 @@ from yigraf.graph import to_node_link
 #: Structure kinds that are *containers*, not symbols — excluded from the symbol count.
 _CONTAINER_KINDS = frozenset({"file", "module"})
 
+#: The signals whose zero-state IS "up to date", as the word each prose surface must use for it.
+#:
+#: One source, because there are FIVE copies of that sentence — the skill's frontmatter and its §0b,
+#: the session preamble, the AGENTS.md block, and the ambient MCP rule — and 1.8.0 added ``rename`` to
+#: two of them and shipped green (feedback-v6 F#1). The gap is not cosmetic: ``render_line`` emits the
+#: literal ``no drift`` at zero and omits the ``stale`` segment entirely at zero, so a two-count
+#: predicate evaluates TRUE against a line printed directly beneath it that reads ``⚠ 1 rename``. And
+#: the hosts a stale copy reaches are the ones with no skill to correct it — Codex reads hooks +
+#: AGENTS.md, and a hookless Tier-A host reads the ambient rule with no preamble at all.
+#:
+#: ``test_up_to_date_is_defined_identically_on_every_prose_surface`` pins all five against this tuple,
+#: so the NEXT signal added here fails loudly in whichever surface it did not reach.
+UP_TO_DATE_SIGNALS = ("drift", "stale", "rename")
+
+
 def is_symbol(attrs: dict) -> bool:
     """Whether a ``structure`` node counts toward the ``sym`` number on the status line.
 
@@ -139,6 +154,12 @@ class StatusSummary:
     # yigraf that is several releases old — naming verbs that no longer exist and omitting the ones
     # that do (feedback-v5 D). Only ever set when a stamp is PRESENT and differs; an unstamped or
     # missing skill says nothing, because "I cannot tell" is not "you are behind".
+    preamble_behind: bool = False  # this repo's COMMITTED yigraf/config.yaml carries a session preamble
+    # yigraf shipped before this one. The same two-copy hazard as `skill_behind`, one file over: `init`
+    # splices the preamble in and the file value wins at read time, so an upgrade cannot reach it — and
+    # on a host with no skill the preamble is the only channel that teaches what "up to date" means
+    # (feedback-v6 F#1). Byte-exact match against an older shipped default only; a preamble the team
+    # rewrote is theirs and says nothing (config.preamble_behind).
     ctx_used: int | None = None  # context tokens in use, if a host supplied it
     ctx_limit: int | None = None  # context window size, if a host supplied it
     ctx_soft_limit: int = 250_000  # usable-budget knee the gauge scales to (config status.ctx_soft_limit; mem:053)
@@ -229,6 +250,8 @@ class StatusSummary:
             session.append(f"⬆ {self.update}")
         if self.skill_behind:  # the doc the agent reads was written by a different yigraf
             session.append(f"⬆ skill {self.skill_behind}")
+        if self.preamble_behind:  # the house rules injected every session were written by an older one
+            session.append("⬆ preamble")
 
         health = [f"⚠ {self.drifting} drift" if self.drifting else "no drift"]
         if self.conflicts:  # only when there are open conflicts — silent when coherent (design law #4)
@@ -262,6 +285,8 @@ class StatusSummary:
             session.append(_c(f"⬆ {self.update}", "1;36"))
         if self.skill_behind:  # the installed skill predates this CLI (feedback-v5 D)
             session.append(_c(f"⬆ skill {self.skill_behind}", "1;36"))
+        if self.preamble_behind:  # the committed house rules predate this CLI (feedback-v6 F#1)
+            session.append(_c("⬆ preamble", "1;36"))
 
         health = [_c(f"⚠ {self.drifting} drift", "1;33") if self.drifting else _c("✓ clear", "32")]
         if self.conflicts:  # coherence-dirty (mem:062): open conflicts for a principal, shown only when >0
@@ -441,6 +466,9 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
     stamped = installed_skill_version(root)
     skill_behind = stamped if stamped and stamped != __version__ else None
 
+    # The same question about the OTHER file an upgrade cannot reach: the repo's committed preamble.
+    from yigraf.config import preamble_behind as _preamble_behind
+
     # The gauge scales to a usable budget, not the raw window (int:status-surface); default 250k.
     soft_limit = config.get("status", {}).get("ctx_soft_limit", 250_000)
 
@@ -454,5 +482,6 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
         diverged=len(graph.graph.get("diverged") or ()),
         semantic=embedded > 0, embedded=embedded,
         head=head[:7] if head else None, update=available, skill_behind=skill_behind,
+        preamble_behind=_preamble_behind(config),
         ctx_used=ctx_used, ctx_limit=ctx_limit, ctx_soft_limit=soft_limit,
     )

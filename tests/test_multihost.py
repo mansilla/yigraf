@@ -12,7 +12,7 @@ from typer.testing import CliRunner
 from yigraf.cli import _edited_file, _post_tool_use, app
 from yigraf.hooks import (AMBIENT_HOSTS, EVENT_HOSTS, HOST_FIDELITY, SUPPORTED_HOSTS, TIER_AMBIENT,
                           _AGENTS_END, _AGENTS_START, _TIER_A_HOSTS, detect_hosts, install_ambient_rule,
-                          install_antigravity, install_codex_hooks)
+                          install_antigravity, install_claude_hooks, install_codex_hooks)
 
 runner = CliRunner()
 SYM = "sym:auth/session.py#refresh"
@@ -51,14 +51,15 @@ def test_codex_apply_patch_event_surfaces_governing_context(tmp_path: Path):
 
 # ── Codex installer ──────────────────────────────────────────────────────────────────────────────
 
-def test_install_codex_hooks_writes_both_events_and_gitignore(tmp_path: Path):
+def test_install_codex_hooks_writes_context_events_and_principal_notice(tmp_path: Path):
     runner.invoke(app, ["init", str(tmp_path)])
     res = install_codex_hooks(tmp_path)
     data = json.loads(res.hooks_path.read_text())
     assert res.hooks_path.name == "hooks.json" and res.hooks_path.parent.name == ".codex"
-    assert set(data["hooks"]) == {"SessionStart", "PostToolUse"}
+    assert set(data["hooks"]) == {"SessionStart", "PostToolUse", "Stop"}
     cmds = [h["command"] for ev in data["hooks"].values() for e in ev for h in e["hooks"]]
     assert any("hook session-start" in c for c in cmds) and any("hook post-tool-use" in c for c in cmds)
+    assert any("hook stop" in c for c in cmds)
     assert "hooks.json" in res.gitignore_path.read_text()  # machine-local abs path kept out of git
     assert _AGENTS_START in res.agents_path.read_text()
 
@@ -67,6 +68,21 @@ def test_install_codex_hooks_is_idempotent(tmp_path: Path):
     runner.invoke(app, ["init", str(tmp_path)])
     assert install_codex_hooks(tmp_path).hooks_changed is True
     assert install_codex_hooks(tmp_path).hooks_changed is False  # second run is a no-op
+
+
+def test_codex_stop_wiring_does_not_modify_claude_hook_shape(tmp_path: Path):
+    """The Codex addition is installer-local: Claude keeps its existing three hooks and Stop command."""
+    runner.invoke(app, ["init", str(tmp_path)])
+    claude = install_claude_hooks(tmp_path)
+    before = json.loads(claude.settings_path.read_text())["hooks"]
+
+    install_codex_hooks(tmp_path)
+
+    after = json.loads(claude.settings_path.read_text())["hooks"]
+    assert after == before
+    assert set(after) == {"PostToolUse", "SessionStart", "Stop"}
+    stop_commands = [h["command"] for e in after["Stop"] for h in e["hooks"]]
+    assert len(stop_commands) == 1 and "hook stop" in stop_commands[0]
 
 
 # ── Antigravity installer (no hooks → an always-on rule + MCP wiring) ──────────────────────────────

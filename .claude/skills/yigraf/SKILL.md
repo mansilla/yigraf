@@ -2,7 +2,7 @@
 name: yigraf
 description: "Keep intent, code, and the reasoning behind them in sync when changing code in this repo. Read this skill before driving the CLI — the wrong verb rubber-stamps or destroys a trail. Before you report done, run `yigraf status`: up to date means no drift, no stale AND no unsettled rename, not the same as no open tasks."
 ---
-<!-- yigraf-skill-version: 1.8.0 -->
+<!-- yigraf-skill-version: 1.9.0 -->
 
 # yigraf — the intent↔code spine
 
@@ -235,7 +235,12 @@ dead end. Read both sides (`yigraf show <id>`), then:
 - same provenance tier with no preferred side → that is not a bug. Two equal-authority beliefs stay an
   open question for the principal rather than being tie-broken. Ask, or `dispute` it.
 
-(`yigraf drift` exits non-zero on drift — that's the commit/CI gate, not something you poll.)
+(`yigraf drift` exits non-zero on **soft/hard drift only** — that's the commit/CI gate, not something
+you poll. `yigraf conflicts` gates the same way on conflicts. A **pending rename** and a **stale
+completion** exit 0 on every command, so they pass a gate silently: read the output, or gate on
+`yigraf status --json`, which carries all four counts. That the rename is the one let through matters —
+it is the signal §0b says to settle first, because it is the only one that stops being fixable, and the
+commit boundary is the last moment before the edit that ends the rescue.)
 
 ## 5. Evolve an intent (retire or reverse a spec)
 Specs change too — but **never hand-edit a superseded intent into place**; use one of two supported paths:

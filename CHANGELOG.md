@@ -4,6 +4,190 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.9.0] — 2026-09-01
+
+**Six surfaces that named the wrong thing — two of them told an agent a rescue was permanent damage,
+at the exact moment it was still free.**
+
+The third field report on the same day, against 1.8.0. It is mostly verification: everything 1.8.0
+closed was re-run and confirmed. What is new is four findings, and three of them are one wrong sentence
+apiece. That is not a reason to grade them low. A sentence yigraf prints at a drift moment is the input
+an agent acts on, and 1.8.0 shipped every one of these green — which is the actual finding underneath
+the four: **the wording moved with zero test movement.** Each fix here lands with the test that pins it.
+
+Two items the report explicitly filed as *neither a finding* are closed here too, and one of them was
+worse than reported: `show` was the last surface still calling a rescued rename permanent hard drift.
+And the release adds one feature, which is what the report's own **null result** recommends — yigraf
+now **offers** the section a whole-file markdown anchor is probably about, rather than warning about it.
+
+### `reaffirm <file>` blamed the file you typed for an anchor that failed inside it
+
+1.8.0's own D#4 widened the locus batch so a whole-file `file:<path>` reaches the section anchors under
+it. That severed an identity the warning three lines below silently depended on: before, the only locus
+that could fail was the one you named, so "`<target>` no longer resolves" was true by construction.
+After, the thing that fails is routinely an anchor you never typed — and the batch loop kept only the
+memory ids, dropping the loci `_reaffirm_concerns` had just handed it.
+
+The result was a message that named a file still on disk, above a `reanchor` handover whose old-locus
+was the healthy anchor. Following it was refused — one wasted round trip — except on a node carrying
+**both** a whole-file and a section anchor, the natural shape of a store mid-migration onto section
+anchors, where it *succeeded*: it replaced the healthy whole-file anchor, left the real hard drift
+standing, and reported "The claim and its history are unchanged."
+
+Worse, and the reason this led the release: `_reaffirm_concerns` hashes the stored locus and never
+consulted the rename map, so a **renamed heading with the body untouched** — a rescue `drift` and `gc`
+were both reporting as *settle with `yigraf gc --apply`* in the same store in the same minute — came
+back from this verb as permanent hard drift. The rename is the one obligation with a deadline: the
+rescue is re-derived from the body on every build and ends at the next semantic edit. Telling an agent
+it is already lost is precisely what stops it from settling while it still can.
+
+So the batch now carries the `(memory, locus)` **pair** through the loop, because two memories under
+one file can fail at two different sections and neither half alone identifies what to repair. It asks
+`compute_drift` for the rename map the way `link` already does — never guessing, so this surface and
+`drift`/`gc` cannot disagree about one event — and reports a rescued rename as a rename, pointing at
+`gc --apply`. The `reanchor` handover names the anchor that actually failed, so following it repairs
+the drift instead of destroying a healthy anchor. Two smaller things with the same root go with it: the
+`covers N section anchor(s)` echo no longer lists a section that was just deleted, and a memory that is
+in *both* result lists is reported as **partially** repaired rather than as "drift cleared" directly
+above its own ⚠.
+
+### `gc` explained a falling `sym` count with the one diagnosis it cannot be
+
+1.8.0 added a line explaining why the symbol count drops after a collection. It printed only in the
+narrow case it was written for, and in that case both halves of its central clause were false: the
+released node is a `file-anchor`, not a symbol, and the thing it names **is** in the current source —
+it is simply not *indexed*, because docs are deliberately not extracted.
+
+It cannot be otherwise by construction. `artifacts.mint_locus_node` returns early when the locus does
+not resolve, so a `file:` locus genuinely absent from source mints no node at all — "not in the current
+source" is exactly the case in which this line stays silent. A reader taking it at face value went
+looking for a deleted function, which is the diagnosis cost the line exists to prevent. It now says
+what it is: placeholder anchors for un-indexed files, still on disk, untouched.
+
+### "Up to date" was defined two different ways depending on which file the host read
+
+1.8.0 taught that "up to date" means no drift, no stale **and no unsettled rename** — in two of the
+five places that define it, both inside `SKILL.md`. The session preamble, the `AGENTS.md` block and the
+ambient MCP rule still taught the two-count version, byte-identical to 1.7.1.
+
+That is not cosmetic, because `render_line` emits the literal `no drift` at zero and omits the `stale`
+segment entirely at zero: the old two-clause predicate evaluates **TRUE** against a line printed
+directly beneath it reading `⚠ 1 rename`. And the stale copies are the ones that reach the hosts with
+no skill to correct them — Codex gets hooks + `AGENTS.md`, and a hookless Tier-A host gets the ambient
+rule and not even the preamble, so the three-count definition was unreachable for it by construction.
+
+The words are fixed in all five places. The actual fix is `status.UP_TO_DATE_SIGNALS`, one source for
+the vocabulary, with a test pinning every prose surface against it — so the **next** signal added to
+`status` fails loudly in whichever surface it did not reach. The old test could not have caught this:
+it asserted `"rename" in text.lower()`, which the rename *block* satisfies whatever the preamble says.
+
+There is a second copy hazard one file over, and it is why a code fix alone would have reached nobody.
+`yigraf init` splices the preamble into the repo's **committed** `yigraf/config.yaml`, and the file
+value wins at read time — so amending the default reaches no already-initialized repo. `yigraf status`
+now carries `⬆ preamble` when a repo's committed preamble is byte-identical to an older shipped
+default, with the full sentence at a terminal. Only an exact match to something we once shipped: the
+file says the preamble is yours to rewrite, so a rewritten one stays silent, the same discipline
+`installed_skill_version` applies to an unstamped skill. `yigraf cheatsheet --preamble` prints the
+current text, because a nudge that names no way to get the replacement is guidance that cannot be
+followed.
+
+### `drift` is a gate on soft/hard drift, and now says so
+
+`yigraf drift` exits non-zero on soft and hard drift; a **pending rename** and a **stale completion**
+exit 0, on every command there is. The exit code is right and does not change — settling a rename
+rewrites committed artifacts, so gating on it would demand a mutate-restage-recommit cycle on every
+rename, which is how a pre-commit hook gets `--no-verify`'d. But `SKILL.md` §4 called it "the commit/CI
+gate" without saying what it covers, while `drift --help` in the same release uses "drift" in the wider
+sense that *includes* renames — so a reader who has just run `--help` reads the parenthetical against
+that sense. The signal let through is the one §0b says to settle first, at the last boundary before the
+edit that ends the rescue.
+
+§4 now names the coverage and hands over `yigraf status --json`, which carries all four counts and
+already works as the gate. The exit-code line itself — the only line in that function with no comment —
+now carries the reason. Related, same root: the MCP `status` tool's docstring enumerated the counts,
+the drift count and `sem`, so it read as exhaustive while `⚠ n rename`, `⚠ n stale` and `⚠ n conflict`
+rode along unnamed in the line it returns; that docstring is what a host reads to decide whether
+calling `status` answers its question.
+
+### `show` called a rescued rename permanent damage — the last surface holding the sentence F#2 removed
+
+`show.py` excluded renames from a node's drift list, which is right: `show` reads one node, not the
+obligation set, and a rename is not drift — the content hash *matched*. But excluding it from the node
+entirely made `show` the one agent-reachable surface that never mentioned the only signal with an
+**expiry**, and the silence was not neutral. `show` reads the **artifact**, which still names the
+locator the subject left, so the anchor line looked it up, missed, and printed `⚠ hard drift — the
+locus is gone` about a move `drift` and `gc` were calling settleable in the same store in the same
+minute. That is the exact false sentence this release removed from `reaffirm`, still standing on the
+surface an agent lands on when it follows an id out of a drift line.
+
+A rescued rename is now tested for **before** the missing-node case, so the anchor line says
+`renamed ⇒ <new locus>`, and the node grows its own `⚠ Unsettled rename` block carrying the settle verb
+and the cliff. The verb is forked by relation through the new shared `retrieval.rename_verb` — a task's
+declaration is rewritten by re-`link`ing, a memory's anchor by `reanchor` — so `show` and the injected
+packets cannot come to name different commands for one event. Uncapped, unlike the packet's copy:
+`show` is the unbudgeted read, and a node carrying five renamed anchors needs five verbs.
+
+### A path where a slug belongs was answered as an empty plan
+
+`yigraf drift .` means *this repo*. `yigraf tasks .` meant *the plan named `"."`* and answered
+`No plan .. Known: …` at exit 0 — so guessing the wrong calling convention produced a plausible
+"nothing outstanding" on the one surface an agent asks what is left, where `yigraf status .` refuses
+loudly at exit 2. Guidance is still guidance (exit 0, design law #1); what changed is that it names the
+convention instead of reporting an empty result, and it does not recite the plan inventory, because the
+mistake is the convention and not the name.
+
+The same shape is worse than misleading on the verbs that **write**: `plan <slug>` composed straight
+into `workspace / "plans" / "active" / f"{slug}.md"`, so `plan ../../x` landed outside the workspace.
+One guard, one wording, on `tasks`, `plan`, `intent` and `supersede-intent` — it is one mistake.
+
+### New: `remember` offers the section a whole-file markdown anchor is probably about
+
+The field measured its own store (405 live memories, 340 `concerns` anchors, 41 whole-file markdown)
+looking for a rule that separates a legitimate whole-file anchor from one that should have been a
+`#section`, and returned a **null**. Every size-shaped signal overlaps almost completely — the 7–26
+heading band alone holds 35 of the 41 — the best usable headings threshold costs 15 % false positives
+at 32 % recall, and the most intuitive candidate, *has it actually drifted?*, fires on 7 of 13
+**legitimate** anchors, because a living document drifts whether or not the anchor is wrong. Nothing
+beats warning unconditionally, which is right two times in three: a mark a reader correctly learns to
+ignore.
+
+So the blocker is dissolved rather than solved, on their recommendation: **don't warn — offer the
+section.** An offer needs no rule that separates. On a claim that really is about the whole document
+the author reads one line, sees it is not what they meant, and keeps the anchor: no ⚠, nothing to clear
+later, no training signal. Their mechanical version of exactly this named a plausible home for 19 of 25
+mis-anchored items.
+
+`yigraf.sectionfit` splits the target at its headings and scores each section by the claim's
+distinctive terms, weighted by the file's **own** inverse section frequency — so a word appearing in
+every section (`the`, and equally the document's own subject noun) weighs zero, and no stopword list is
+needed or maintained. It stays silent unless one section wins by `section_offer_margin` (default 2×),
+which is set for legibility rather than recall: a near-tie means the document says the claim's words in
+two places, and naming one arbitrarily is what teaches a reader to stop reading the line. Silent too on
+`--governs` (narrowing a policy anchor would change what the policy covers), on anchors that are
+already a section or a line range, and on a document with no addressable subdivision — which is §7's
+one required exemption (`coding-conventions.md`: numbered principles under a single title) falling out
+of the design rather than being special-cased. `section_offer_margin: 0` switches it off.
+
+The three measurements that did **not** become behaviour, and why: the `--governs` separator (commits
+to the target in the 30 days before capture, a clean 4× gap with zero false positives) rests on n = 3;
+the `results/` class (14 of 14 whole-file anchors under an append-only directory have an empty
+`grounded_by` — `--concerns` where `--evidence` was meant) needs a notion of "a directory the repo
+treats as a record", which yigraf does not have; and the whole measurement carries its author's own
+bound — `#section` has zero uptake in that store, so it measures what the *right* anchor would have
+been, not how often an author offered all three still picks wrong. The offer is the one form that is
+correct under that bound, because it costs nothing when it is wrong.
+
+### Also in this release: the Stop notice reaches Codex
+
+The principal-facing turn-boundary notice (`int:obligation-notice`) — the one yigraf hook that speaks to
+the *human* rather than into the model's context — was wired for Claude Code only, so a Codex project got
+yigraf's context injections and none of its hand-off warnings. `install_codex_hooks` now registers the
+same `yigraf hook stop` command alongside SessionStart and PostToolUse. It is the same handler, not a
+port: Codex's hook contract mirrors the fields this uses, `systemMessage` included, and the handler emits
+no `additionalContext` and no blocking decision, so the notice costs a UI line and zero model context.
+The addition is installer-local, pinned by a regression test asserting Claude's own hook shape and Stop
+command are byte-identical before and after a Codex install.
+
 ## [1.8.0] — 2026-09-01
 
 **An expiring signal every cheap surface refused to mention, and eight other places where yigraf knew

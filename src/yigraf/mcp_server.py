@@ -319,8 +319,15 @@ def build_server(default_repo: str | None = None):
 
     @server.tool()
     def status(repo: str | None = None) -> str:
-        """A compact status line for the yigraf graph: counts (symbols/intents/tasks/decisions),
-        drift count, freshness (the gitignored materialized view vs source), and the semantic index size.
+        """A compact status line for the yigraf graph: counts (symbols/intents/tasks/decisions), every
+        re-verify signal — `⚠ n drift`, `⚠ n stale`, `⚠ n rename`, `⚠ n conflict` — freshness (the
+        gitignored materialized view vs source), and the semantic index size.
+
+        The enumeration has to be complete, because this docstring is what a host reads to decide
+        whether calling `status` answers its question: it returns `render_line()`, and a version that
+        listed only the drift count read as exhaustive while three signals rode along unnamed
+        (feedback-v6 F#1). "Up to date" means no drift, no stale AND no unsettled rename — settle the
+        rename first, it is the only one that expires.
 
         Note: `sem N` counts only the embedded families — memory + intent nodes — not the whole graph
         (code is never embedded; retrieval-design §10). So `sem` staying flat while `sym` grows is

@@ -283,7 +283,7 @@ def test_a_whole_file_reaffirm_reaches_a_section_anchor(tmp_path: Path):
     assert runner.invoke(app, ["build", str(root)]).exit_code == 0
     result = runner.invoke(app, ["reaffirm", f"file:{DOC}", "--repo", str(root)])
     assert result.exit_code == 0
-    assert "covers 1 section anchor" in result.output and "drift cleared" in result.output
+    assert "reached 1 section anchor" in result.output and "drift cleared" in result.output
     assert runner.invoke(app, ["drift", str(root)]).output.strip().startswith("No drift")
 
 
@@ -351,14 +351,14 @@ def test_gc_reports_the_placeholder_symbols_it_released(tmp_path: Path):
     root, _old, _new = _churn_repo(tmp_path)
     before = compute_status(_graph(root), root, default_config()).symbols
     result = runner.invoke(app, ["gc", str(root), "--apply"])
-    assert result.exit_code == 0 and "placeholder symbol node" in result.output
+    assert result.exit_code == 0 and "placeholder anchor node" in result.output
     after = compute_status(_graph(root), root, default_config()).symbols
     assert after < before
 
 
 def test_the_placeholder_line_is_silent_when_nothing_was_released(tmp_path: Path):
     root = _linked_repo(tmp_path)
-    assert "placeholder symbol node" not in runner.invoke(app, ["gc", str(root)]).output
+    assert "placeholder anchor node" not in runner.invoke(app, ["gc", str(root)]).output
 
 
 # ── D: the generated skill carries the version that wrote it ─────────────────────────────────────────

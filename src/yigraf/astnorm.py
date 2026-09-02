@@ -541,6 +541,40 @@ def section_slugs(root: Path, relpath: str) -> list[str]:
     return [s.slug for s in read[3]] if read is not None else []
 
 
+def section_texts(root: Path, relpath: str) -> list[tuple[str, str, bool]]:
+    """Every addressable section as ``(slug, text, spans_file)``, in document order — the *readable*
+    counterpart of :func:`section_slugs`, for deciding which section a claim is about
+    (:mod:`yigraf.sectionfit`).
+
+    Unlike :func:`_hash_section` this keeps the heading's own line: a hash must exclude it so a renamed
+    heading survives as a rename rather than drift, but a heading's title is the single most
+    distinctive term a section has, and dropping it would blind the fit to exactly the word the author
+    is most likely to have reused in the claim.
+
+    ``spans_file`` marks a heading whose extent is the entire document — a title, not a subdivision.
+    It is genuinely anchorable (``section_content_hash`` will hash it), but it is not a *narrowing* of
+    the whole-file anchor, so an offer that names it is offering the same locus back.
+    """
+    read = _read_sections(root, relpath)
+    if read is None:
+        return []
+    lines, _kinds, _headings, sections = read
+    # EXCLUSIVE text: each line belongs to the *deepest* section containing it, the same ownership
+    # :func:`_hash_section` encodes when it replaces a nested subsection with a ``<sec:slug>`` token.
+    # Inclusive extents would make an ``#`` title's section a superset of the whole document, and any
+    # term statistic computed over overlapping texts says every word appears everywhere.
+    owner: dict[int, int] = {}
+    for k, sec in enumerate(sections):  # document order ⇒ a nested section always overwrites its parent
+        for i in range(sec.start, sec.end):
+            owner[i] = k
+    own: list[list[str]] = [[] for _ in sections]
+    for i, k in sorted(owner.items()):
+        own[k].append(lines[i])
+    first = min((sec.start for sec in sections), default=0)
+    return [(sec.slug, "\n".join(own[k]), sec.start == first and sec.end == len(lines))
+            for k, sec in enumerate(sections)]
+
+
 def section_content_hash(root: Path, target: str) -> str | None:
     """``mdsec-v1`` anchor for ``file:<path>#<slug>``; ``None`` if the file, or a *unique* section with
     that slug, isn't there.

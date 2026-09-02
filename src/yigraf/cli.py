@@ -20,11 +20,11 @@ from typing import NoReturn
 import typer
 
 from yigraf import (__version__, artifacts, counters, embeddings, graphdb, memory,
-                    obligations, relations, resolution, retrieval, status, update)
+                    obligations, relations, resolution, retrieval, sectionfit, status, update)
 from yigraf import show as show_mod  # aliased: the module and the `show` command share a name
 from yigraf.astnorm import (ANCHOR_ALGO, DOC_SUFFIXES, locus_hash, parse_file_target,
                             parse_section_target, section_slug, section_slugs)
-from yigraf.config import TOKEN_ENV, load_config, replica_path
+from yigraf.config import DEFAULT_SESSION_PREAMBLE, TOKEN_ENV, load_config, replica_path
 from yigraf.drift import (compute_drift, is_reverifiable, is_stale_completion, is_surfaced,
                           stale_completions)
 from yigraf.extract import build_graph, symbol_content_hash
@@ -50,6 +50,27 @@ def _guidance(message: str) -> NoReturn:
     """
     typer.echo(message)
     raise typer.Exit(code=0)
+
+
+#: What makes an argument path-shaped rather than slug-shaped: a separator, a bare ``.``/``..``, or a
+#: ``~``. A slug names ONE artifact file, so none of these can ever resolve to one.
+_PATH_SHAPED = re.compile(r"[/\\]|^\.+$|^~")
+
+
+def _require_slug(value: str | None, kind: str, tail: str) -> None:
+    """Refuse a path where a slug belongs — the calling convention differs between neighbouring verbs.
+
+    ``yigraf drift .`` means *this repo*; ``yigraf tasks .`` meant *the plan named "."*, which answered
+    ``No plan .. Known: …`` at exit 0 — a plausible "nothing outstanding" on the one surface an agent
+    asks what is left, while ``yigraf status .`` refused loudly at exit 2 (feedback-v6 §8). Guessing the
+    wrong convention must not look like an answer. On the *writing* verbs the same shape is worse than
+    misleading: ``plan ../../x`` composed straight into ``workspace / "plans" / "active" / f"{slug}.md"``
+    and landed outside the workspace. One wording for both, because it is one mistake.
+    """
+    if not value or not _PATH_SHAPED.search(value):
+        return
+    _guidance(f"{value!r} is a path, not {kind} slug — a slug names one artifact file, so it never "
+              f"contains a separator, and the repo root goes to `--repo`. {tail}")
 
 
 def _section_suggestion(repo: Path | None, target: str) -> str:
@@ -482,6 +503,7 @@ def intent(
     if status is not None and status not in artifacts.INTENT_STATUSES:
         _guidance(f"--status must be one of {', '.join(artifacts.INTENT_STATUSES)} (got {status}).")
     workspace = _require_workspace(repo)
+    _require_slug(slug, "an intent", 'Pick a plain name — `yigraf intent drift-detection -s "…"`.')
     dest = workspace / "intents" / f"{slug}.md"
 
     if dest.exists():
@@ -586,6 +608,8 @@ def supersede_intent(
     if type not in artifacts.INTENT_TYPES:
         _guidance(f"--type must be one of {', '.join(artifacts.INTENT_TYPES)} (got {type}).")
     workspace = _require_workspace(repo)
+    for value in (old_slug, new_slug):
+        _require_slug(value, "an intent", 'Pick a plain name — `yigraf supersede-intent old new -s "…"`.')
     old_id, new_id = f"int:{old_slug.casefold()}", f"int:{new_slug.casefold()}"
     old_dest = workspace / "intents" / f"{old_slug}.md"
     new_dest = workspace / "intents" / f"{new_slug}.md"
@@ -611,7 +635,7 @@ def supersede_intent(
                                why=_why_text(why, why_file) or "", serves=[new_id],
                                concern_syms=[], rejected=None,
                                supersedes=[], promotable=False, force_new=True)
-        _report_capture(node)
+        _report_capture(node, repo, load_config(workspace / "config.yaml"))
 
 
 @app.command()
@@ -631,6 +655,7 @@ def plan(
     already recorded on a ``link`` edge cannot come to mean a different task.
     """
     workspace = _require_workspace(repo)
+    _require_slug(slug, "a plan", 'Pick a plain name — `yigraf plan auth-rewrite -t "…"`.')
     existing = _find_plan_file(workspace, slug.casefold())
 
     if append_task:
@@ -749,6 +774,11 @@ def tasks(
     config = load_config(workspace / "config.yaml")
     if open_only and done_only:
         _guidance("--open and --done select disjoint sets — pass one, or neither for both.")
+    # No "Known: …" tail here, unlike the unknown-slug case below: the mistake is the convention, not
+    # the name, so listing every plan would spend the agent's budget answering a question it isn't asking.
+    _require_slug(plan_slug, "a plan",
+                  "For every plan's tasks run `yigraf tasks --repo <path>`; for one plan's, "
+                  "`yigraf tasks <slug>`.")
     graph, _ = build_graph(repo, config)
     stale_ids = {i.task_id for i in stale_completions(graph)}
 
@@ -1631,7 +1661,50 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
     return node
 
 
-def _report_capture(node: memory.Memory) -> None:
+def _section_offers(node: memory.Memory, repo: Path | None, config: dict | None) -> list[str]:
+    """Offer the ``#section`` a whole-file markdown anchor is probably about. An OFFER, never a warning.
+
+    The field measured its store for a rule that separates a legitimate whole-file anchor from one that
+    should have been a section, and got a null: nothing beats "warn unconditionally", which is right
+    two times in three — i.e. a mark the agent correctly learns to ignore. An offer needs no such rule.
+    On a claim that really is about the document the reader sees one line, sees it is not what they
+    meant, and keeps what they have: no ⚠, nothing to clear, no training signal. Their mechanical
+    version of exactly this named a plausible home for 19 of 25 mis-anchored items (feedback-v6 §7).
+
+    Capture time is the only honest moment for it: the anchor is a *choice*, and it is being made now.
+    :mod:`yigraf.sectionfit` stays silent unless one section wins clearly, so most captures print
+    nothing (design law #4). ``--governs`` is exempt — a policy anchor deliberately names the file it
+    governs the use of, and narrowing it would change what the policy covers.
+    """
+    if repo is None:
+        return []
+    margin = float((config or {}).get("section_offer_margin") or 0)
+    if margin <= 0:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    anchors = ([(c.sym, c.anchor_algo) for c in node.concerns]
+               + [(e.ref, e.anchor_algo) for e in node.evidence])
+    for ref, algo in anchors:
+        # Whole-file only: a `#section` is already the narrow form and a `:L` range is addressed by
+        # position, which no heading can name.
+        if ref in seen or (algo or "") == memory.GOVERNS_ALGO:
+            continue
+        if not ref.startswith("file:") or "#" in ref or ":L" in ref:
+            continue
+        seen.add(ref)
+        slug = sectionfit.best_section(repo, ref[len("file:"):], node.statement, margin)
+        if slug is None:
+            continue
+        out.append(f"↳ Offer (not drift — nothing to clear): {ref} is anchored whole-file, and "
+                   f"#{slug} reads like this claim's subject.")
+        out.append(f"  Narrow it with `yigraf reanchor {node.id} {ref} {ref}#{slug}`, or keep the "
+                   f"whole-file anchor if the claim really is about the whole document.")
+    return out
+
+
+def _report_capture(node: memory.Memory, repo: Path | None = None,
+                    config: dict | None = None) -> None:
     """The one-line capture echo — the moment a mis-filled locator is cheap to catch.
 
     ``governs`` is reported under its own label (feedback-v4 #10): calling a policy anchor ``concerns``
@@ -1652,6 +1725,8 @@ def _report_capture(node: memory.Memory) -> None:
     if node.pinned:
         bits.append("pinned")
     typer.echo(f"Captured {node.id} ({'; '.join(bits)})")
+    for line in _section_offers(node, repo, config):
+        typer.echo(line)
 
 
 #: Shared help for the ``--governs`` capture flag — one wording, three capture verbs.
@@ -1695,7 +1770,7 @@ def remember(
                            evidence_refs=evidence or [], rejected_valid_when=rejected_valid_when or [],
                            rejected_invalidated_when=rejected_invalidated_when or [], pinned=pin,
                            governs_refs=governs or [])
-    _report_capture(node)
+    _report_capture(node, repo, load_config(workspace / "config.yaml"))
 
 
 @app.command(name="note-constraint")
@@ -1725,7 +1800,7 @@ def note_constraint(
                            evidence_refs=evidence or [], rejected_valid_when=rejected_valid_when or [],
                            rejected_invalidated_when=rejected_invalidated_when or [], pinned=pin,
                            governs_refs=governs or [])
-    _report_capture(node)
+    _report_capture(node, repo, load_config(workspace / "config.yaml"))
 
 
 @app.command()
@@ -1825,7 +1900,7 @@ def propose(
                            rejected_valid_when=rejected_valid_when or [],
                            rejected_invalidated_when=rejected_invalidated_when or [],
                            governs_refs=governs or [])  # the 4th capture verb was the one missed (v4 #11)
-    _report_capture(node)
+    _report_capture(node, repo, load_config(workspace / "config.yaml"))
 
 
 @app.command()
@@ -1891,7 +1966,7 @@ def supersede(
         rejected_valid_when=rejected_valid_when or [],
         rejected_invalidated_when=rejected_invalidated_when or [],
         governs_refs=governs_refs)
-    _report_capture(node)
+    _report_capture(node, repo, load_config(workspace / "config.yaml"))
     carried = []
     if concerns is None and old_regular:
         carried.append(f"{len(old_regular)} concerns")
@@ -2120,6 +2195,26 @@ def _reaffirm_concerns(repo: Path, config: dict, node: memory.Memory,
             restamped.append(c.sym)
         c.anchor, c.anchor_algo = fresh, algo
     return restamped, gone
+
+
+def _rescued_renames(repo: Path, config: dict,
+                     pairs: list[tuple[str, str]]) -> dict[tuple[str, str], str]:
+    """Which ``(memory id, gone locus)`` pairs the projection has already re-anchored → the new locator.
+
+    ``_reaffirm_concerns`` hashes the stored locus and stops, so the batch could not see a rescue
+    :func:`yigraf.drift.resolve_renames` had already made — and reported as permanent hard drift the one
+    obligation that EXPIRES (feedback-v6 F#2). Like :func:`_renamed_predecessor` this does not guess: it
+    asks ``compute_drift``, which carries every false-positive guard the rescue needs, so this surface
+    and ``drift``/``gc`` cannot disagree about one event. Built only when something is actually gone —
+    every ordinary reaffirm returns here empty and pays nothing.
+    """
+    if not pairs:
+        return {}
+    graph, _ = build_graph(repo, config)
+    wanted = set(pairs)
+    return {(item.task_id, item.locator): item.new_locator
+            for item in compute_drift(graph)
+            if item.kind == "renamed" and item.new_locator and (item.task_id, item.locator) in wanted}
 
 
 def _reaffirm_evidence(repo: Path, config: dict, node: memory.Memory, new_refs: list[str]) -> list[str]:
@@ -2437,7 +2532,14 @@ def reaffirm(
     # artifact-side (successors' `supersedes` + the status stamp), matching drift.is_reverifiable.
     all_memories = memory.iter_memories(repo)
     superseded_ids = {old for m in all_memories for old in m.supersedes}
-    matched, restamped_ids, gone_ids, matched_ids, skipped = 0, [], [], [], []
+    matched, restamped_ids, matched_ids, skipped = 0, [], [], []
+    # The (memory, locus) PAIRS that failed — never just the ids. D#4 widened this batch so a whole-file
+    # target covers the section anchors inside it, which severed the old identity `gone ⊆ {target}`: the
+    # thing that is gone is now routinely an anchor the caller did not type, and reporting the file they
+    # did type named a file still on disk and handed over a `reanchor` whose old-locus was the healthy
+    # anchor (feedback-v6 F#2). The pair is the informative unit — two memories under one file can fail
+    # at two different sections, so neither half alone identifies what to repair.
+    gone_pairs: list[tuple[str, str]] = []
     sections_reached: set[str] = set()
     for node in all_memories:
         # A whole-file locus reaches the section anchors inside it, so the mdsec-v1 cure for prose
@@ -2450,15 +2552,17 @@ def reaffirm(
             continue
         matched += 1
         matched_ids.append(node.id)
-        sections_reached |= {c for c in covered if c != target}
         restamped, gone = _reaffirm_concerns(repo, config, node, covered)
         if restamped or gone:
             memory.memory_file_path(repo, node).write_text(
                 memory.render_memory(node), encoding="utf-8")
         if restamped:
             restamped_ids.append(node.id)
-        if gone:
-            gone_ids.append(node.id)
+        gone_pairs += [(node.id, locus) for locus in gone]
+        # Only the anchors this call actually re-stamped. The echo invites the reading "here are this
+        # file's sections", so listing one that was just DELETED misleads exactly where it matters; the
+        # failures are enumerated by name below instead.
+        sections_reached |= {c for c in covered if c != target and c not in gone}
     if matched == 0:
         if skipped:
             _guidance(f"Only superseded memories concern {target} ({', '.join(sorted(skipped))}) — "
@@ -2481,23 +2585,50 @@ def reaffirm(
         _guidance(f"No memory concerns {target} — nothing to reaffirm. "
                   f'Anchor one with `yigraf remember "…" --concerns {target}`.')
     _rebuild(repo)
+    gone_ids = sorted({mem_id for mem_id, _ in gone_pairs})
     # A gone locus is hard drift, not a survival — credit an uphold only to memories still anchored there.
     _record_reaffirm_uphold(repo, config, [m for m in matched_ids if m not in gone_ids])
+    # A "gone" anchor whose subject was merely RENAMED is not gone at all: the projection already
+    # re-anchored it by content hash, and `drift` and `gc` both report it as a settle-with-`gc --apply`
+    # rescue in the same store in the same minute. Saying "hard drift" here contradicted them, and it
+    # said it about the ONE signal that expires — the rescue is re-derived from the body on every build,
+    # so an agent told the drift is permanent has no reason to settle it while it still can (F#2).
+    rescued = _rescued_renames(repo, config, gone_pairs)
+    renamed_pairs = [(m, loc, rescued[(m, loc)]) for m, loc in gone_pairs if (m, loc) in rescued]
+    hard_pairs = [(m, loc) for m, loc in gone_pairs if (m, loc) not in rescued]
     if sections_reached:
         # Never silently: the caller named a file and the batch touched anchors that name sections, so
         # the echo says which. A count alone would leave them believing they re-stamped one thing.
         shown = ", ".join(sorted(sections_reached)[:6])
         more = f" (+{len(sections_reached) - 6} more)" if len(sections_reached) > 6 else ""
-        typer.echo(f"{target} covers {len(sections_reached)} section anchor(s) inside it: {shown}{more}")
+        typer.echo(f"{target} reached {len(sections_reached)} section anchor(s) inside it: {shown}{more}")
     if restamped_ids:
+        # A memory in BOTH lists is partially repaired, and saying so is more useful than either line
+        # alone — "drift cleared: mem:x" directly above "⚠ … mem:x" reads as a contradiction (F#2).
+        partial = sorted(set(restamped_ids) & set(gone_ids))
+        note = f" (partial — {', '.join(partial)} still carries the ⚠ below)" if partial else ""
         typer.echo(f"Reaffirmed {len(restamped_ids)} memory(ies) concerning {target} — drift cleared: "
-                   f"{', '.join(restamped_ids)}.")
-    elif not gone_ids:
+                   f"{', '.join(restamped_ids)}{note}.")
+    elif not gone_pairs:
         typer.echo(f"Reaffirmed {matched} memory(ies) concerning {target}: anchors already matched "
                    f"the current code (no drift to clear).")
-    if gone_ids:
-        typer.echo(f"⚠ {target} no longer resolves in the source (concerned by {', '.join(gone_ids)}) — "
-                   f"hard drift, not a reaffirm; if it moved, `yigraf reanchor <mem> {target} <new>`.")
+    if renamed_pairs:
+        typer.echo(f"⚠ {len(renamed_pairs)} anchor(s) under {target} were RENAMED, not lost — the graph "
+                   f"re-anchored them by content hash and the artifact still names the locator they "
+                   f"left, so reaffirm cannot re-stamp them. Settle with `yigraf gc --apply` while the "
+                   f"body is untouched; edit that body first and it becomes hard drift with no record "
+                   f"of where the subject went:")
+        for mem_id, old, new in renamed_pairs:
+            typer.echo(f"  · {mem_id} —concerns→ {old} ⇒ {new}")
+    if hard_pairs:
+        first_mem, first_locus = hard_pairs[0]
+        typer.echo(f"⚠ {len(hard_pairs)} anchor(s) under {target} no longer resolve in the source — "
+                   f"hard drift, not a reaffirm:")
+        for mem_id, locus in hard_pairs:
+            typer.echo(f"  · {mem_id} —concerns→ {locus}")
+        typer.echo(f"  If the subject moved, `yigraf reanchor {first_mem} {first_locus} <new>` (the "
+                   f"anchor that failed, not the locus you typed); if the decision itself changed, "
+                   f'`yigraf supersede {first_mem} "<restated>"`.')
     if skipped:
         typer.echo(f"(skipped {len(skipped)} superseded: {', '.join(sorted(skipped))} — a retired "
                    f"belief is not re-verified and earns no uphold.)")
@@ -2732,13 +2863,22 @@ def changelog(
 @app.command()
 def cheatsheet(
     as_json: bool = typer.Option(False, "--json", help="Emit as JSON (for an orchestrator to parse programmatically)."),
+    preamble: bool = typer.Option(False, "--preamble", help="Print the session preamble THIS yigraf ships, to paste into a repo's yigraf/config.yaml."),
 ) -> None:
     """Emit the verb/flag list an orchestrator can paste into a subagent's prompt (D#5).
 
     Assume the agent calling yigraf guesses its surface: this is the compact, always-in-sync map of
     every verb, its arguments, and its flags. Text by default; ``--json`` for a machine consumer. Every
     verb also takes ``--repo <path>`` (default: cwd), omitted here for brevity.
+
+    ``--preamble`` prints the shipped session preamble instead. It is here because the ``config.yaml``
+    nudge (feedback-v6 F#1) has to hand over a command that produces the replacement text — telling
+    someone their committed preamble is stale without a way to read the current one is guidance that
+    cannot be followed (design law #1), and the text lives in the installed package, not in the repo.
     """
+    if preamble:
+        typer.echo(DEFAULT_SESSION_PREAMBLE.rstrip("\n"))
+        return
     verbs = _verb_catalog()
     if as_json:
         typer.echo(json.dumps({"verbs": verbs}, indent=2))
@@ -2803,6 +2943,16 @@ def status_cmd(
         typer.echo(f"⬆ .claude/skills/yigraf/SKILL.md was written by yigraf {summary.skill_behind}, "
                    f"not {__version__} — an upgrade does not rewrite it. Refresh it with: "
                    f"yigraf install-claude-hooks")
+    # The same two-copy hazard, one file over (feedback-v6 F#1): `init` splices the preamble into the
+    # repo's committed config.yaml and the file value wins, so an upgrade cannot reach it either — and
+    # on a host with no skill the preamble is the ONLY channel that teaches what "up to date" means.
+    # Fires only on a byte-exact older default, never on a preamble the team rewrote (that is the point
+    # of the file being committed), so it cannot nag anyone who made it theirs.
+    if summary.preamble_behind and sys.stdout.isatty():
+        typer.echo(f"⬆ yigraf/config.yaml carries the session preamble shipped before {__version__} — "
+                   f"`init` splices it in and the file wins, so an upgrade cannot update it. Replace "
+                   f"`session_start.preamble:` with the current text (`yigraf cheatsheet --preamble`), "
+                   f"or delete the key to track the default.")
 
 
 def _claude_ctx(data: dict) -> tuple[Path, int | None, int | None]:
@@ -3030,6 +3180,14 @@ def drift(
         typer.echo("")
         typer.echo(retrieval.VERB_FORK)
 
+    # The CI gate is SURFACED SOFT/HARD DRIFT, deliberately not every signal this command reports
+    # (feedback-v6 F#3 — until now the one line here with no comment). A pending rename is settled by
+    # `gc --apply`, which REWRITES committed artifacts: gating on it would demand a
+    # mutate-restage-recommit cycle on every rename, which is how a pre-commit hook gets `--no-verify`d.
+    # A stale completion exits 0 for the same reason it is not drift — the anchor is fine, the
+    # completion is what is in doubt. Both are counted by `yigraf status --json`, which is the gate for
+    # a caller that wants them; SKILL.md §4 says so, because a gate whose coverage is unstated is read
+    # as covering everything the command prints.
     if any(item.kind in ("soft", "hard") for item in items):
         raise typer.Exit(code=1)
 
@@ -3850,15 +4008,22 @@ def gc(
     typer.echo(f"Archived {len(actions)} node(s) → {archive_dir.relative_to(path)}/.")
     # A symbol count that DROPS after a garbage collection is an alarming thing to read on a graph you
     # rely on, and the cause is benign: a retired memory's anchor projects a placeholder node for a
-    # symbol that no longer exists in source, so collecting the memory collects the placeholder with it.
+    # locus the extractor does not index, so collecting the memory collects the placeholder with it.
     # Correct, and previously unmentioned — so the reader had to derive it (feedback-v5 E#3).
+    #
+    # It is an UN-INDEXED file, never a missing symbol, and the wording has to say so (feedback-v6 F#4).
+    # A locus genuinely absent from source mints no node at all — `artifacts.mint_locus_node` returns
+    # early when `locus_hash` is None — so "not in the current source" is precisely the case in which
+    # this line stays silent. It can only ever print for a `file-anchor`: a doc, a script, a Dockerfile
+    # or a `file:<path>#<section>` inside one, all still on disk. Sending the reader to look for a
+    # deleted function is the diagnosis cost the line exists to prevent.
     after_syms = sum(1 for _, a in rebuilt.nodes(data=True)
                      if a.get("family") == "structure" and status.is_symbol(a))
     if after_syms < before_syms:
-        typer.echo(f"Also released {before_syms - after_syms} placeholder symbol node(s) that only a "
-                   f"collected memory referenced — they name symbols not in the current source, so the "
-                   f"`sym` count on `yigraf status` drops by that much. Nothing in your code was "
-                   f"touched; a rebuild holds at the new number.")
+        typer.echo(f"Also released {before_syms - after_syms} placeholder anchor node(s) for un-indexed "
+                   f"files (docs, scripts) that only a collected memory referenced — those files are "
+                   f"untouched and still on disk; the `sym` count on `yigraf status` drops by that much "
+                   f"and a rebuild holds at the new number.")
 
 
 @app.command(name="graph-merge", hidden=True)

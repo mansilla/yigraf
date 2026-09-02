@@ -33,13 +33,51 @@ DEFAULT_SESSION_PREAMBLE = """\
   the verbs is not the same as knowing which one resolves which signal.
 - Capture as the work lands, not as a closing ritual. `--why` and `--rejected` are worth most at the
   moment of the decision; by the end of a session the reasoning that made the choice is gone.
+- Before you report done, run `yigraf status`. "Up to date" means no drift, no stale AND no unsettled
+  rename — settle the rename first, it is the only one that expires. Open tasks are a fourth, separate
+  thing, and a quiet context packet is evidence of none of them.
+- One verb per signal, and the wrong one costs you: code a decision governs changed → `reaffirm`
+  (the belief is unchanged) or `supersede` (your mind changed), never re-`remember`. A done task's
+  symbol changed → re-`link`, or reopen it. Two live beliefs collide → `reconcile`, `supersede`, or
+  `dispute`.
+"""
+
+#: Every session preamble yigraf has shipped BEFORE the current one, newest last.
+#:
+#: ``yigraf init`` splices the preamble into the repo's *committed* ``yigraf/config.yaml``, and the file
+#: value wins at read time — so amending :data:`DEFAULT_SESSION_PREAMBLE` reaches no already-initialized
+#: repo, this one included. That is the same two-copy hazard ``skill_behind`` exists for, one file over
+#: (feedback-v6 F#1), and it is worse here: the preamble is *the* channel on a host with no skill.
+#:
+#: Detection is a byte-for-byte match against what we ONCE shipped — never "differs from the current
+#: default". The file says the preamble is yours to rewrite, so a rewritten one must stay silent; a
+#: match here is proof of an untouched older copy rather than a guess about one, the same discipline
+#: :func:`yigraf.hooks.installed_skill_version` applies to an unstamped skill. One entry covers every
+#: release that had a preamble: the text was introduced at 1.4.0 and was unchanged through 1.8.0.
+SUPERSEDED_SESSION_PREAMBLES = ("""\
+[yigraf] Standing rules for this session — instructions, not reference:
+- Read yigraf's own guidance before driving the CLI: the `yigraf` skill if your host loads skills,
+  otherwise the yigraf block in AGENTS.md. `yigraf cheatsheet` lists every verb and flag. Knowing
+  the verbs is not the same as knowing which one resolves which signal.
+- Capture as the work lands, not as a closing ritual. `--why` and `--rejected` are worth most at the
+  moment of the decision; by the end of a session the reasoning that made the choice is gone.
 - Before you report done, run `yigraf status`. "Up to date" means no drift AND no stale — open tasks
   are a third, separate thing, and a quiet context packet is evidence of neither.
 - One verb per signal, and the wrong one costs you: code a decision governs changed → `reaffirm`
   (the belief is unchanged) or `supersede` (your mind changed), never re-`remember`. A done task's
   symbol changed → re-`link`, or reopen it. Two live beliefs collide → `reconcile`, `supersede`, or
   `dispute`.
-"""
+""",)
+
+
+def preamble_behind(config: dict[str, Any]) -> bool:
+    """Whether this repo's committed preamble is an untouched copy of an *older* shipped default.
+
+    False for a rewritten preamble and for the current one alike — see
+    :data:`SUPERSEDED_SESSION_PREAMBLES` for why only an exact match earns the nudge.
+    """
+    return config.get("session_start", {}).get("preamble") in SUPERSEDED_SESSION_PREAMBLES
+
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "schema_version": 0,
@@ -85,6 +123,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # the --why with the ids it names removed — that still counts as *only* a pointer; above it, a
     # --why that cites a node is read as an argument that happens to cite one. 0 switches it off.
     "hollow_why_words": 25,
+    # The whole-file section OFFER (feedback-v6 §7). A whole-file markdown anchor is often a claim
+    # about one section, and the field measured its own store for a rule that separates the two: a
+    # null — every size-shaped signal overlaps, and nothing beats warning unconditionally, which is
+    # right two times in three (i.e. a mark worth ignoring). So yigraf offers instead of warning, and
+    # this is how far ahead of the runner-up the best-fitting section must score to be named. Set for
+    # legibility, not recall: a near-tie means the document says the claim's words in two places, and
+    # naming one arbitrarily teaches the reader the suggestion is noise. 0 switches the offer off.
+    "section_offer_margin": 2.0,
     # Retrieval (M4) — seeding, bounded traversal, and ranking of the token-budgeted context slice.
     "retrieval": {
         "seeds": 5,
@@ -259,6 +305,10 @@ reaffirm_burst: 3              # after this many single-id reaffirms in the wind
 reaffirm_burst_window: 300     # seconds the burst counter looks back over
 hollow_why_words: 25           # a --why this short that only POINTS at another node is refused when
                                # the node it points at carries no argument either (0 = off)
+section_offer_margin: 2.0      # capture-time OFFER (never a warning): when a whole-file markdown
+                               # anchor's document has one section that scores this many times the
+                               # runner-up on the claim's distinctive terms, name it and the `reanchor`
+                               # that narrows to it. Nothing to clear either way. 0 = off
 
 # --- Retrieval (M4) — how the token-budgeted context slice is seeded, traversed, and ranked ---
 retrieval:

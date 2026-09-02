@@ -449,16 +449,22 @@ RENAME_CLIFF = ("↳ A rename holds only while the body does: it is re-derived f
                 "`yigraf gc --apply` settles every one of them at once.")
 
 
-def _rename_line(item) -> str:
-    """One ⚠ line for a rename the graph resolved and the file has not been told about.
+def rename_verb(item) -> str:
+    """The one command that settles ONE rename, ids pre-filled — the rename counterpart of
+    :func:`drift_tail`, and unframed for the same reason: ``show`` reads a single node and frames it
+    without the source id, the packet blocks frame it with one, and both must name the same verb.
 
-    Names the settle verb per relation, the same kind-aware fork ``drift_tail`` makes: an ``implements``
-    edge is re-anchored by re-``link``ing (a task's declaration), a memory's ``concerns``/``grounded_by``
-    ref by ``reanchor`` (a locus repair with no supersedes trail).
+    Forked by relation, the same kind-aware fork ``drift_tail`` makes: an ``implements`` edge is
+    re-anchored by re-``link``ing (a task's declaration), a memory's ``concerns``/``grounded_by`` ref by
+    ``reanchor`` (a locus repair with no supersedes trail).
     """
-    verb = (f"yigraf link {item.task_id} {item.new_locator}" if item.relation == "implements"
+    return (f"yigraf link {item.task_id} {item.new_locator}" if item.relation == "implements"
             else f"yigraf reanchor {item.task_id} {item.locator} {item.new_locator}")
-    return f"  ⚠ {item.task_id} → {item.locator} ⇒ {item.new_locator} — `{verb}`"
+
+
+def _rename_line(item) -> str:
+    """One ⚠ line for a rename the graph resolved and the file has not been told about."""
+    return f"  ⚠ {item.task_id} → {item.locator} ⇒ {item.new_locator} — `{rename_verb(item)}`"
 
 
 def _rename_block(items: list, config: dict | None = None) -> list[str]:

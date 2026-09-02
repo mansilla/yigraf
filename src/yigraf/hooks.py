@@ -329,7 +329,12 @@ dead end. Read both sides (`yigraf show <id>`), then:
 - same provenance tier with no preferred side → that is not a bug. Two equal-authority beliefs stay an
   open question for the principal rather than being tie-broken. Ask, or `dispute` it.
 
-(`yigraf drift` exits non-zero on drift — that's the commit/CI gate, not something you poll.)
+(`yigraf drift` exits non-zero on **soft/hard drift only** — that's the commit/CI gate, not something
+you poll. `yigraf conflicts` gates the same way on conflicts. A **pending rename** and a **stale
+completion** exit 0 on every command, so they pass a gate silently: read the output, or gate on
+`yigraf status --json`, which carries all four counts. That the rename is the one let through matters —
+it is the signal §0b says to settle first, because it is the only one that stops being fixable, and the
+commit boundary is the last moment before the edit that ends the rescue.)
 
 ## 5. Evolve an intent (retire or reverse a spec)
 Specs change too — but **never hand-edit a superseded intent into place**; use one of two supported paths:
@@ -385,10 +390,11 @@ written by a verb, never by hand; `yigraf tasks --open` lists what is left), and
 non-obvious choices (with
 `--why` and `--concerns <sym>`) — as the work lands, not as a closing ritual.
 
-Before you report done, run `yigraf status`: "up to date" means **no drift AND no stale**, which is not
-the same as no open tasks. `yigraf drift` explains the drift; `yigraf drift --stale` lists the stale
-completions; `yigraf conflicts` lists the open knowledge-conflicts (`⚠ n conflict`) with the verbs
-that resolve them. `yigraf cheatsheet` prints every verb and flag; `yigraf changelog --since <version>` says what changed
+Before you report done, run `yigraf status`: "up to date" means **no drift, no stale and no unsettled
+rename**, which is not the same as no open tasks. Settle the rename first — it is the only one of the
+three that expires. `yigraf drift` explains the drift and lists any pending rename; `yigraf gc --apply`
+settles them (`⚠ n rename`); `yigraf drift --stale` lists the stale completions; `yigraf conflicts`
+lists the open knowledge-conflicts (`⚠ n conflict`) with the verbs that resolve them. `yigraf cheatsheet` prints every verb and flag; `yigraf changelog --since <version>` says what changed
 under you after an upgrade.
 {_AGENTS_END}"""
 
@@ -556,11 +562,12 @@ def _ensure_gitignore(directory: Path, ignore_line: str, comment: str) -> Path:
 
 
 # --------------------------------------------------------------------------------------------------
-# Codex CLI hooks (M-multi): SessionStart re-inject + best-effort PostToolUse — the SAME handlers as
-# Claude Code (Codex's hook contract mirrors it: snake_case tool_name/tool_input/cwd in, and
-# hookSpecificOutput.additionalContext out). So the only host-specific piece is *where* the wiring
-# lives: Codex reads project-local `.codex/hooks.json` (a trusted project) instead of Claude's
-# `.claude/settings.local.json`. AGENTS.md (the shared committed block) already instructs Codex.
+# Codex CLI hooks (M-multi): SessionStart re-inject + best-effort PostToolUse + the principal-facing
+# Stop notice — the SAME handlers as Claude Code. Codex's hook contract mirrors the relevant input and
+# output fields, including hookSpecificOutput.additionalContext and the top-level systemMessage. So the
+# only host-specific piece is *where* the wiring lives: Codex reads project-local `.codex/hooks.json`
+# (a trusted project) instead of Claude's `.claude/settings.local.json`. AGENTS.md (the shared committed
+# block) already instructs Codex.
 # --------------------------------------------------------------------------------------------------
 
 #: Codex edits via the apply_patch family; the matcher gates PostToolUse to edit tools (the handler
@@ -577,7 +584,7 @@ class CodexHookResult:
 
 
 def install_codex_hooks(root: Path) -> CodexHookResult:
-    """Register yigraf's SessionStart + PostToolUse hooks in ``.codex/hooks.json`` + the AGENTS block.
+    """Register yigraf's SessionStart, PostToolUse, and Stop hooks for Codex + the AGENTS block.
 
     Reuses the exact ``yigraf hook session-start`` / ``post-tool-use`` handlers — Codex's hook JSON
     mirrors Claude Code's (same input fields, same ``additionalContext`` output), so only the install
@@ -604,6 +611,11 @@ def install_codex_hooks(root: Path) -> CodexHookResult:
                            f'"{py}" -m yigraf hook session-start', "hook session-start")
     changed |= _ensure_hook(hooks, "PostToolUse", _CODEX_EDIT_MATCHER,
                             f'"{py}" -m yigraf hook post-tool-use', "hook post-tool-use")
+    # Reuse Claude's existing principal-facing notice verbatim. `systemMessage` is a common Codex hook
+    # output field too; the handler never emits additionalContext or a blocking decision, so this adds
+    # a UI warning without spending model context or changing Claude's independently-installed entry.
+    changed |= _ensure_hook(hooks, "Stop", "",
+                            f'"{py}" -m yigraf hook stop', "hook stop")
 
     codex.mkdir(parents=True, exist_ok=True)
     hooks_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
@@ -642,8 +654,9 @@ constraints, rejected alternatives). yigraf is wired as an MCP server; use its t
   `reaffirm` it to clear the drift. A correction/rule → `note_constraint`.
 - **Handed a node id** by a warning? Call `show` with it. `context` searches by *meaning* and cannot
   match an id except by accident, so it answers an id with proximity noise that reads like an answer.
-- **Before you report done**, call `status`: "up to date" means no drift AND no stale, which is not
-  the same as no open tasks.
+- **Before you report done**, call `status`: "up to date" means no drift, no stale and no unsettled
+  rename, which is not the same as no open tasks. Settle the rename first — it is the only one that
+  expires, and `yigraf gc --apply` (a terminal command; there is no MCP tool for it) is what settles it.
 - A rule that is load-bearing on every task, not just this code? `pin` it — relevance ranking cannot
   reach a rule that resembles no particular topic. Keep the set tiny.
 
