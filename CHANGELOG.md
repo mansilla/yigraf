@@ -33,7 +33,9 @@ maintenance system" is a phrase for a human deciding whether to install; in a ho
 cost tokens to say less. The design law applies to the branding too.
 
 One real gap closed along the way: the landing page carried no `og:`/`twitter:` tags at all, so every
-shared link rendered bare. Added, with the social card.
+shared link rendered bare. Added — pointing at the social card, whose subtitle now reads *truth
+maintenance for your agent* in place of *one graph, for your coding agent*. (GitHub's own repo card
+is a separate manual upload in Settings → Social preview.)
 
 Copy and packaging metadata only — no engine change, no behavior change, no schema change.
 
