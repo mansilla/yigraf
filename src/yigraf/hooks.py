@@ -163,7 +163,9 @@ plus the rejected option is enough; capture at the *conclusion*, not mid-thinkin
   mis-declared at capture)? `yigraf reanchor mem:<id> <old> <new>` moves one anchor with **no
   supersedes trail** — a locus repair is not a mind-change, and filing it as one writes a false entry
   into the most valuable structure in the graph. An anchor that never belonged at all →
-  `yigraf unlink mem:<id> <ref>` (works for `concerns` and `grounded_by`).
+  `yigraf unlink mem:<id> <ref>` (works for `concerns` and `grounded_by`). Reanchoring onto a locus the
+  node **already carries** cannot move anything, so it drops `<old>` and says so — that is a removal,
+  and no verb adds a `concerns` anchor back.
 - Decision holds but what you WROTE about it is wrong (a `--why` your shell mangled, a typo in the
   claim)? `yigraf amend mem:<id> --why "<the reasoning, stated right>"` repairs the record, also with
   no supersedes trail. It reports a NEW id — a memory id is a hash of its own statement/why/rejected —

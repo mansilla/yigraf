@@ -4,6 +4,95 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.10.0] — 2026-09-03
+
+**An unset shell variable could overwrite a live plan, and the tool printed "Created".**
+
+`yigraf plan ""` wrote `yigraf/plans/active/.md` — a dotfile with an empty id — and reported success.
+That plan was *real*: it answered to the slug `.md`, took `link`, `--append-task` and `close`. Run the
+same command again with the variable still unset and the second one silently replaced the first —
+title, tasks, and the `edges:` block with its stamped `implements` anchor, `anchor_algo` and
+`stamped_at`. Afterwards `task:.md/1` named a different task than it had a moment earlier, which
+`plan`'s own docstring says cannot happen ("task numbers … are never reused, so an id already recorded
+on a `link` edge cannot come to mean a different task"). It is the first data-loss path the field has
+reported, and it needed one unset variable in a shell script to reach.
+
+Two edits, because the two halves fail independently:
+
+* **The empty string is refused**, on every verb that composes a slug into a path. It used to pass the
+  guard twice over: `not value` short-circuited out, and `_PATH_SHAPED` does not match `""` either.
+  The obvious one-liner is a regression the field flagged before we could ship it — `_require_slug` is
+  also called from `tasks` with `None`, where `None` means *every plan*, so refusing falsy values
+  breaks `yigraf tasks` with no argument. `None` returns; `""` gets its own refusal, naming the unset
+  variable, at exit 0 like every other recoverable condition (design law #1).
+* **`plan`'s anti-clobber check is keyed on the resolved path**, which is the half that actually stops
+  the loss. It compared a glob's `path.stem`, and `Path(".md").stem` is `".md"`, not `""` — so the
+  plan failed to find *itself*. `intent` and `supersede-intent` were never exposed because they test
+  `dest.exists()`; this is them. The check no longer depends on the guard catching every shape that
+  can round-trip badly.
+
+The exit code stays 0. A refusal that writes nothing is not a tool failure, and the field agrees:
+"a non-zero exit trains an agent to stop calling the tool." (feedback-v7 G#1)
+
+**`section_offer_margin` did nothing on a whole class of document, and 1.9.0's notes claimed the
+opposite.** The margin compares the winner against the runner-up — so where a document has exactly
+*one offerable* section there is no runner-up, the comparison never runs, and the knob is skipped
+entirely: `1e9` offered as readily as `2.0`, with nothing between inert and off. That is exactly the
+shape 1.9.0 said was exempt by construction (`coding-conventions.md`: a title plus one `##`), and the
+field measured that it was not — the test was written on the raw section count, which counts the
+title too.
+
+The exemption is now on **offerable** sections, which is what it always meant. An offer is a *choice*
+— "this section, more than the others" — and one candidate is not a choice; it is also the case where
+narrowing buys least, since "the file minus its preamble" is barely a narrowing. So the claim 1.9.0
+made is now true, and the knob is live everywhere the offer can fire. A runner-up that scores *zero*
+still passes at every margin, and that is the definition rather than a hole: the ratio is unbounded,
+and it is the strongest signal the scorer produces. (feedback-v7 G#2)
+
+**The default stays 2.0, and the reason is that the number that should set it did not exist.** The
+field measured the other half of that finding on their own store — at `2.0` the offer fires on 2 of
+12 eligible captures, at `1.0` on 12 of 12, and the suppressed cases run 1.14× to 1.74× the runner-up,
+nowhere near ties. They also observed zero uptake: 12 of 12 anchors chosen whole-file by an
+Opus-class agent with the skill provably in context, which is a measurement about where guidance has
+to sit rather than about carelessness. But a recall curve is not an accept rate, and the honest
+version of "should the default be lower" needs to know how often an offer is *right*, which nothing
+recorded. So:
+
+**The offer keeps a ledger.** `yigraf/.local/section-offers.json` — machine-local, gitignored, never
+the graph, the same shape as `reaffirms.json` (design law #6). One row per whole-file markdown anchor
+*considered*, carrying the candidate slug and **both scores**, written **before** the margin gate:
+
+```json
+{"at": 1788476756.6, "mem": "mem:d351…", "ref": "file:docs/d.md",
+ "candidate": "z-band", "top": 8.09, "runner_up": 0.0, "offered": false}
+```
+
+Before the gate, because a row written where the offer is *printed* logs only what the margin let
+through — the half that cannot re-fit a threshold. With both scores stored, one window re-scores
+offline at every candidate margin through `sectionfit.Fit.wins_by`, the same gate the offer itself
+uses, so a stored row and a live offer can never disagree. Acceptance needs no second record: it is
+"does that memory now carry that anchor". `best_section` is unchanged as a verdict; the scoring is
+split out into `section_fit`. (feedback-v7 G#4)
+
+**`reanchor` reported a removal as a move.** Where the destination is already on the node there is
+nothing to move onto it, so the old anchor is dropped — and the success line printed `old ⇒ new`
+anyway, at exit 0, with no second sentence and the anchor count going 2 → 1. The removal is
+defensible; the report was not, on a node no verb can add a `concerns` anchor back to. It now says
+what it did, names the `unlink` that produces the same end state, and says the recovery is a
+frontmatter edit. Confirmed by the field on `concerns` and `grounded_by`, `file:` and `sym:` alike.
+
+The route in is closed at the other end too: the offer never hands over a `reanchor` onto a section
+the node already carries — the fifth exemption, and the one that was missing. (feedback-v7 G#3)
+
+**And the enumeration that claimed five copies had six.** F#1 made one source for "up to date means no
+drift, no stale AND no unsettled rename" and pinned five prose surfaces against it. The field counted
+and pointed at the sixth: the MCP `status` tool description, which a host reads to decide whether
+calling `status` answers its question. It is in the pin now — an enumeration is a claim about
+completeness, and this one is checked. (feedback-v7 §B)
+
+15 new tests. No schema change; no migration. `.local/section-offers.json` appears on the first
+capture that considers a whole-file markdown anchor and is safe to delete at any time.
+
 ## [1.9.1] — 2026-09-02
 
 **"The memory your coding agent doesn't have" sold the half that everybody else also sells.**
@@ -27,10 +116,17 @@ summary and keywords. The four questions and the graph algebra are unchanged; th
 rests on.
 
 Deliberately **not** rebranded: the agent-facing strings — `--help`, the hook injections, `SKILL.md`,
-`AGENTS.md` — which still say "one connected graph over code, intent, plan, and memory." That sentence
-tells an agent what is *in* the graph, which is what it needs at the moment of action. "A truth
-maintenance system" is a phrase for a human deciding whether to install; in a hook injection it would
-cost tokens to say less. The design law applies to the branding too.
+`AGENTS.md` — which keep saying what is *in* the graph rather than what kind of system it is, because
+that is what an agent needs at the moment of action. "A truth maintenance system" is a phrase for a
+human deciding whether to install; in a hook injection it would cost tokens to say less. The design
+law applies to the branding too.
+
+*(Corrected in 1.10.0: as first written, this paragraph attributed one sentence — "one connected graph
+over code, intent, plan, and memory" — to all four of those surfaces. It is the `--help` header and
+`__init__.py`, and nothing else. `SKILL.md` opens on "the intent↔code spine" and says "one graph over
+code structure, intents (specs), plans, and the memory of why the code is the way it is"; the
+`AGENTS.md` block never carried the sentence at all. The point stands about all four; the quotation
+was only ever true of one. Reported by the field, feedback-v7 §C.)*
 
 One real gap closed along the way: the landing page carried no `og:`/`twitter:` tags at all, so every
 shared link rendered bare. Added — pointing at the social card, whose subtitle now reads *truth

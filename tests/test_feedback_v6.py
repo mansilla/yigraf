@@ -209,22 +209,33 @@ def _up_to_date_sentence(text: str) -> str:
 def _prose_surfaces() -> dict[str, str]:
     """Every surface that TEACHES the definition — not every surface that mentions the counts.
 
-    Five copies, and the three that were stale at 1.8.0 are exactly the ones a host with no skill
+    Six copies, and the three that were stale at 1.8.0 are exactly the ones a host with no skill
     reads: Codex gets hooks + AGENTS.md, and a hookless Tier-A host gets the ambient rule and not even
     the preamble. A user cannot repair any of them locally — all three are installer-generated, so a
     local edit forks them silently.
+
+    The sixth is the MCP ``status`` tool description, added by feedback-v7: the field read the F#1
+    enumeration, counted five, and pointed out that the docstring a host reads *to decide whether
+    calling status answers its question* carries the same sentence and was outside the pin. It is the
+    copy most likely to go stale next, for the same reason the other three did — nobody editing
+    ``status.py`` has a reason to open it.
     """
+    import asyncio
+
     from yigraf.config import DEFAULT_SESSION_PREAMBLE
     from yigraf.hooks import _AGENTS_BLOCK, _AMBIENT_MCP_RULE, skill_text
+    from yigraf.mcp_server import build_server
 
     skill = skill_text()
     frontmatter, _, body = skill.partition("\n---\n")
+    tools = {t.name: t.description or "" for t in asyncio.run(build_server(".").list_tools())}
     return {
         "skill frontmatter (description:)": frontmatter,
         "skill §0b": body,
         "config.DEFAULT_SESSION_PREAMBLE": DEFAULT_SESSION_PREAMBLE,
         "hooks._AGENTS_BLOCK": _AGENTS_BLOCK,
         "hooks._AMBIENT_MCP_RULE": _AMBIENT_MCP_RULE,
+        "mcp_server status tool description": tools["status"],
     }
 
 

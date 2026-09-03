@@ -35,16 +35,20 @@ _CONTAINER_KINDS = frozenset({"file", "module"})
 
 #: The signals whose zero-state IS "up to date", as the word each prose surface must use for it.
 #:
-#: One source, because there are FIVE copies of that sentence — the skill's frontmatter and its §0b,
-#: the session preamble, the AGENTS.md block, and the ambient MCP rule — and 1.8.0 added ``rename`` to
-#: two of them and shipped green (feedback-v6 F#1). The gap is not cosmetic: ``render_line`` emits the
-#: literal ``no drift`` at zero and omits the ``stale`` segment entirely at zero, so a two-count
-#: predicate evaluates TRUE against a line printed directly beneath it that reads ``⚠ 1 rename``. And
-#: the hosts a stale copy reaches are the ones with no skill to correct it — Codex reads hooks +
-#: AGENTS.md, and a hookless Tier-A host reads the ambient rule with no preamble at all.
+#: One source, because there are SIX copies of that sentence — the skill's frontmatter and its §0b,
+#: the session preamble, the AGENTS.md block, the ambient MCP rule, and the MCP ``status`` tool's own
+#: description — and 1.8.0 added ``rename`` to two of them and shipped green (feedback-v6 F#1). The
+#: gap is not cosmetic: ``render_line`` emits the literal ``no drift`` at zero and omits the
+#: ``stale`` segment entirely at zero, so a two-count predicate evaluates TRUE against a line printed
+#: directly beneath it that reads ``⚠ 1 rename``. And the hosts a stale copy reaches are the ones
+#: with no skill to correct it — Codex reads hooks + AGENTS.md, and a hookless Tier-A host reads the
+#: ambient rule with no preamble at all.
 #:
-#: ``test_up_to_date_is_defined_identically_on_every_prose_surface`` pins all five against this tuple,
-#: so the NEXT signal added here fails loudly in whichever surface it did not reach.
+#: ``test_up_to_date_is_defined_identically_on_every_prose_surface`` pins all six against this tuple,
+#: so the NEXT signal added here fails loudly in whichever surface it did not reach. The sixth was
+#: outside the pin until feedback-v7: the field read the enumeration, counted five, and named the MCP
+#: docstring — which a host reads to decide whether calling ``status`` answers its question — as the
+#: copy that could go stale next. An enumeration IS a claim about completeness; this one is checked.
 UP_TO_DATE_SIGNALS = ("drift", "stale", "rename")
 
 

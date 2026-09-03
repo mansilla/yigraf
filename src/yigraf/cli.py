@@ -58,7 +58,8 @@ _PATH_SHAPED = re.compile(r"[/\\]|^\.+$|^~")
 
 
 def _require_slug(value: str | None, kind: str, tail: str) -> None:
-    """Refuse a path where a slug belongs — the calling convention differs between neighbouring verbs.
+    """Refuse a path — or an empty string — where a slug belongs. The calling convention differs
+    between neighbouring verbs, and both mistakes compose into a filename that names the wrong thing.
 
     ``yigraf drift .`` means *this repo*; ``yigraf tasks .`` meant *the plan named "."*, which answered
     ``No plan .. Known: …`` at exit 0 — a plausible "nothing outstanding" on the one surface an agent
@@ -66,8 +67,23 @@ def _require_slug(value: str | None, kind: str, tail: str) -> None:
     wrong convention must not look like an answer. On the *writing* verbs the same shape is worse than
     misleading: ``plan ../../x`` composed straight into ``workspace / "plans" / "active" / f"{slug}.md"``
     and landed outside the workspace. One wording for both, because it is one mistake.
+
+    The **empty** slug is the same mistake one step further along, and it used to pass here twice over:
+    ``not value`` short-circuited out, and ``_PATH_SHAPED`` does not match ``""`` either. ``yigraf plan
+    ""`` — an unset ``$SLUG`` — then wrote the dotfile ``plans/active/.md`` and reported success, and a
+    second one silently replaced it, title, tasks and stamped ``implements`` anchor alike (feedback-v7
+    G#1). Refusing it here is the guard; ``plan``'s anti-clobber check is the seatbelt.
+
+    ``None`` is not empty and must stay: ``tasks`` passes it to mean *every plan*, and refusing falsy
+    values rather than the empty string breaks ``yigraf tasks`` with no argument.
     """
-    if not value or not _PATH_SHAPED.search(value):
+    if value is None:  # `tasks` with no argument — None means EVERY plan, not a bad name
+        return
+    if not value.strip():
+        _guidance(f"An empty slug does not name {kind} — usually an unset shell variable. It composes "
+                  f"to a bare `.md` dotfile that then answers to a name you never typed, so yigraf "
+                  f"writes nothing. {tail}")
+    if not _PATH_SHAPED.search(value):
         return
     _guidance(f"{value!r} is a path, not {kind} slug — a slug names one artifact file, so it never "
               f"contains a separator, and the repo root goes to `--repo`. {tail}")
@@ -656,7 +672,16 @@ def plan(
     """
     workspace = _require_workspace(repo)
     _require_slug(slug, "a plan", 'Pick a plain name — `yigraf plan auth-rewrite -t "…"`.')
-    existing = _find_plan_file(workspace, slug.casefold())
+    dest = workspace / "plans" / "active" / f"{slug}.md"
+    # Keyed on the RESOLVED path as well as the slug glob, because those two can disagree and the
+    # disagreement is a silent overwrite (feedback-v7 G#1). `_find_plan_file` compares a glob's
+    # `path.stem`, and `Path(".md").stem` is `".md"`, not `""` — so the empty slug wrote
+    # `plans/active/.md`, failed to find itself, and the second call replaced a live plan's title,
+    # tasks and stamped `implements` anchor while printing "Created". `_require_slug` now refuses the
+    # empty string one line up; this is the check that does not depend on guessing every shape that
+    # can round-trip badly. `intent` and `supersede-intent` were never exposed because they test the
+    # resolved `dest.exists()` — this is them.
+    existing = _find_plan_file(workspace, slug.casefold()) or (dest if dest.exists() else None)
 
     if append_task:
         if existing is None:
@@ -672,7 +697,6 @@ def plan(
                    f"sym:<path>#<name>` — then `yigraf close` when done.")
         return
 
-    dest = workspace / "plans" / "active" / f"{slug}.md"
     if existing is not None:
         _guidance(f"Plan plan:{slug.casefold()} already exists ({existing}). To add work to it, "
                   f'`yigraf plan {slug} --append-task "<description>"`; to close a task, '
@@ -1069,27 +1093,47 @@ def reanchor(
                       # returning user meets first — `mdsec-v1` is the newest anchor kind — was also the
                       # only one that dropped the "did you mean" and read as "sections aren't indexed".
                       + _symbol_suggestion(graph, new, repo))
-    moved = []
+    # Two outcomes per list, and the success line has to tell them apart (feedback-v7 G#3). When the
+    # destination is ALREADY carried there is nothing to move onto it, so `old` is dropped — the end
+    # state `unlink` produces, which the docstring above names as a different verb for a different
+    # meaning. Printing that as `old ⇒ new` said an anchor moved while the count went 2 → 1, silently
+    # and at exit 0, on a node no verb can add a `concerns` anchor back to. The root is one this
+    # function already writes down one branch over (the `--governs` comment above): a success line
+    # printed after a branch with more than one outcome.
+    moved: list[str] = []
+    dropped: list[str] = []
     if in_concerns:
         anchor, algo = (None, memory.GOVERNS_ALGO) if governs_move else content_anchor
+        label = "governs" if governs_move else "concerns"
         if any(c.sym == new for c in node.concerns):
             node.concerns = [c for c in node.concerns if c.sym != old]  # already anchored there — drop the old
+            dropped.append(label)
         else:
             node.concerns = [memory.Concern(sym=new, anchor=anchor, anchor_algo=algo)
                              if c.sym == old else c for c in node.concerns]
-        moved.append("governs" if governs_move else "concerns")
+            moved.append(label)
     if in_evidence:
         if any(e.ref == new for e in node.evidence):
             node.evidence = [e for e in node.evidence if e.ref != old]
+            dropped.append("grounded_by")
         else:
             node.evidence = [memory.Evidence(ref=new, anchor=content_anchor[0], anchor_algo=content_anchor[1])
                              if e.ref == old else e for e in node.evidence]
-        moved.append("grounded_by")
+            moved.append("grounded_by")
     path.write_text(memory.render_memory(node), encoding="utf-8")
     _rebuild(repo)
-    typer.echo(f"Reanchored {target} ({' + '.join(moved)}): {old} ⇒ {new}. "
-               f"The claim and its history are unchanged — no supersede recorded."
-               + (" It stays a policy anchor (governs — never drifts)." if governs_move else ""))
+    lines = []
+    if moved:
+        lines.append(f"Reanchored {target} ({' + '.join(moved)}): {old} ⇒ {new}."
+                     + (" It stays a policy anchor (governs — never drifts)." if governs_move else ""))
+    if dropped:
+        lines.append(f"⚠ Dropped {old} from {target} ({' + '.join(dropped)}) — {new} was already there, "
+                     f"so this REMOVED an anchor rather than moving one, exactly as "
+                     f"`yigraf unlink {target} {old}` would have. That is one fewer locus watched for "
+                     f"drift, and no verb adds a `concerns` anchor back: recovering both needs an edit "
+                     f"to {path.name}.")
+    lines.append("The claim and its history are unchanged — no supersede recorded.")
+    typer.echo(" ".join(lines))
 
 
 #: Frontmatter fields that can name a memory id and BLOCK a re-key. ``supersedes`` (memory) and
@@ -1661,6 +1705,47 @@ def _capture_memory(repo: Path, workspace: Path, *, statement: str, type_: str, 
     return node
 
 
+def _offer_ledger(root: Path) -> Path:
+    """The machine-local ledger of section offers *considered* (``yigraf/.local/section-offers.json``).
+
+    Volatile, gitignored, never the graph — the same rule that keeps usage/last_seen out of the
+    projection (design law #6), and the same shape as :func:`_reaffirm_ledger`.
+
+    It exists because the offer was the one guidance surface with no record, and the number that should
+    set ``section_offer_margin`` — how often an offer is *right* — is uncollectable without one
+    (feedback-v7 G#4). A snapshot of a store can say how many whole-file anchors *could* have been
+    narrowed; it cannot attribute a section anchor to the offer that suggested it, and the suppressed
+    cases leave no trace at all. Two of yigraf's own design choices make that airtight: ``reanchor``
+    writes no supersedes edge, and a ``concerns`` entry carries no timestamp, so nothing in the artifact
+    dates a narrowing.
+
+    A row is written for **every** whole-file markdown anchor considered, carrying both scores, *before*
+    the margin gate — a row written where the offer is printed would log only what the margin let
+    through, which is exactly the half that cannot re-fit a threshold. With ``top``/``runner_up`` stored,
+    one window re-scores offline at every candidate margin (``sectionfit.Fit.wins_by``). Acceptance needs
+    no second record: it is "does that memory now carry that anchor".
+    """
+    return Path(root) / WORKSPACE_DIRNAME / ".local" / "section-offers.json"
+
+
+def _record_offer(root: Path, mem_id: str, ref: str, fit: sectionfit.Fit, offered: bool) -> None:
+    """Append one considered offer, keeping the last 500. Silent on any I/O failure (design law #5)."""
+    try:
+        path = _offer_ledger(root)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = []
+        entries = [e for e in data if isinstance(e, dict)][-499:] if isinstance(data, list) else []
+        entries.append({"at": time.time(), "mem": mem_id, "ref": ref, "candidate": fit.candidate,
+                        "top": round(fit.top, 6), "runner_up": round(fit.runner_up, 6),
+                        "offered": offered})
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(entries), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def _section_offers(node: memory.Memory, repo: Path | None, config: dict | None) -> list[str]:
     """Offer the ``#section`` a whole-file markdown anchor is probably about. An OFFER, never a warning.
 
@@ -1675,6 +1760,9 @@ def _section_offers(node: memory.Memory, repo: Path | None, config: dict | None)
     :mod:`yigraf.sectionfit` stays silent unless one section wins clearly, so most captures print
     nothing (design law #4). ``--governs`` is exempt — a policy anchor deliberately names the file it
     governs the use of, and narrowing it would change what the policy covers.
+
+    Every anchor *considered* is recorded (:func:`_record_offer`), including the ones the margin
+    suppresses, because those are the half that can re-fit the threshold later (feedback-v7 G#4).
     """
     if repo is None:
         return []
@@ -1685,6 +1773,7 @@ def _section_offers(node: memory.Memory, repo: Path | None, config: dict | None)
     seen: set[str] = set()
     anchors = ([(c.sym, c.anchor_algo) for c in node.concerns]
                + [(e.ref, e.anchor_algo) for e in node.evidence])
+    carried = {ref for ref, _ in anchors}
     for ref, algo in anchors:
         # Whole-file only: a `#section` is already the narrow form and a `:L` range is addressed by
         # position, which no heading can name.
@@ -1693,13 +1782,23 @@ def _section_offers(node: memory.Memory, repo: Path | None, config: dict | None)
         if not ref.startswith("file:") or "#" in ref or ":L" in ref:
             continue
         seen.add(ref)
-        slug = sectionfit.best_section(repo, ref[len("file:"):], node.statement, margin)
-        if slug is None:
+        fit = sectionfit.section_fit(repo, ref[len("file:"):], node.statement)
+        # The node ALREADY carrying the section we would name is the fifth exemption, and the one that
+        # was missing: the `reanchor` we hand over cannot move an anchor onto a locus that is already
+        # there, so it drops the whole-file anchor instead — a removal, and until feedback-v7 G#3 one
+        # reported as a move. The offer is the likeliest way to meet that branch, so it stops here —
+        # before the ledger too, because this is not a candidate the margin could ever be right about,
+        # and a row whose `offered` disagreed with its own scores would poison the re-fit.
+        if fit.candidate is not None and f"{ref}#{fit.candidate}" in carried:
+            continue
+        offered = fit.wins_by(margin)
+        _record_offer(repo, node.id, ref, fit, offered)
+        if not offered:
             continue
         out.append(f"↳ Offer (not drift — nothing to clear): {ref} is anchored whole-file, and "
-                   f"#{slug} reads like this claim's subject.")
-        out.append(f"  Narrow it with `yigraf reanchor {node.id} {ref} {ref}#{slug}`, or keep the "
-                   f"whole-file anchor if the claim really is about the whole document.")
+                   f"#{fit.candidate} reads like this claim's subject.")
+        out.append(f"  Narrow it with `yigraf reanchor {node.id} {ref} {ref}#{fit.candidate}`, or keep "
+                   f"the whole-file anchor if the claim really is about the whole document.")
     return out
 
 

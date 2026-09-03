@@ -130,6 +130,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # this is how far ahead of the runner-up the best-fitting section must score to be named. Set for
     # legibility, not recall: a near-tie means the document says the claim's words in two places, and
     # naming one arbitrarily teaches the reader the suggestion is noise. 0 switches the offer off.
+    # The knob is live everywhere the offer can fire since 1.10.0: on a document with only ONE
+    # offerable section there was no runner-up, so the comparison never ran and 1e9 offered as
+    # readily as 2.0 — that shape is now structurally silent (feedback-v7 G#2). The default stays 2.0
+    # pending an accept rate rather than a recall curve: the field measured 2 of 12 firing at 2.0 and
+    # 12 of 12 at 1.0 in one store, but which of those offers would have been RIGHT is the number that
+    # sets this, and `.local/section-offers.json` is what now collects it.
     "section_offer_margin": 2.0,
     # Retrieval (M4) — seeding, bounded traversal, and ranking of the token-budgeted context slice.
     "retrieval": {
@@ -308,7 +314,11 @@ hollow_why_words: 25           # a --why this short that only POINTS at another 
 section_offer_margin: 2.0      # capture-time OFFER (never a warning): when a whole-file markdown
                                # anchor's document has one section that scores this many times the
                                # runner-up on the claim's distinctive terms, name it and the `reanchor`
-                               # that narrows to it. Nothing to clear either way. 0 = off
+                               # that narrows to it. Nothing to clear either way. 0 = off.
+                               # A document with fewer than two OFFERABLE sections is silent whatever
+                               # this says — one candidate is not a choice. Every anchor considered is
+                               # logged with both scores to .local/section-offers.json, so this can be
+                               # re-fitted from your own store instead of guessed.
 
 # --- Retrieval (M4) — how the token-budgeted context slice is seeded, traversed, and ranked ---
 retrieval:
