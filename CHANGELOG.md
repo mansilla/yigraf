@@ -4,6 +4,41 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.11.1] — 2026-09-07
+
+**`close --force` was the escape hatch the refusal named, and taking it left the warning standing
+forever.**
+
+`close` refuses a task that implements nothing, and its refusal offers `--force` for the case where
+the work genuinely shipped no symbol — a doc, a config, a decision. `--force` then wrote *nothing*: it
+moved the checkbox and stopped. So "closed with no anchor, on purpose" and "closed and never linked"
+were the same state on disk, and the capture-gap ⚠ — which fires on exactly that state — went on
+reporting the completion at every SessionStart with no verb able to clear it. An advisory signal that
+cannot be resolved by the verb it points at is not advice; it is trained noise, costing the agent's
+attention budget every session against design law #4. Measured on yigraf's own graph: 2 of 158
+completions, standing since feedback-v3 and feedback-v4.
+
+* **`--force` records the choice.** A top-level `unanchored:` list in the plan file names the tasks
+  that deliberately implement nothing, and `_capture_gaps` skips them. Not a key inside the task's
+  `edges` spec: `edges` holds edges and this asserts the *absence* of one, and `remove_edge_from_plan`
+  collects a task's spec once its last edge is gone — a marker parked there would be swept away by an
+  unrelated `unlink`, and its silent loss would look exactly like the nag returning by itself.
+* **`--force` is reachable as a repair.** The warning fires on a task that is by definition already
+  done, where `close` answered "already done" and did nothing. It now records the marker there, so the
+  guidance is followable from where the reader actually is.
+* **The gap line names both exits.** It offered only `yigraf link`, and that exit does not always
+  exist: both of yigraf's own gaps were prose living in a module-level constant (`hooks.py`
+  `_SKILL_BODY`, `memory.py` `GROUNDINGS`), which tree-sitter does not index — so `link` refuses the
+  only locus that would be honest. Anchoring such prose to a `file:…:L44-L56` range was rejected as
+  silently wrong: a range is addressed by position, so any insertion above it slides it onto unrelated
+  text and a later `reaffirm` re-stamps the wrong region.
+
+The marker is written into the task's attrs and its revision **only when true**, so the 156 anchored
+completions keep the exact revision ids they had and no phantom divergence is minted for a teammate to
+resolve. What is unchanged: an unanchored completion still can never go STALE. That is the price of the
+anchor it does not have, and it is the reason the guard exists — what is new is only that yigraf now
+knows the absence was a choice rather than decay. (mem:8bb0997b54094ec7)
+
 ## [1.11.0] — 2026-09-06
 
 **`⬆ preamble` was a nudge with no remedy but a paste, and every release minted more of them.**

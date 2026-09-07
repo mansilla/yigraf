@@ -752,6 +752,12 @@ def close(
     Closing refuses a task with no ``implements`` edge unless ``--force``, so "done" and "anchored" land
     together. That is not bookkeeping: a completion with no anchor can never go STALE, so the whole
     drift-as-stale mechanism silently does not apply to it.
+
+    ``--force`` *records* that choice in the plan (``unanchored:``) rather than only moving the
+    checkbox. Without the record the capture-gap ⚠ — whose own guidance offers ``--force`` as the exit
+    for work that shipped no symbol — went on firing every session with nothing able to clear it, which
+    is the shape of warning an agent learns to scroll past. Because the warning fires on a task that is
+    already done, ``--force`` is reachable there too, as a repair.
     """
     workspace = _require_workspace(repo)
     plan_file, task = _resolve_task(workspace, task_id)
@@ -763,6 +769,17 @@ def close(
                    f"if the work regressed, the symbols it named are where to look.")
         return
     if task.state == "done":
+        # The repair path for a completion closed before --force recorded anything: the capture-gap
+        # warning names this exact command, so it has to be reachable on a task that is already done —
+        # otherwise the guidance sends the reader to a verb that answers "already done" and the ⚠ it
+        # was raised by fires again next session, forever.
+        if force and not task.implements and artifacts.mark_task_unanchored(plan_file, task_id):
+            _rebuild(repo)
+            typer.echo(f"Recorded {task_id} as implementing nothing, on purpose — [x] was already "
+                       f"written; what was missing was the reason it names no symbol.")
+            typer.echo("It stops being reported as a capture gap. It still can never go STALE: if the "
+                       "work later grows a symbol, `yigraf link` re-earns that.")
+            return
         _guidance(f"{task_id} is already done. To re-open it, `yigraf close {task_id} --reopen`.")
     if not task.implements and not force:
         _guidance(f"{task_id} implements nothing, so closing it would record a completion with no "
@@ -770,10 +787,16 @@ def close(
                   f"point of marking it done. Name what it built first: "
                   f"`yigraf link {task_id} sym:<path>#<name>`. If it genuinely shipped no symbol "
                   f"(a doc, a config, a decision), `yigraf close {task_id} --force`.")
+    if not task.implements:  # --force: record WHY there is no anchor, not just the moved checkbox
+        artifacts.mark_task_unanchored(plan_file, task_id)
     artifacts.set_task_state(plan_file, task.num, done=True)
     _rebuild(repo)
     anchored = ", ".join(i.sym for i in task.implements) or "nothing (forced)"
     typer.echo(f"Closed {task_id} — [x] in {plan_file.name}, implementing {anchored}.")
+    if not task.implements:
+        typer.echo("Recorded as unanchored, so it is not reported as a capture gap. It can never go "
+                   "STALE either — that is the price of the anchor it does not have.")
+        return
     typer.echo("Its anchors now carry the completion: if they drift, it surfaces as a STALE completion "
                "(`yigraf drift --stale`), cleared by re-`link` once re-verified.")
 

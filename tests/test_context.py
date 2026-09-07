@@ -168,6 +168,18 @@ def test_linking_the_done_task_closes_the_capture_gap(tmp_path: Path):
     assert "task:cleanup/1 is done" not in _session(root).text
 
 
+def test_a_deliberately_unanchored_completion_is_not_a_gap(tmp_path: Path):
+    """`close --force` is the exit this very warning's text offers for work that shipped no symbol —
+    prose in a module-level constant, a config key, a refusal. Honouring the marker it writes is what
+    makes that guidance true: before this, taking the named exit left the ⚠ firing every session with
+    no verb able to clear it, which is the shape of warning an agent learns to scroll past."""
+    root = _repo(tmp_path)
+    _done_unlinked_task(root)
+    assert "task:cleanup/1 is done" in _session(root).text
+    assert runner.invoke(app, ["close", "task:cleanup/1", "--force", "--repo", str(root)]).exit_code == 0
+    assert "task:cleanup/1 is done" not in _session(root).text
+
+
 def test_done_task_that_is_linked_is_not_a_gap(tmp_path: Path):
     """The auth task in the base repo is linked, so even when done it must not surface as a gap."""
     root = _repo(tmp_path)

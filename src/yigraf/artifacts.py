@@ -188,6 +188,14 @@ class Task:
     tracks: str | None = None
     requires: list[str] = field(default_factory=list)
     implements: list[Implements] = field(default_factory=list)
+    #: Closed with ``--force``: this completion deliberately names no implementing symbol, because the
+    #: work shipped none to name (prose in a module-level constant, a config key, a refusal). Recorded
+    #: because ``--force`` used to write *nothing*: the checkbox moved and the capture-gap warning —
+    #: whose own guidance offers ``--force`` as the exit — went on firing at every SessionStart with no
+    #: verb that could clear it. An unanchored completion still can never go STALE; the marker asserts
+    #: that is intended, so the signal stops being noise instead of the completion pretending to
+    #: evidence it does not have.
+    unanchored: bool = False
 
 
 @dataclass
@@ -205,6 +213,7 @@ def read_plan(path: Path) -> Plan:
     meta, body = _split_frontmatter(path.read_text(encoding="utf-8"))
     slug = path.stem
     edges = meta.get("edges") or {}
+    unanchored = set(meta.get("unanchored") or ())
 
     title = slug
     for line in body.splitlines():
@@ -229,6 +238,7 @@ def read_plan(path: Path) -> Plan:
                 tracks=spec.get("tracks"),
                 requires=list(spec.get("requires") or []),
                 implements=[_read_impl(e) for e in (spec.get("implements") or [])],
+                unanchored=task_id in unanchored,
             )
         )
     tasks.sort(key=lambda t: t.num)
@@ -270,6 +280,29 @@ def set_task_state(path: Path, num: int, done: bool) -> bool:
     if changed:
         path.write_text("".join(out), encoding="utf-8")
     return changed
+
+
+def mark_task_unanchored(path: Path, task_id: str, unanchored: bool = True) -> bool:
+    """Record (or clear) "this completion deliberately implements nothing"; ``False`` if unchanged.
+
+    A top-level ``unanchored:`` list, not a key inside the task's ``edges`` spec, for two reasons. The
+    naming one: ``edges`` holds edges, and this marker asserts the *absence* of one. The load-bearing
+    one: :func:`remove_edge_from_plan` deletes a task's spec once its last edge is gone, so a marker
+    parked in there would be collected by unlinking something unrelated — and its silent loss would
+    look exactly like the nag returning on its own.
+    """
+    path = Path(path)
+    meta, body = _split_frontmatter(path.read_text(encoding="utf-8"))
+    current = set(meta.get("unanchored") or ())
+    after = (current | {task_id}) if unanchored else (current - {task_id})
+    if after == current:
+        return False
+    if after:
+        meta["unanchored"] = sorted(after)
+    else:
+        meta.pop("unanchored", None)
+    path.write_text(_compose(meta, body), encoding="utf-8")
+    return True
 
 
 def append_tasks(path: Path, descriptions: list[str]) -> list[int]:
@@ -450,9 +483,12 @@ def project_into(graph: nx.DiGraph, root: Path) -> None:
         graph.add_node(plan.id, family=PLAN_FAMILY, kind="plan", label=plan.title,
                        confidence=CONF, phase=plan.phase)
         for task in plan.tasks:
+            # Set only when true, so the 156 anchored tasks keep the exact attrs (and therefore the
+            # exact stored projection and task revision) they had before the marker existed.
+            marker = {"unanchored": True} if task.unanchored else {}
             graph.add_node(
                 task.id, family=PLAN_FAMILY, kind="task", label=task.description,
-                confidence=CONF, state=task.state, order=task.num,
+                confidence=CONF, state=task.state, order=task.num, **marker,
             )
             graph.add_edge(plan.id, task.id, relation="contains", confidence=CONF)
             _project_task_edges(graph, task)

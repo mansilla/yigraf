@@ -183,6 +183,8 @@ def _plan_assertions(plan: Plan) -> list[Assertion]:
             "state": task.state,
             "order": task.num,
         }
+        if task.unanchored:  # only when set: an absent key keeps every anchored task's revision id
+            attrs["unanchored"] = True
         edges: list[dict] = []
         parents: list[str] = []
         if task.tracks is not None:

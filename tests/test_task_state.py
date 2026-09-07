@@ -92,6 +92,62 @@ def test_close_refuses_a_task_that_implements_nothing(tmp_path: Path):
     assert "- [x] {#1}" in _plan_file(root).read_text()
 
 
+# -- close --force: the completion that names no symbol, and says so --------------------------------
+
+
+def _unanchored(root: Path, slug: str = "notes") -> str:
+    assert _run(root, "plan", slug, "-t", "Notes", "--task", "write the note").exit_code == 0
+    return f"task:{slug}/1"
+
+
+def test_a_forced_close_records_that_it_names_no_symbol(tmp_path: Path):
+    """--force used to move the checkbox and write nothing else, so "closed with no anchor, on purpose"
+    and "closed and never linked" were the same state on disk — and only the second is a capture gap."""
+    root = _repo(tmp_path)
+    task = _unanchored(root)
+    assert _run(root, "close", task, "--force").exit_code == 0
+    plan = artifacts.read_plan(_plan_file(root, "notes"))
+    assert plan.tasks[0].state == "done" and plan.tasks[0].unanchored is True
+    assert "unanchored:\n- task:notes/1" in _plan_file(root, "notes").read_text()
+
+
+def test_the_marker_is_not_written_for_an_anchored_close(tmp_path: Path):
+    """It asserts an absence — a task that names a symbol must never carry it, or the exemption would
+    silence the gap for the completions the signal actually exists to catch."""
+    root = _repo(tmp_path)
+    assert _run(root, "close", _linked(root)).exit_code == 0
+    assert "unanchored" not in _plan_file(root).read_text()
+    assert artifacts.read_plan(_plan_file(root)).tasks[0].unanchored is False
+
+
+def test_force_repairs_a_completion_that_is_already_done(tmp_path: Path):
+    """The capture-gap ⚠ names `close --force`, and it fires on a task that is by definition already
+    done — so --force has to be reachable there, or the guidance sends the reader to a verb that
+    answers "already done" and the warning fires again next session, forever."""
+    root = _repo(tmp_path)
+    task = _unanchored(root)
+    plan_file = _plan_file(root, "notes")
+    plan_file.write_text(plan_file.read_text().replace("- [ ] {#1}", "- [x] {#1}"))  # a pre-1.11.1 close
+    out = _run(root, "close", task, "--force")
+    assert out.exit_code == 0 and "on purpose" in out.output
+    assert artifacts.read_plan(plan_file).tasks[0].unanchored is True
+    assert "already done" in _run(root, "close", task, "--force").output   # nothing left to repair
+
+
+def test_the_marker_survives_unlinking_something_else(tmp_path: Path):
+    """It lives in a top-level `unanchored:` list, not inside the task's `edges` spec, because
+    `remove_edge_from_plan` collects a spec once its last edge is gone — a marker parked there would
+    be swept away by an unrelated unlink, and its silent loss would look like the nag returning by
+    itself."""
+    root = _repo(tmp_path)
+    task = _unanchored(root)
+    assert _run(root, "intent", "notes-live-in-git", "-s", "Notes SHALL live in git.").exit_code == 0
+    assert _run(root, "link", task, "int:notes-live-in-git").exit_code == 0  # a tracks edge, not implements
+    assert _run(root, "close", task, "--force").exit_code == 0
+    assert _run(root, "unlink", task, "int:notes-live-in-git").exit_code == 0
+    assert artifacts.read_plan(_plan_file(root, "notes")).tasks[0].unanchored is True
+
+
 def test_closing_a_done_task_and_reopening_an_open_one_are_guided(tmp_path: Path):
     root = _repo(tmp_path)
     task = _linked(root)

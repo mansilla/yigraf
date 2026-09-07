@@ -686,6 +686,11 @@ def _capture_gaps(graph: nx.DiGraph, scope: set[str] | None = None) -> list[str]
     surfaced so the agent can close the link. Advisory only, like the R9c reconcile — never a hard gate
     (consistent with R8/R9c "surface, don't block"). ``scope`` (the retrieved hop-set) restricts it to
     a query's neighborhood; ``None`` reports every gap (the SessionStart orientation dashboard).
+
+    A task closed with ``yigraf close --force`` is exempt: it *asserts* that it names no symbol because
+    the work shipped none (prose in a module-level constant, a config key, a refusal). That is the same
+    exit this warning's own text offers, so honouring it is what makes the guidance true — a decayed
+    graph and a deliberately unanchored completion are different states and only the first is a gap.
     """
     lines: list[str] = []
     for node_id, attrs in graph.nodes(data=True):
@@ -693,10 +698,16 @@ def _capture_gaps(graph: nx.DiGraph, scope: set[str] | None = None) -> list[str]
             continue
         if scope is not None and node_id not in scope:
             continue
+        if attrs.get("unanchored"):  # `close --force`: the completion asserts it names none, on purpose
+            continue
         linked = any(a.get("relation") == "implements" for _, _, a in graph.out_edges(node_id, data=True))
         if not linked:
+            # Both exits, because the first one does not always exist: prose that shipped in a
+            # module-level constant has no symbol tree-sitter indexes, so `link` refuses it and an
+            # agent offered only `link` has nowhere to go and leaves the ⚠ standing forever.
             lines.append(f"  ⚠ {node_id} is done but names no implementing symbol — "
-                         f"`yigraf link {node_id} sym:<path>#<name>`")
+                         f"`yigraf link {node_id} sym:<path>#<name>`, or if it shipped none "
+                         f"(prose, config, a refusal) `yigraf close {node_id} --force`")
     return sorted(lines)
 
 
