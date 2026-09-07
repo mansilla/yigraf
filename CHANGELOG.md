@@ -4,6 +4,51 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.11.0] — 2026-09-06
+
+**`⬆ preamble` was a nudge with no remedy but a paste, and every release minted more of them.**
+
+1.9.0 taught the statusline to report a stale committed session preamble (feedback-v6 F#1). It
+reported accurately and could do nothing else: `init` spliced the preamble into the repo's *committed*
+`yigraf/config.yaml` as a live key, the file value wins at read time, and so upgrading the CLI reached
+no repo that already existed. The remedy the notice named was "replace `session_start.preamble:` with
+the current text" — by hand, per repo, forever. That is a chore that scales with the number of users,
+which is another way of saying it does not get done; and because each release that amends the default
+strands every repo initialized before it, the population needing the chore only grew.
+
+Three changes, because the hazard has a source, a backlog, and a signpost:
+
+* **`init` no longer mints a copy.** The preamble is written into `yigraf/config.yaml` **commented
+  out**, so the key is absent and falls through to the text the installed CLI ships — upgrade yigraf
+  and the rules move with it, with no second copy anywhere to go stale. The full text still rides
+  along in the file, because a knob nobody can see is a knob nobody uses: reading the config is how a
+  team learns the channel exists. Uncommenting is exact-reversible (strip `# ` and you have the block
+  scalar the file used to carry), so owning the preamble stays one editor command — and from that
+  point the rules are yours, never touched and never nudged again.
+* **Every `install` verb retires an existing stale copy**, replacing it with the same commented block a
+  fresh `init` writes — so a migrated repo lands exactly where a new one starts, rather than having
+  today's text pasted back as a live key that goes stale again next release. It runs under the *same*
+  byte-exact guard that raises the nudge: only a preamble byte-identical to one yigraf itself once
+  shipped is touched, which is proof the text in the file is ours and not the team's. A rewritten
+  preamble, a hand-pinned current one, and `preamble: ""` are all left alone.
+* **The notice names the command.** `⬆ preamble` now says `yigraf install`.
+
+This partially supersedes the 1.9.0 reasoning, which rejected "rewriting config.yaml on upgrade (it is
+a committed, user-owned file)". That rejection still holds for what it actually covered — nothing here
+writes on a read path, in a hook, or under `install --plan`, and `status` continues to report without
+acting. What changed is the recognition that a byte-exact match against text we shipped is evidence
+the *content* is not user-owned at all, whatever the file is; combined with an explicit `install`, the
+write is the user asking yigraf to bring its own surfaces current, not yigraf editing their work.
+
+The splice is textual rather than a YAML round trip, which would discard every comment in the file —
+and that file is mostly comments, the only documentation of what each knob does. Where a `preamble:`
+key cannot be located unambiguously, `refresh_preamble` declines and leaves the nudge standing: a
+persistent notice costs one release, a wrong edit to a committed file costs trust.
+
+Amending the default preamble remains a two-line change — append the outgoing text to
+`SUPERSEDED_SESSION_PREAMBLES` in the same commit, or repos still carrying it go unreported. Tests now
+pin both directions of that tuple.
+
 ## [1.10.0] — 2026-09-03
 
 **An unset shell variable could overwrite a live plan, and the tool printed "Created".**

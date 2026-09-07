@@ -7,6 +7,7 @@ What each knob does is documented for users in ``docs/guide.md``; the code here 
 from __future__ import annotations
 
 import copy
+import re
 from pathlib import Path
 from typing import Any
 
@@ -44,10 +45,18 @@ DEFAULT_SESSION_PREAMBLE = """\
 
 #: Every session preamble yigraf has shipped BEFORE the current one, newest last.
 #:
-#: ``yigraf init`` splices the preamble into the repo's *committed* ``yigraf/config.yaml``, and the file
-#: value wins at read time — so amending :data:`DEFAULT_SESSION_PREAMBLE` reaches no already-initialized
-#: repo, this one included. That is the same two-copy hazard ``skill_behind`` exists for, one file over
-#: (feedback-v6 F#1), and it is worse here: the preamble is *the* channel on a host with no skill.
+#: Through 1.10.0 ``yigraf init`` spliced the preamble into the repo's *committed* ``yigraf/config.yaml``
+#: as a live key, and the file value wins at read time — so amending :data:`DEFAULT_SESSION_PREAMBLE`
+#: reached no already-initialized repo. That is the same two-copy hazard ``skill_behind`` exists for,
+#: one file over (feedback-v6 F#1), and it is worse here: the preamble is *the* channel on a host with
+#: no skill. 1.11.0 stopped minting the copy (:func:`commented_preamble_block`) and gave the nudge a
+#: one-command remedy (:func:`refresh_preamble`), so this tuple now serves a finite, shrinking
+#: population: repos initialized by an older CLI that have not run ``yigraf install`` since.
+#:
+#: **Amending the default is a two-line change.** Append the outgoing text here in the same commit, or
+#: every repo still carrying it goes silently unreported — the nudge can only fire on something we can
+#: prove we shipped. ``test_the_current_default_is_not_also_listed_as_superseded`` guards the other
+#: direction (a stale entry would nag everyone forever); nothing but this note guards the omission.
 #:
 #: Detection is a byte-for-byte match against what we ONCE shipped — never "differs from the current
 #: default". The file says the preamble is yours to rewrite, so a rewritten one must stay silent; a
@@ -368,10 +377,15 @@ retrieval:
 # only the second one has value.
 session_start:
   # Verbatim house rules, injected before the ranked slice — once per session, as instruction, in the
-  # position CLAUDE.md occupies. Yours to rewrite: this file is committed, so a team's yigraf
-  # conventions live with the repo instead of in each agent's private memory. Set to "" to silence.
-  # It is charged to the same budget as the slice, so each line here costs a line of real context.
-  preamble: |
+  # position CLAUDE.md occupies. It is charged to the same budget as the slice, so each line here
+  # costs a line of real context.
+  #
+  # This file deliberately carries NO `preamble:` key, so the rules you get are the ones the yigraf
+  # you are running ships — upgrade the CLI and the text moves with it. Uncomment the block below to
+  # pin your own (this file is committed, so a team's yigraf conventions live with the repo instead
+  # of in each agent's private memory); from that point the rules are yours and yigraf never touches
+  # them again. `yigraf cheatsheet --preamble` prints the current shipped text. `preamble: ""`
+  # silences the channel entirely.
 __PREAMBLE__
   append_status: true   # end the head with the one-line `yigraf status` summary (rules + live counts)
   pinned_budget: 800    # tokens for `pinned` memories, rendered IN FULL, whole nodes only
@@ -436,12 +450,72 @@ online:
   repo_fingerprint:             # root-commit SHA this binding is for; checked before every push
 """
 
-#: The written file, with the preamble spliced in as a YAML block scalar (4-space body indent, so it
-#: nests under ``session_start.preamble:``). One source for the prose; the template only frames it.
-DEFAULT_CONFIG_YAML = _CONFIG_YAML_TEMPLATE.replace(
-    "__PREAMBLE__",
-    "\n".join(f"    {line}".rstrip() for line in DEFAULT_SESSION_PREAMBLE.rstrip("\n").splitlines()),
-)
+def commented_preamble_block(indent: str = "  ") -> str:
+    """The shipped preamble as a **commented-out** ``preamble:`` block, ready to splice into the file.
+
+    Written commented rather than live so the key stays *absent*: an absent key falls through to
+    :data:`DEFAULT_SESSION_PREAMBLE` at load time, so the rules an agent gets are always the ones the
+    installed CLI ships and no upgrade can leave a repo behind. A live copy is the two-copy hazard
+    itself — every release that amends the default strands every repo initialized before it, which is
+    what ``preamble_behind`` had to be invented to *report* (mem:91fe59a8463b851d). The text is still
+    written here, in full, because the knob has to be discoverable to be usable: reading the file is
+    how a team learns the channel exists and what it currently says.
+
+    Uncommenting is exact-reversible — strip ``"# "`` from each line and the result is the block scalar
+    the file used to carry (2-space key, 4-space body). That is deliberate: the act of owning the
+    preamble should be one editor command, not a retype.
+    """
+    body = "\n".join(f"{indent}#   {line}".rstrip()
+                     for line in DEFAULT_SESSION_PREAMBLE.rstrip("\n").splitlines())
+    return f"{indent}# preamble: |\n{body}"
+
+
+#: The written file. The preamble rides along commented out — see :func:`commented_preamble_block` for
+#: why the key is absent rather than spliced. One source for the prose; the template only frames it.
+DEFAULT_CONFIG_YAML = _CONFIG_YAML_TEMPLATE.replace("__PREAMBLE__", commented_preamble_block())
+
+
+#: A live ``preamble:`` key line, at any indent. A commented one is not a key and must not match —
+#: the file we WRITE carries exactly that, so matching it would make every migrated file ambiguous.
+_PREAMBLE_KEY = re.compile(r"^(?P<indent>[ \t]*)preamble:")
+
+
+def refresh_preamble(config_path: Path) -> bool:
+    """Retire a committed preamble that is an untouched copy of an older shipped default. Returns
+    whether the file was rewritten.
+
+    The remedy half of :func:`preamble_behind`, and it inherits that predicate's evidence standard
+    verbatim: it acts **only** on a byte-exact match against a preamble yigraf itself once shipped,
+    which is proof the text in the file is ours rather than the team's. A rewritten preamble, the
+    current default, and an already-absent key are all no-ops. That is what makes writing to a
+    committed, user-owned file defensible here — this does not edit anyone's content, it removes a
+    stale copy of *ours* — and it is why the call sites are the ``install`` verbs (an explicit request
+    to bring yigraf's own surfaces current) and never a read path or a hook.
+
+    The file is edited as *text*, not round-tripped through the YAML parser, because the parser would
+    discard every comment in it — and this file is mostly comments, which are the only documentation
+    of what each knob does. An unambiguous single ``preamble:`` key is required; anything else returns
+    False and leaves the nudge standing — a notice that persists one more release costs far less than
+    a wrong splice into a committed file.
+    """
+    if not preamble_behind(load_config(config_path)):
+        return False
+    lines = config_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    hits = [i for i, line in enumerate(lines) if _PREAMBLE_KEY.match(line)]
+    if len(hits) != 1:  # ambiguous or gone — say nothing rather than guess at a committed file
+        return False
+    start = hits[0]
+    indent = _PREAMBLE_KEY.match(lines[start]).group("indent")
+    # The block scalar's body is every following line that is blank or indented deeper than the key.
+    end = start + 1
+    while end < len(lines) and (not lines[end].strip()
+                                or lines[end].startswith((indent + " ", indent + "\t"))):
+        end += 1
+    while end - 1 > start and not lines[end - 1].strip():
+        end -= 1  # give back trailing blank lines: they separate the next key, they aren't the body
+    lines[start:end] = [commented_preamble_block(indent) + "\n"]
+    config_path.write_text("".join(lines), encoding="utf-8")
+    return True
 
 
 def default_config() -> dict[str, Any]:

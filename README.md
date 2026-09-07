@@ -133,9 +133,11 @@ detected, how conflicts resolve, how a memory earns trust — are in the **[guid
 ### The house rules your agent reads first
 
 Every session starts with a short block of standing instructions, before anything relevance-ranked:
-read the skill, capture as the work lands, check `status` before claiming done. It sits in
-`yigraf/config.yaml` under `session_start.preamble`, and **it is yours to rewrite** — the file is
-committed, so a team's conventions live with the repo rather than in each agent's private memory.
+read the skill, capture as the work lands, check `status` before claiming done. yigraf ships the text
+and upgrading the CLI updates it, so you get the current rules for free. **It is yours to rewrite:**
+uncomment `session_start.preamble` in `yigraf/config.yaml` and the rules become the repo's — the file
+is committed, so a team's conventions live with the repo rather than in each agent's private memory,
+and from that point yigraf never touches them.
 
 It exists because ranking has a blind spot that better ranking cannot fix. A rule *about how to work
 here* resembles no particular topic, so it never wins a relevance cut; and an agent cannot ask for

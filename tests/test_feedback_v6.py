@@ -271,15 +271,27 @@ def test_the_preamble_predicate_is_false_on_a_line_that_carries_a_rename():
 
 
 def _downgrade_preamble(root: Path) -> Path:
-    """Rewrite the repo's committed config.yaml to carry the preamble 1.8.0 shipped."""
-    from yigraf.config import DEFAULT_SESSION_PREAMBLE, SUPERSEDED_SESSION_PREAMBLES
+    """Make the repo's committed config.yaml look like one an `init` through 1.10.0 wrote: a LIVE
+    `preamble:` block carrying the text 1.8.0 shipped.
+
+    Since 1.11.0 a fresh `init` writes the block commented out, so the fixture has to uncomment it —
+    which is exactly the byte-level round trip `commented_preamble_block` promises — and then swap the
+    text for the superseded one. Uncommenting here is what makes this a faithful reproduction of a
+    pre-1.11 file rather than an approximation of one.
+    """
+    from yigraf.config import (DEFAULT_SESSION_PREAMBLE, SUPERSEDED_SESSION_PREAMBLES,
+                               commented_preamble_block)
 
     def spliced(text: str) -> str:
         return "\n".join(f"    {line}".rstrip() for line in text.rstrip("\n").splitlines())
 
     cfg = root / "yigraf" / "config.yaml"
-    cfg.write_text(cfg.read_text().replace(spliced(DEFAULT_SESSION_PREAMBLE),
-                                           spliced(SUPERSEDED_SESSION_PREAMBLES[0])))
+    text = cfg.read_text()
+    assert commented_preamble_block() in text, "init should ship the preamble commented out"
+    text = text.replace(commented_preamble_block(),
+                        f"  preamble: |\n{spliced(SUPERSEDED_SESSION_PREAMBLES[0])}")
+    assert spliced(DEFAULT_SESSION_PREAMBLE) not in text
+    cfg.write_text(text)
     return cfg
 
 

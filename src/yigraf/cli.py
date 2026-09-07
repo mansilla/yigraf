@@ -24,7 +24,8 @@ from yigraf import (__version__, artifacts, counters, embeddings, graphdb, memor
 from yigraf import show as show_mod  # aliased: the module and the `show` command share a name
 from yigraf.astnorm import (ANCHOR_ALGO, DOC_SUFFIXES, locus_hash, parse_file_target,
                             parse_section_target, section_slug, section_slugs)
-from yigraf.config import DEFAULT_SESSION_PREAMBLE, TOKEN_ENV, load_config, replica_path
+from yigraf.config import (DEFAULT_SESSION_PREAMBLE, TOKEN_ENV, load_config, refresh_preamble,
+                           replica_path)
 from yigraf.drift import (compute_drift, is_reverifiable, is_stale_completion, is_surfaced,
                           stale_completions)
 from yigraf.extract import build_graph, symbol_content_hash
@@ -3042,16 +3043,18 @@ def status_cmd(
         typer.echo(f"⬆ .claude/skills/yigraf/SKILL.md was written by yigraf {summary.skill_behind}, "
                    f"not {__version__} — an upgrade does not rewrite it. Refresh it with: "
                    f"yigraf install-claude-hooks")
-    # The same two-copy hazard, one file over (feedback-v6 F#1): `init` splices the preamble into the
-    # repo's committed config.yaml and the file value wins, so an upgrade cannot reach it either — and
-    # on a host with no skill the preamble is the ONLY channel that teaches what "up to date" means.
-    # Fires only on a byte-exact older default, never on a preamble the team rewrote (that is the point
-    # of the file being committed), so it cannot nag anyone who made it theirs.
+    # The same two-copy hazard, one file over (feedback-v6 F#1): an `init` through 1.10.0 spliced the
+    # preamble into the repo's committed config.yaml and the file value wins, so an upgrade cannot reach
+    # it either — and on a host with no skill the preamble is the ONLY channel that teaches what "up to
+    # date" means. Fires only on a byte-exact older default, never on a preamble the team rewrote (that
+    # is the point of the file being committed), so it cannot nag anyone who made it theirs.
+    # The remedy is a command, not a paste: `install` retires the copy under the same byte-exact guard
+    # that raised this line, which is what stops the nudge from being a chore that scales with users.
     if summary.preamble_behind and sys.stdout.isatty():
         typer.echo(f"⬆ yigraf/config.yaml carries the session preamble shipped before {__version__} — "
-                   f"`init` splices it in and the file wins, so an upgrade cannot update it. Replace "
-                   f"`session_start.preamble:` with the current text (`yigraf cheatsheet --preamble`), "
-                   f"or delete the key to track the default.")
+                   f"an `init` before 1.11.0 spliced it in and the file wins, so upgrading the CLI "
+                   f"cannot update it. Retire the copy with: yigraf install  (or keep it and make it "
+                   f"yours — a preamble you edit is never touched or nudged again).")
 
 
 def _claude_ctx(data: dict) -> tuple[Path, int | None, int | None]:
@@ -4150,12 +4153,32 @@ def graph_merge(
     write_graph(from_node_link(merged), ours)
 
 
+def _retire_stale_preamble(workspace: Path, indent: str = "") -> None:
+    """Bring a stale committed session preamble current, and say so. Silent when there is nothing to do.
+
+    Every ``install`` verb calls this, because every one of them is the user asking yigraf to bring its
+    own generated surfaces up to date — and the preamble is one of those surfaces whenever the file
+    still holds a byte-exact copy of something we shipped. It is deliberately NOT on a read path or in
+    a hook: those must stay side-effect-free and fail-open, and an unrequested write into a committed
+    file is the part of mem:91fe59a8463b851d's rejection that still stands (mem:a90f5a944a2b233b). The
+    guard lives in `refresh_preamble`, which acts only on a preamble that is provably ours, so a team's
+    own rules can never be touched here.
+
+    Nothing is printed when the file is already current: the installers are noisy enough, and design
+    law #4 applies to a human reading a transcript too.
+    """
+    if refresh_preamble(workspace / "config.yaml"):
+        typer.echo(f"{indent}preamble    → retired the stale copy in {workspace.name}/config.yaml; this "
+                   f"repo now tracks the preamble yigraf ships (commit the change)")
+
+
 @app.command(name="install-hooks")
 def install_hooks(
     path: Path = typer.Argument(Path("."), help="Repo root (must be a git repository)."),
 ) -> None:
     """Install the post-commit git hook that re-materializes the gitignored view at HEAD (fail-open)."""
-    _require_workspace(path)
+    workspace = _require_workspace(path)
+    _retire_stale_preamble(workspace)
     try:
         result = install_post_commit_hook(path)
     except FileNotFoundError as exc:
@@ -4172,7 +4195,8 @@ def install_claude_hooks_cmd(
     path: Path = typer.Argument(Path("."), help="Repo root to wire up for Claude Code."),
 ) -> None:
     """Register the PostToolUse + SessionStart hooks + skill so Claude Code surfaces intent & drift."""
-    _require_workspace(path)
+    workspace = _require_workspace(path)
+    _retire_stale_preamble(workspace)
     result = install_claude_hooks(path)
     typer.echo(f"Wrote hooks → {result.settings_path} (per-machine, gitignored)")
     typer.echo(f"Wrote skill → {result.skill_path}")
@@ -4196,7 +4220,8 @@ def install_codex_hooks_cmd(
     The push-channel complement for Codex (its hooks mirror Claude Code's). SessionStart re-injection
     is reliable; PostToolUse-on-edit is best-effort — verify your Codex version's edit-tool name.
     """
-    _require_workspace(path)
+    workspace = _require_workspace(path)
+    _retire_stale_preamble(workspace)
     result = install_codex_hooks(path)
     typer.echo(f"Wrote hooks → {result.hooks_path} (per-machine, gitignored)")
     typer.echo(f"Updated     → {result.agents_path}")
@@ -4213,7 +4238,8 @@ def install_antigravity_cmd(
     Antigravity has no lifecycle hook, so the complement is an always-on rule pointing the agent at the
     yigraf MCP tools. Add the printed MCP-server entry via Antigravity's MCP editor to finish wiring.
     """
-    _require_workspace(path)
+    workspace = _require_workspace(path)
+    _retire_stale_preamble(workspace)
     result = install_antigravity(path)
     typer.echo(f"Wrote rule → {result.rule_path}")
     typer.echo(f"Updated    → {result.agents_path}")
@@ -4327,7 +4353,8 @@ def _install_ambient_rule_cmd(path: Path, host: str) -> None:
     add via the host's own MCP editor. Ambient rule = Tier A (mem:045): the agent must *pull* context, so
     there is no edit-lifecycle push — that is the honest ceiling of a host with rules + MCP but no hook.
     """
-    _require_workspace(path)
+    workspace = _require_workspace(path)
+    _retire_stale_preamble(workspace)
     r = install_ambient_rule(path, host)
     typer.echo(f"Wrote rule → {r.rule_path}")
     typer.echo(f"Updated    → {r.agents_path}")
@@ -4469,7 +4496,10 @@ def install_cmd(
         return
 
     # --- Generic channel (host-independent) — always on -------------------------------------------
+    # Below the `--plan` return by construction: inspect-only must write nothing, and this is the one
+    # thing `install` touches that git tracks.
     typer.echo("== generic (every host) ==")
+    _retire_stale_preamble(workspace, indent="  ")
     try:
         r = install_post_commit_hook(path)
         if r.installed:
