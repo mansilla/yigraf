@@ -66,6 +66,23 @@ def _mem(id_, statement, *, edges=(), parents=(), prov=None, source="cli"):
         provenance=[prov if prov is not None else _prov(source=source)])
 
 
+def _plan(locator, contains, *, rev, actor="alice"):
+    """A plan revision: its ``contains`` set is this author's statement of which tasks the plan HAS."""
+    return Assertion(
+        id=f"{locator}@{rev}", kind="plan",
+        body={"family": "plan", "locator": locator, "attrs": {"kind": "plan", "label": locator},
+              "edges": [{"relation": "contains", "target": t, "attrs": {}} for t in contains]},
+        parents=(), provenance=[_prov(actor=actor)])
+
+
+def _task(locator, *, rev, state="todo", actor="alice"):
+    return Assertion(
+        id=f"{locator}@{rev}", kind="plan",
+        body={"family": "plan", "locator": locator,
+              "attrs": {"kind": "task", "state": state, "label": locator}, "edges": []},
+        parents=(), provenance=[_prov(actor=actor)])
+
+
 def _online(store=None, project="proj", **kw):
     return OnlineLog(store or SqliteAssertionStore(), project, signer_key=KEY, **kw)
 
@@ -272,7 +289,12 @@ def test_empty_log_head_is_genesis():
 
 def test_view_materializes_and_round_trips_to_the_fold(tmp_path):
     """The materialized view reloads to the byte-identical graph an in-memory fold produces (mem:059:
-    shared query layer). This is what lets ``context``/``status`` run over the online graph unchanged."""
+    shared query layer). This is what lets ``context``/``status`` run over the online graph unchanged.
+
+    Exact for any log with nothing retracted, which is what this one is. The read path additionally
+    drops tasks their plan no longer lists, so for a log that HAS such a task the view is a fold of the
+    log minus those — see ``test_a_task_its_plan_no_longer_lists_does_not_come_back_in_a_log_only_fold``.
+    """
     log = _online()
     log.append(_mem("mem:1", "a"))
     log.append(_mem("mem:2", "b", parents=("mem:1",), edges=(
@@ -393,3 +415,48 @@ def test_online_fold_matches_local_on_self_hosted_repo():
 
     assert online.verify_chain()
     assert to_node_link(fold(online)) == to_node_link(fold(reference))
+
+
+def test_a_task_its_plan_no_longer_lists_does_not_come_back_in_a_log_only_fold():
+    """The retraction gap, at the only fold that had no way to close it.
+
+    Deleting a task asserts nothing — absence is invisible to an append-only log — so the task's own
+    assertion stays live forever and folds back as a `state: todo` node contained by nothing. A
+    workspace reads the retraction from the plan FILE (mem:f0326c7ecd636b96); a server holds no files,
+    so it read nothing and the task came back for everyone. It is read here from the `contains` set of
+    the live plan revision, which is the same statement one level up.
+
+    Measured on the deployed console: `plan:divergence-ledger` was retired from six tasks down to one,
+    and the five removed ones rendered as open there for a month after the workspace stopped counting.
+    """
+    log = _online()
+    plan_v1 = _plan("plan:p", ["task:p/1", "task:p/2"], rev="aaa")
+    log.append(plan_v1)
+    log.append(_task("task:p/1", rev="t1"))
+    log.append(_task("task:p/2", rev="t2"))
+    rs = ReadService(log)
+    assert {"task:p/1", "task:p/2"} <= set(rs.load_current().nodes)
+
+    log.append(_plan("plan:p", ["task:p/1"], rev="bbb"))  # task 2 removed from the plan
+    graph = rs.load_current()
+    assert "task:p/1" in graph.nodes
+    assert "task:p/2" not in graph.nodes, "a task the plan no longer lists is retracted"
+
+
+def test_a_task_of_a_plan_the_log_does_not_have_is_never_retracted():
+    """The guard. Only a plan that is actually present speaks for its own contents — a task whose plan
+    is absent from this log has no `contains` set to be missing from, so it arrives whole."""
+    log = _online()
+    log.append(_task("task:orphan/1", rev="x"))
+    assert "task:orphan/1" in ReadService(log).load_current().nodes
+
+
+def test_a_task_another_plan_revision_still_lists_survives():
+    """Retraction needs EVERY live plan revision to have dropped it. While one principal's current plan
+    still lists the task, it is not retracted — the same conservatism the revision rule uses for a
+    teammate's competing revision."""
+    log = _online()
+    log.append(_plan("plan:p", ["task:p/1"], rev="aaa", actor="alice@corp"))
+    log.append(_plan("plan:p", ["task:p/1", "task:p/2"], rev="bbb", actor="bob@corp"))
+    log.append(_task("task:p/2", rev="t2"))
+    assert "task:p/2" in ReadService(log).load_current().nodes

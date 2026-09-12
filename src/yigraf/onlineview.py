@@ -30,8 +30,9 @@ from typing import Callable
 
 import networkx as nx
 
-from yigraf.fold import FOLD_VERSION, fold
-from yigraf.graph import from_node_link, to_node_link
+from yigraf.artifacts import retracted_tasks
+from yigraf.fold import FOLD_VERSION, fold_assertions
+from yigraf.graph import empty_graph, from_node_link, to_node_link
 from yigraf.onlinelog import GENESIS_HASH, OnlineLog, ViewRow
 
 
@@ -66,7 +67,16 @@ class ReadService:
         """Fold the log and materialize the view, stamped with the log head it reflects. The single
         projection step; idempotent, so re-running it (a replayed NOTIFY) is harmless (R6)."""
         base = self._base_provider() if self._base_provider is not None else None
-        graph = fold(self.log, base=base)
+        # A task its plan no longer lists is retracted — and a log-only fold is the one place that had
+        # no way to know it. Deleting a task asserts nothing (absence is invisible to an append-only
+        # log), so the retraction is read one level up, from the `contains` set of the live plan
+        # revision, exactly as a workspace reads it from the plan file (mem:f0326c7ecd636b96). The
+        # policy is applied HERE, by the caller, because the fold is family-agnostic and a plan-shaped
+        # rule inside it is the shape mem:ea843907a7b47564 moved out.
+        graph = base if base is not None else empty_graph()
+        assertions = list(self.log.iter_assertions_in_causal_order())
+        is_retracted = retracted_tasks(assertions)
+        fold_assertions([a for a in assertions if not is_retracted(a)], base=graph)
         head = self.store.head(self.project)
         view = ViewRow(node_link=to_node_link(graph),
                        head_seq=head.seq if head else 0,

@@ -71,7 +71,11 @@ _DERIVED_KEYS = frozenset({"accepted", "superseded_in", "supersedes_out"})
 #: optional attribute a reader ignores; yes for anything that changes which nodes, edges or attribute
 #: values come out. A view stamped with an older value (or none — every view written before this
 #: existed) is treated as stale and refolded.
-FOLD_VERSION = 1
+#:
+#: 1 — superseded revisions stopped being decided by the id's hash (``log._live_revisions``).
+#: 2 — a task its plan no longer lists stopped coming back in a log-only fold
+#:     (``ReadService.refold`` + ``artifacts.retracted_tasks``).
+FOLD_VERSION = 2
 
 
 def fold(log: Log, base: nx.DiGraph | None = None) -> nx.DiGraph:

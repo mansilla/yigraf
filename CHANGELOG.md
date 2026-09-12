@@ -4,6 +4,44 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.13.1] — 2026-09-12
+
+**A task you deleted came back, because absence is invisible to an append-only log.**
+
+The second half of what 1.13.0 found on the live console. `plan:divergence-ledger` was retired from six
+tasks down to one; the five removed ones went on rendering as open there for a month after this
+workspace had correctly stopped counting them. Same two-surfaces-one-question split the workspace fix
+was written for, reappearing one level out.
+
+Deleting a task **asserts nothing**. Its own assertion stays live in the log forever and folds back as
+a `state: todo` node contained by nothing and reachable from nothing. The retraction was already
+expressible and already implemented — a plan's `contains` set is the positive statement of which tasks
+it HAS, and the plan node revises when that set changes — but it was scoped to *"plans this workspace
+holds"*, read from the plan file. **A server holds no files**, so its held-set was always empty and the
+rule could never fire where it was most needed.
+
+`artifacts.retracted_tasks` now names its source (`stating`) rather than assuming it is local truth.
+Both callers keep their own scope:
+
+* a **workspace** states its contains sets from local truth and applies the rule to the replica —
+  byte-identical behaviour, and a teammate-only plan still arrives whole;
+* a **log-only fold** states them from the log's own live plan revisions, which since 1.13.0 are the
+  newest their author wrote, so the same sentence reads the same way with no file in sight.
+
+Conservative at the new scope too: retraction requires that **no** live plan revision lists the task, so
+while one principal's current plan still has it, it survives. The policy is applied by
+`ReadService.refold`, not inside the fold — a plan-shaped rule in the family-agnostic fold is exactly
+the shape that was moved out to the caller. A tombstone assertion stays rejected for its original
+reason: the plan revision already says this. (mem:978b5adf0066a8be)
+
+Also fixed on the way, and the reason to read a real log rather than a test one: the rule read
+`body["locator"]` directly, which is safe only while the input is the FileLog. A real log holds
+pre-revisioning assertions whose id *is* their locator, and the first one raised `KeyError`. It now
+mirrors `fold._node_id`, because the nodes this rule reasons about have to be the nodes the fold
+materializes.
+
+`FOLD_VERSION` → 2, so every already-materialized view refolds once on the next read.
+
 ## [1.13.0] — 2026-09-12
 
 **A closed task read as open on the shared graph, and which half of them did was decided by a hash.**

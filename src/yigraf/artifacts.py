@@ -567,3 +567,79 @@ def _project_task_edges(graph: nx.DiGraph, task: Task) -> None:
 
 def _stash(graph: nx.DiGraph, node_id: str, attr: str, value: str) -> None:
     graph.nodes[node_id].setdefault(attr, []).append(value)
+
+
+_TASK_LOCATOR = re.compile(r"^task:(.+)/\d+$")
+
+
+def plan_of(task_locator: str) -> str | None:
+    match = _TASK_LOCATOR.match(task_locator)
+    return f"plan:{match.group(1)}" if match else None
+
+
+def retracted_tasks(stating: Sequence[Assertion]) -> Callable[[Assertion], bool]:
+    """Is this assertion a task that the plan owning it no longer lists?
+
+    ``stating`` is whatever speaks for the plans' current ``contains`` sets — and naming that rather
+    than assuming it is the whole generalization. In a WORKSPACE it is local truth, and the predicate
+    is applied to the replica (:func:`yigraf.extract._fold_replica`). In a LOG-ONLY fold — a server,
+    which holds no files at all — it is the log's own live assertions, applied to that same set: after
+    :func:`yigraf.log._live_revisions` the live plan revision is the newest its author wrote, so its
+    ``contains`` set is the current one and the rule reads identically. The original version took the
+    workspace's ``local`` sequence as a parameter *name*, which quietly made "a plan this workspace
+    holds" the only expressible scope; a server's ``held`` was therefore always empty and a deleted task
+    came back forever. Found on the deployed console: ``plan:divergence-ledger``'s five removed tasks
+    were still rendering as open there long after the workspace had stopped counting them.
+
+    ``defer_families`` answers "the local file wins" only where a local node EXISTS to win. Deleting a
+    task from a plan asserts nothing — absence is invisible to an append-only log — so the replica's
+    copy met no local claim, was folded rather than declined, and came back as a live ``state: todo``
+    node contained by nothing and reachable from nothing. Found on yigraf's own graph while retiring
+    ``plan:divergence-ledger``: five tasks removed from the artifact, zero in-edges, and ``yigraf
+    status`` still counting them as open while ``yigraf tasks --open`` (which reads the plan files) said
+    there were none. Two surfaces, one question, opposite answers — and the count was unclearable,
+    because nothing the principal could edit would ever reach it.
+
+    Files are truth for this family, and a plan artifact's ``contains`` set is that family's statement
+    of which tasks the plan HAS — the same reasoning
+    :meth:`~yigraf.onlinelog.pending_local_revisions` applies to a locator held with an unpushed edit.
+    So the scope is the guard: only a plan **this workspace holds** speaks for its own contents. A
+    teammate-only plan is not in ``local`` at all and arrives whole, exactly as
+    ``test_a_teammate_only_intent_still_arrives_over_the_log`` requires.
+
+    The loss is never silent where it could be real. If a teammate ADDED the task, their plan revision
+    disagrees with mine about the ``contains`` set, so ``plan:<slug>`` itself lands in ``diverged`` —
+    reported at the granularity the disagreement actually has. If I removed it, my revision is the
+    newest and mine, so no divergence is reported, which is correct: nobody disagrees.
+
+    Filtering here rather than inside :func:`~yigraf.fold.fold_assertions` is deliberate — mem:ea843907
+    settled that a family-shaped rule belongs to the CALLER, and the fold stays family-agnostic.
+    """
+    def _locator(a: Assertion) -> str:
+        """The locator this assertion speaks for — mirroring :func:`yigraf.fold._node_id`, because the
+        set of nodes this rule reasons about has to be the set the fold will materialize. A revisioned
+        assertion carries it in the body; one written before revisioning existed (and a real log holds
+        both eras) *is* its locator. Reading ``body["locator"]`` directly was safe only while the input
+        was the FileLog, which always writes one — a log-only fold hits the older shape immediately."""
+        return (a.body or {}).get("locator") or a.id
+
+    contained: set[str] = set()
+    held: set[str] = set()
+    for a in stating:
+        body = a.body or {}
+        attrs = body.get("attrs") or {}
+        if body.get("family") != PLAN_FAMILY or attrs.get("kind") != "plan":
+            continue
+        held.add(_locator(a))
+        contained.update(e["target"] for e in body.get("edges") or []
+                         if e.get("relation") == "contains")
+
+    def is_retracted(assertion: Assertion) -> bool:
+        body = assertion.body or {}
+        if body.get("family") != PLAN_FAMILY or (body.get("attrs") or {}).get("kind") != "task":
+            return False
+        locator = _locator(assertion)
+        plan_id = plan_of(locator)
+        return plan_id in held and locator not in contained
+
+    return is_retracted
