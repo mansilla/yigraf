@@ -139,6 +139,22 @@ def repo_fingerprint(repo: Path) -> str | None:
     return sorted(roots.split())[0]
 
 
+def tree_state(repo: Path) -> tuple[str | None, str | None, bool]:
+    """``(commit, branch, dirty)`` — what git says this workspace currently *is*.
+
+    Beside :func:`repo_fingerprint` because they answer the same kind of question from the same source:
+    that one is the repo's permanent identity, this one its momentary state. A snapshot pushed to a
+    shared server carries both — the fingerprint so it lands on the right project, the commit so every
+    number computed from it can name the tree it was computed against.
+
+    ``commit`` is ``None`` when there is no git or no commits; ``branch`` is ``None`` on a detached
+    HEAD, which is a state a snapshot can perfectly well be taken in — it just has no branch to report.
+    """
+    commit = _git(repo, "rev-parse", "HEAD")
+    branch = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    return commit, (None if branch == "HEAD" else branch), bool(_git(repo, "status", "--porcelain"))
+
+
 # ---------------------------------------------------------------------------------------------
 # The link handshake
 # ---------------------------------------------------------------------------------------------

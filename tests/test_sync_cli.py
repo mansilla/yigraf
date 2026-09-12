@@ -416,3 +416,122 @@ def test_a_404_does_not_guess_between_absent_and_forbidden(tmp_path, monkeypatch
 
     assert "doesn't exist or your credential isn't a member" in out.output
     assert "deliberately doesn't say which" in out.output
+
+
+# --------------------------------------------------------------------------------------------------
+# --push-structure: the one thing the shared log cannot carry (plan:graph-console #8)
+# --------------------------------------------------------------------------------------------------
+
+
+def _git(repo: Path, *args: str) -> None:
+    import subprocess
+    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+
+
+def _committed_workspace(path: Path) -> Path:
+    """A workspace whose tree is committed — a snapshot has to name a commit, so these tests need one."""
+    ws = _workspace(path)
+    _git(ws, "init", "-q")
+    _git(ws, "config", "user.email", "t@example.com")
+    _git(ws, "config", "user.name", "T")
+    _git(ws, "add", "-A")
+    _git(ws, "commit", "-qm", "initial")
+    return ws
+
+
+class _StructureRemote(_ServerLike):
+    """``_ServerLike`` plus the structure endpoint, recording what a client actually sent."""
+
+    def __init__(self, log, token="tester", refuse=None):
+        super().__init__(log, token)
+        self.received = None
+        self.refuse = refuse
+
+    def put_structure(self, project, payload):
+        if self.refuse:
+            from yigraf.sync import StructureRefused
+            raise StructureRefused(self.refuse, {"error": self.refuse})
+        self.received = payload
+        return {"ok": True, "symbols": len(payload["nodes"]),
+                "short_commit": payload["commit"][:7]}
+
+
+@pytest.fixture
+def structure_remote(monkeypatch):
+    log = OnlineLog(SqliteAssertionStore(), PROJECT, signer_key=SERVER_KEY)
+    remote = _StructureRemote(log)
+    monkeypatch.setattr(sync_mod, "HttpRemote", lambda url, token, **kw: remote)
+    monkeypatch.setenv(TOKEN_ENV, "test-token")
+    return remote
+
+
+def test_the_manifest_carries_hashes_and_never_source():
+    """The property that lets a server which has never held source compute drift: four fields, and no
+    fifth. A body, a docstring or a snippet here would put source on that server."""
+    from yigraf.sync import structure_manifest
+
+    graph = __import__("networkx").DiGraph()
+    graph.add_node("sym:app.py#greet", family="structure", content_hash="abc", kind="function",
+                   source="def greet(): ...", docstring="hi")
+    graph.add_node("mem:1", family="memory", content_hash="zzz")  # not structure ⇒ not in the manifest
+    graph.add_node("sym:app.py#unhashed", family="structure", kind="function")  # no hash ⇒ skipped
+
+    manifest = structure_manifest(graph)
+    assert manifest == [{"id": "sym:app.py#greet", "content_hash": "abc", "hash_algo": None,
+                         "kind": "function"}]
+
+
+def test_push_structure_sends_the_trees_hashes(tmp_path, structure_remote):
+    ws = _committed_workspace(tmp_path / "a")
+    out = runner.invoke(app, ["sync", "--repo", str(ws), "--push-structure"])
+    assert out.exit_code == 0, out.output
+    assert "Structure:" in out.output and "visible in the console" in out.output
+
+    sent = structure_remote.received
+    assert sent is not None, "the flag must actually send a manifest"
+    assert sent["dirty"] is False and len(sent["commit"]) == 40
+    assert sent["nodes"], "the tree has extractable structure"
+    assert {"id", "content_hash", "hash_algo", "kind"} == set(sent["nodes"][0])
+    assert any(n["id"] == SYM for n in sent["nodes"])
+
+
+def test_structure_is_not_sent_unless_asked(tmp_path, structure_remote):
+    ws = _committed_workspace(tmp_path / "a")
+    assert runner.invoke(app, ["sync", "--repo", str(ws)]).exit_code == 0
+    assert structure_remote.received is None
+
+
+def test_a_dirty_tree_is_refused_before_anything_is_sent(tmp_path, structure_remote):
+    """The server has the final say, but finding out locally is the difference between guidance and a
+    round trip — and drift computed against edits only you have is not a fact about the project."""
+    ws = _committed_workspace(tmp_path / "a")
+    (ws / "app.py").write_text("def greet(name):\n    return 'hello ' + name\n")
+
+    out = runner.invoke(app, ["sync", "--repo", str(ws), "--push-structure"])
+    assert out.exit_code == 0, out.output
+    assert "Structure not sent" in out.output and "uncommitted changes" in out.output
+    assert structure_remote.received is None
+    assert "Synced" in out.output, "the assertion sync still stands"
+
+
+def test_a_refused_snapshot_does_not_retract_the_sync(tmp_path, monkeypatch):
+    """Design law #5 at the seam that matters: the sync has already succeeded by the time this runs, so
+    a refusal is a reported line, never an exception that turns a completed sync into a crash."""
+    log = OnlineLog(SqliteAssertionStore(), PROJECT, signer_key=SERVER_KEY)
+    remote = _StructureRemote(log, refuse="repo_mismatch")
+    monkeypatch.setattr(sync_mod, "HttpRemote", lambda url, token, **kw: remote)
+    monkeypatch.setenv(TOKEN_ENV, "test-token")
+
+    ws = _committed_workspace(tmp_path / "a")
+    out = runner.invoke(app, ["sync", "--repo", str(ws), "--push-structure"])
+    assert out.exit_code == 0, out.output
+    assert "Synced" in out.output
+    assert "different repository" in out.output
+
+
+def test_dry_run_counts_the_manifest_without_sending_it(tmp_path, structure_remote):
+    ws = _committed_workspace(tmp_path / "a")
+    out = runner.invoke(app, ["sync", "--repo", str(ws), "--push-structure", "--dry-run"])
+    assert out.exit_code == 0, out.output
+    assert "nodes would be sent" in out.output
+    assert structure_remote.received is None

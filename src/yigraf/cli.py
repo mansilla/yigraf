@@ -3674,10 +3674,81 @@ def _remember_actor(repo: Path, settings: dict, actor: str | None) -> None:
         pass
 
 
+def _structure_manifest(repo: Path, graph=None) -> list[dict]:
+    """This tree's structure hashes, from the graph a caller already built (or a fresh read of it)."""
+    from yigraf.sync import structure_manifest
+
+    if graph is None:
+        config = load_config(_require_workspace(repo) / "config.yaml")
+        graph, _ = graphdb.load_or_build(repo, config)
+    return structure_manifest(graph)
+
+
+#: The server names each refusal; this only decides how to spell it for the person at the terminal.
+_STRUCTURE_GUIDANCE = {
+    "dirty_tree": "the server refused a snapshot of an uncommitted tree. Commit or stash, then re-run "
+                  "with --push-structure.",
+    "repo_mismatch": "this project's anchors belong to a different repository, so nothing was stored.",
+    "empty_manifest": "the manifest had no hashable structure nodes — run `yigraf build` first.",
+    "manifest_too_large": "the manifest is larger than this server accepts.",
+    "snapshot_wire_unsupported": "this server doesn't speak this snapshot format — upgrade one of the "
+                                 "two.",
+}
+
+
+def _push_structure(repo: Path, graph, project: str, remote_url: str, token: str) -> str:
+    """Send the code-structure manifest, and return the line to print about it.
+
+    Fail-open to a *reported* failure, never a raised one (design law #5). The assertion sync has
+    already succeeded and printed by the time this runs, so an exception here would turn a completed
+    sync into a crash — the wrong trade for an add-on that only affects what a console can render.
+
+    The dirty-tree refusal is made locally as well as remotely. The server has the final say (drift
+    computed against edits only you have is not a fact about the project, so it must refuse), but
+    finding out before sending a whole manifest is the difference between guidance and a round trip.
+    """
+    from yigraf.online import repo_fingerprint, tree_state
+    from yigraf.sync import STRUCTURE_WIRE_VERSION, HttpRemote, RemoteUnavailable, StructureRefused
+
+    try:
+        commit, branch, dirty = tree_state(repo)
+        if not commit:
+            return "⚠ Structure not sent: this isn't a git repository, and a snapshot has to name a tree."
+        if dirty:
+            return ("⚠ Structure not sent: your tree has uncommitted changes, and drift computed "
+                    "against edits only you have is not a fact about the project. Commit or stash, "
+                    "then re-run with --push-structure.")
+        nodes = _structure_manifest(repo, graph)
+        if not nodes:
+            return "⚠ Structure not sent: no code structure was extracted from this tree."
+
+        payload = {
+            "wire_version": STRUCTURE_WIRE_VERSION, "commit": commit, "dirty": False,
+            "branch": branch,
+            "generated_at": _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0)
+                                         .isoformat().replace("+00:00", "Z"),
+            "repo_fingerprint": repo_fingerprint(repo),
+            "tool": f"yigraf/{__version__}", "nodes": nodes,
+        }
+        body = HttpRemote(remote_url, token).put_structure(project, payload)
+    except StructureRefused as exc:
+        return f"⚠ Structure not sent: {_STRUCTURE_GUIDANCE.get(exc.code, f'the server refused it ({exc.code}).')}"
+    except RemoteUnavailable as exc:
+        return (f"⚠ Structure not sent: {exc}. The sync itself stands — re-run with --push-structure "
+                f"when the remote is back.")
+    except Exception as exc:  # noqa: BLE001 - see the docstring: never retract a sync that succeeded
+        return f"⚠ Structure not sent: {exc}"
+    return (f"Structure: {body.get('symbols', len(nodes))} nodes at "
+            f"{body.get('short_commit', commit[:7])} — drift and stale are now visible in the console.")
+
+
 @app.command()
 def sync(
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Report what would move without writing anything."),
+    push_structure: bool = typer.Option(
+        False, "--push-structure",
+        help="Also send this tree's code-structure hashes, so the console can compute drift."),
 ) -> None:
     """Reconcile this workspace with the shared log: pull the team's assertions, push yours.
 
@@ -3695,6 +3766,13 @@ def sync(
 
     Reads never touch the network: the replica is local, so `context`/`status`/hooks stay fast and work
     offline. Only assertions cross the wire — your source never does.
+
+    `--push-structure` additionally sends this tree's code-structure *hashes* (locator + body hash, no
+    source), which is the one thing the shared log cannot carry: structure is derived from source, not
+    asserted, so without it a server folding the log has no current hash to compare a stamped anchor
+    against and cannot compute drift at all. It runs last, after the rebuild that produces the hashes,
+    and never retracts a sync that already succeeded — a refused or unreachable snapshot is reported
+    and the sync still stands.
     """
     _require_workspace(repo)
     config = load_config(_require_workspace(repo) / "config.yaml")
@@ -3756,9 +3834,11 @@ def sync(
             cursor_seq, _ = store.get_cursor(project)
             known = store.known_ids(project)
             outgoing = [a for a in local if a.id not in known]
+            structure = (f" Structure: {len(_structure_manifest(repo))} nodes would be sent."
+                         if push_structure else "")
             typer.echo(f"{project} @ {remote_url}: remote head seq {head.seq}, local cursor {cursor_seq} "
                        f"⇒ {max(0, head.seq - cursor_seq)} to pull, {len(outgoing)} to push. "
-                       f"Nothing written (--dry-run).")
+                       f"Nothing written (--dry-run).{structure}")
             return
 
         result = sync_replica(store, remote, project)
@@ -3832,6 +3912,8 @@ def sync(
                (f" {deferred} deferred to the next sync (the remote dropped)." if deferred else ""))
     typer.echo("Their assertions now anchor to your code: run `yigraf drift` to see what your edits "
                "have moved under, and `yigraf status` for open conflicts.")
+    if push_structure:
+        typer.echo(_push_structure(repo, graph, project, remote_url, token))
     _report_divergence(repo, graph)
     notice = _responsibility_notice(repo, config, graph, events, local_ids)
     if notice:

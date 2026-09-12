@@ -244,6 +244,56 @@ def event_from_wire(data: dict) -> StoredEvent:
                        entry_hash=data["entry_hash"], event_key=data["event_key"])
 
 
+# --------------------------------------------------------------------------------------------------
+# The code-structure manifest — the one shape that is NOT an assertion
+# --------------------------------------------------------------------------------------------------
+
+#: The manifest's own version, deliberately separate from :data:`WIRE_VERSION`. The two shapes travel
+#: the same transport but not the same plane: the assertion wire is the replication protocol every
+#: :class:`RemoteClient` implements, while this is a derived snapshot one endpoint accepts. Versioning
+#: them together would force a bind-refusing bump on every client for a change only the snapshot made.
+STRUCTURE_WIRE_VERSION = 1
+
+
+class StructureRefused(Exception):
+    """The server refused a code-structure snapshot, and NAMED the refusal (``dirty_tree``,
+    ``repo_mismatch``, ``empty_manifest``, ``manifest_too_large``, …).
+
+    Distinct from :class:`~yigraf.onlinelog.IngestRejected`, which is about a malformed *assertion*:
+    nothing here is being appended to the log, so nothing here can be rejected by ingest. Distinct from
+    :class:`RemoteUnavailable` too — every one of these codes fails identically on a retry, so the
+    caller has to be told the fix rather than told to wait (design law #1)."""
+
+    def __init__(self, code: str, detail: dict | None = None) -> None:
+        super().__init__(code)
+        self.code = code
+        self.detail = detail or {}
+
+
+def structure_manifest(graph) -> list[dict]:
+    """Every structure node the local view holds, as four fields: locator, body hash, algo, kind.
+
+    **No source, no bodies, no docstrings** — the locators are already what the anchors in the log
+    contain, so nothing crosses the wire that was not crossing it already. That is the whole reason a
+    server which has never held source can compute drift: drift compares a stamped anchor against a
+    symbol's *current* hash, and the hash is the only half it was missing.
+
+    The full set, deliberately — not just the anchored ones. Rename re-anchoring works by looking an
+    anchor up among *all* body hashes, so a filtered manifest would turn every renamed or moved symbol
+    into a false "symbol not found".
+
+    ``hash_algo`` is passed through as-is, ``None`` included. An undeclared algo is not a gap to fill
+    in here: the extractor's ``file:`` nodes carry an astnorm module hash and declare nothing, while a
+    minted ``file:``-anchor node carries a raw SHA and says so, so inferring the algo from the
+    locator's scheme would compare an astnorm hash against a raw-SHA anchor and report every file
+    anchor in the project as drift. The server applies the same default ``compute_drift`` does.
+    """
+    return [{"id": node_id, "content_hash": attrs["content_hash"],
+             "hash_algo": attrs.get("hash_algo"), "kind": attrs.get("kind")}
+            for node_id, attrs in graph.nodes(data=True)
+            if attrs.get("family") == "structure" and attrs.get("content_hash")]
+
+
 def replica_log(store: SqliteAssertionStore, project: str) -> OnlineLog:
     """Wrap a synced replica as a read :class:`~yigraf.onlinelog.OnlineLog` for the fold/read path — the
     seam ``context``/``status`` fold onto local structure in online mode. Writes still go through
@@ -288,6 +338,26 @@ class HttpRemote:
         data = self._request("POST", f"/projects/{project}/assertions", body)
         return [event_from_wire(e) for e in data["events"]]
 
+    def put_structure(self, project: str, payload: dict) -> dict:
+        """``PUT /projects/{p}/structure`` — the one call outside the :class:`RemoteClient` port.
+
+        It is deliberately not on the Protocol: the port speaks *assertions*, and a derived code-
+        structure manifest is not one — it rides no log, takes no chain link, and a
+        :class:`LoopbackRemote` folding one in would be modelling something the server does elsewhere.
+        So this lives on the concrete transport, where the port's shape is unaffected and any other
+        :class:`RemoteClient` stays free of it.
+
+        A refusal comes back named, and is raised as :class:`StructureRefused` rather than the bare
+        ``HTTPError`` ``_request`` re-raises, because every one of these codes has a specific fix.
+        """
+        import urllib.error
+
+        try:
+            return self._request("PUT", f"/projects/{project}/structure", payload)
+        except urllib.error.HTTPError as exc:
+            detail = getattr(exc, "body_json", None) or {}
+            raise StructureRefused(detail.get("error") or f"http_{exc.code}", detail) from exc
+
     def _request(self, method: str, path: str, body: dict | None = None) -> dict:
         import json as _json
         import urllib.error
@@ -303,9 +373,15 @@ class HttpRemote:
                 return _json.loads(resp.read())
         except urllib.error.HTTPError as exc:  # a rejected write teaches the fix (design law #1)
             try:  # a 5xx often answers in HTML, so the detail parse must not become the error
-                detail = _json.loads(exc.read() or b"{}").get("detail")
+                body_json = _json.loads(exc.read() or b"{}")
             except (OSError, ValueError):
-                detail = None
+                body_json = {}
+            # An HTTPError's body is a stream: the read above consumes it, so a caller that re-raises
+            # and wants the server's named refusal cannot go back for it. Hand the decoded body along
+            # on the exception instead (``put_structure`` reads it) — the alternative is a second
+            # request plumbing of its own, for a body this handler has already parsed.
+            exc.body_json = body_json
+            detail = body_json.get("detail") if isinstance(body_json, dict) else None
             if exc.code == 422 and isinstance(detail, dict) and "rejected" in detail:
                 from yigraf.onlinelog import IngestRejected
                 # IngestRejected takes a LIST of problems and "; "-joins it; the server sends exactly

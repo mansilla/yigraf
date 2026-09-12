@@ -4,6 +4,42 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.12.2] — 2026-09-12
+
+**The hashes a server cannot derive, sent by the client that already holds them.**
+
+A server folding the shared assertion log can see every `implements` and `concerns` anchor a team has
+stamped, and cannot check a single one of them. Drift compares a stamped anchor against a symbol's
+*current* body hash, and that hash is a fact about a working tree — structure is derived from source,
+not asserted, so it rides no log. The consequence was not a degraded drift number on a hosted console;
+it was no drift number at all.
+
+* **`yigraf sync --push-structure`** sends this tree's code-structure manifest: locator, body hash,
+  algo and kind, for every extracted symbol and file. **No source, no bodies, no docstrings** — the
+  locators are already what the anchors in the log contain, so nothing crosses the wire that was not
+  crossing it already. The full set is sent, not just the anchored subset: rename re-anchoring works by
+  looking an anchor up among *all* body hashes, so a filtered manifest would turn every renamed or
+  moved symbol into a false "symbol not found".
+* **It stays off the `RemoteClient` port.** That port speaks assertions, and a derived manifest is not
+  one — it appends to no log and takes no chain link, so a `LoopbackRemote` folding one in would model
+  something the server does elsewhere. `put_structure` lives on `HttpRemote`, the concrete transport,
+  and the port's shape is unchanged. `STRUCTURE_WIRE_VERSION` is likewise separate from
+  `WIRE_VERSION`, so a snapshot-shape change never forces a bind-refusing bump on every client.
+* **It never retracts a sync that already succeeded** (design law #5). The push runs last, after the
+  rebuild that produces the hashes; a refusal, an unreachable remote or anything else lands as a
+  reported line, because by then the assertion sync has printed and raising would turn a completed sync
+  into a crash. A **dirty tree is refused locally as well as remotely** — the server has the final say,
+  since drift computed against edits only you hold is not a fact about the project, but finding out
+  before sending a whole manifest is the difference between guidance and a round trip.
+* **`hash_algo` is passed through undeclared rather than inferred.** The extractor's `file:` nodes carry
+  an astnorm module hash and declare nothing; a minted `file:`-anchor node carries a raw SHA and says
+  so. Stamping `file-sha256-v1` on every `file:` locator would compare an astnorm hash against a
+  raw-SHA anchor — never equal — and report every file anchor in the project as drift.
+
+This graduates a workspace-side script that proved the contract from outside the engine. The credential,
+the repo-fingerprint guard and a reason to run after every build were all already here.
+(mem:93e1801d745c326c)
+
 ## [1.12.1] — 2026-09-12
 
 **1.12.0 took a deliberate loss and took it quietly. The loss stands; the quiet does not.**
