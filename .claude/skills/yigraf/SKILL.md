@@ -2,7 +2,7 @@
 name: yigraf
 description: "Keep intent, code, and the reasoning behind them in sync when changing code in this repo. Read this skill before driving the CLI — the wrong verb rubber-stamps or destroys a trail. Before you report done, run `yigraf status`: up to date means no drift, no stale AND no unsettled rename, not the same as no open tasks."
 ---
-<!-- yigraf-skill-version: 1.12.0 -->
+<!-- yigraf-skill-version: 1.12.1 -->
 
 # yigraf — the intent↔code spine
 

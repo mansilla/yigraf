@@ -137,10 +137,38 @@ def preamble_behind(config_path: Path) -> bool:
     repo left carrying a live copy that silently stops tracking the CLI is the failure this whole
     mechanism exists to end, so the finite loss is preferred to the unbounded one.
     """
+    return preamble_copy_class(config_path) is not None
+
+
+#: A live copy matching a preamble we no longer ship. Provably abandoned: only an ``init`` through
+#: 1.8.0 could have written it, and the team never touched it since.
+PREAMBLE_COPY_SUPERSEDED = "superseded"
+
+#: A live copy matching the preamble we ship TODAY, and the file cannot say which history produced it:
+#: an ``init`` at 1.9.0-1.10.0 (the common case, and the population :func:`refresh_preamble` exists to
+#: reach), or a deliberate pin made before ``preamble_pinned:`` existed to declare itself. Retired
+#: either way — see :func:`preamble_behind` for why the bounded loss was preferred — but never
+#: silently: the caller must say so, because for one of those two histories this is a choice being
+#: overridden and the remedy is one uncomment the reader has to know about (feedback-v9 H#1).
+PREAMBLE_COPY_CURRENT = "current"
+
+
+def preamble_copy_class(config_path: Path) -> str | None:
+    """Which class of committed live copy this file carries, or ``None`` for nothing to retire.
+
+    :data:`PREAMBLE_COPY_SUPERSEDED` and :data:`PREAMBLE_COPY_CURRENT` are retired identically and
+    reported differently, which is the whole reason this is not a bool: the first is provably ours and
+    worth one line, the second is ambiguous and worth a warning.
+    """
     session = (committed_config(config_path).get("session_start") or {})
     if session.get("preamble_pinned"):  # the team said so, in the file, on purpose — believe them
-        return False
-    return session.get("preamble") in SUPERSEDED_SESSION_PREAMBLES + (DEFAULT_SESSION_PREAMBLE,)
+        return None
+    text = session.get("preamble")
+    if text in SUPERSEDED_SESSION_PREAMBLES:
+        return PREAMBLE_COPY_SUPERSEDED
+    if text is not None and text == DEFAULT_SESSION_PREAMBLE:
+        return PREAMBLE_COPY_CURRENT
+    return None
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -552,8 +580,14 @@ DEFAULT_CONFIG_YAML = _CONFIG_YAML_TEMPLATE.replace("__PREAMBLE__", commented_pr
 _PREAMBLE_KEY = re.compile(r"^(?P<indent>[ \t]*)preamble:")
 
 
-def refresh_preamble(config_path: Path) -> bool:
-    """Retire a committed live copy of a preamble yigraf ships. Returns whether the file was rewritten.
+def refresh_preamble(config_path: Path) -> str | None:
+    """Retire a committed live copy of a preamble yigraf ships.
+
+    Returns WHICH class was retired (:data:`PREAMBLE_COPY_SUPERSEDED` / :data:`PREAMBLE_COPY_CURRENT`)
+    or ``None`` when nothing was written — because the two deserve different words from the caller,
+    and a bool cannot carry that. Retiring the current text is the ambiguous case: it is usually the
+    1.9.0-1.10.0 mint this exists to reach, and it is sometimes a pin made before the marker existed,
+    and the file cannot say which. Doing that quietly is what made the loss a surprise.
 
     The remedy half of :func:`preamble_behind`, and it inherits that predicate's evidence standard
     verbatim: it acts **only** on a byte-exact match against a preamble yigraf itself shipped — which
@@ -574,12 +608,13 @@ def refresh_preamble(config_path: Path) -> bool:
     False and leaves the nudge standing — a notice that persists one more release costs far less than
     a wrong splice into a committed file.
     """
-    if not preamble_behind(config_path):
-        return False
+    retiring = preamble_copy_class(config_path)
+    if retiring is None:
+        return None
     lines = config_path.read_text(encoding="utf-8").splitlines(keepends=True)
     hits = [i for i, line in enumerate(lines) if _PREAMBLE_KEY.match(line)]
     if len(hits) != 1:  # ambiguous or gone — say nothing rather than guess at a committed file
-        return False
+        return None
     start = hits[0]
     indent = _PREAMBLE_KEY.match(lines[start]).group("indent")
     # The block scalar's body is every following line that is blank or indented deeper than the key.
@@ -591,7 +626,7 @@ def refresh_preamble(config_path: Path) -> bool:
         end -= 1  # give back trailing blank lines: they separate the next key, they aren't the body
     lines[start:end] = [commented_preamble_block(indent) + "\n"]
     config_path.write_text("".join(lines), encoding="utf-8")
-    return True
+    return retiring
 
 
 def default_config() -> dict[str, Any]:

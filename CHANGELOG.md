@@ -4,6 +4,39 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.12.1] — 2026-09-12
+
+**1.12.0 took a deliberate loss and took it quietly. The loss stands; the quiet does not.**
+
+Retiring an undeclared live `preamble:` key is right for the population it was written for — a repo
+`init`ed at 1.9.0–1.10.0, carrying a copy that silently stopped tracking the CLI. But a hand-pin made
+before `preamble_pinned:` existed produces the *same bytes*, and for that reader the same write is a
+choice being overridden. 1.12.0 printed one line for both. A reader who had pinned deliberately got no
+signal at all that anything of theirs had changed, which turned a bounded, recoverable loss into a
+silent one — the shape of failure this whole line of work exists to remove.
+
+Nothing was ever destroyed, and that is what makes a message a complete remedy rather than an apology:
+the retired text is byte-identical to what the CLI ships and it stays in the file, commented out. The
+defect was only that no one was told.
+
+* **The ambiguous case says so.** `refresh_preamble` now reports *which* class it retired —
+  `PREAMBLE_COPY_SUPERSEDED` (provably ours: only an `init` through 1.8.0 could have written it) or
+  `PREAMBLE_COPY_CURRENT` (two possible histories, and the file cannot say which). A superseded copy
+  still gets one line. A copy of the current text gets a ⚠ naming both histories, and the one-command
+  recovery: uncomment the text that is still sitting there, together with `preamble_pinned: true`, and
+  no release touches it again. A bool could not carry that difference, which is why the caller could
+  not say it.
+* **`install --plan` names the one committed file `install` touches.** The dry-run returns before the
+  retirement by construction — inspect-only must write nothing — and the side effect was that the one
+  preview a cautious reader has said nothing about the only git-tracked write in the whole installer.
+  It now leads with it, under its own ⚠ heading, and tells you how to opt out **before** the write
+  rather than how to recover after. `--plan --json` carries it too, for an orchestrator deciding
+  whether to apply.
+
+What is unchanged: the retirement itself, the marker, the widened match, and the reasoning in
+[1.12.0] below. This does not reverse that decision — it makes it visible to the one reader for whom
+it is a cost. (mem:4b41240905ebb217)
+
 ## [1.12.0] — 2026-09-11
 
 **Three claims the store could not retract, and a byte-identity that had two victims on opposite

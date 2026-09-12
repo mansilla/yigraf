@@ -24,8 +24,8 @@ from yigraf import (__version__, artifacts, counters, embeddings, graphdb, memor
 from yigraf import show as show_mod  # aliased: the module and the `show` command share a name
 from yigraf.astnorm import (ANCHOR_ALGO, DOC_SUFFIXES, locus_hash, parse_file_target,
                             parse_section_target, section_slug, section_slugs)
-from yigraf.config import (DEFAULT_SESSION_PREAMBLE, TOKEN_ENV, load_config, refresh_preamble,
-                           replica_path)
+from yigraf.config import (DEFAULT_SESSION_PREAMBLE, PREAMBLE_COPY_CURRENT, TOKEN_ENV,
+                          load_config, preamble_copy_class, refresh_preamble, replica_path)
 from yigraf.drift import (compute_drift, is_reverifiable, is_stale_completion, is_surfaced,
                           stale_completions)
 from yigraf.extract import build_graph, symbol_content_hash
@@ -4247,12 +4247,24 @@ def _retire_stale_preamble(workspace: Path, indent: str = "") -> None:
     larger unrequested write into a committed file, which is the thing this function is careful not to
     do — so the transition is explained here instead, at the one moment the reader is looking.
     """
-    if refresh_preamble(workspace / "config.yaml"):
+    retired = refresh_preamble(workspace / "config.yaml")
+    if retired:
         typer.echo(f"{indent}preamble    → retired the committed copy in {workspace.name}/config.yaml; "
                    f"this repo now tracks the preamble yigraf ships (commit the change)")
         typer.echo(f"{indent}            the text is still in the file, now commented out: uncomment "
                    f"that block to take the rules back. Any prose above it that predates 1.11.0 "
                    f"describes the old live key")
+    if retired == PREAMBLE_COPY_CURRENT:
+        # The ambiguous history, said out loud. Nothing is destroyed — the bytes are the ones we ship
+        # and they are still in the file, commented — so a message is a COMPLETE remedy here rather
+        # than a consolation, and its absence was the whole defect (feedback-v9 H#1, 1.12.1).
+        typer.echo(f"{indent}⚠ preamble  that copy was byte-identical to the preamble this yigraf "
+                   f"ships, which means one of two things and the file cannot say which: a repo "
+                   f"`init`ed by 1.9.0-1.10.0 (the common case, and why this runs), or a preamble you "
+                   f"PINNED by hand before `preamble_pinned:` existed to declare it.")
+        typer.echo(f"{indent}            If it was yours, nothing is lost and nothing needs retyping: "
+                   f"the same text is in the file above, commented. Uncomment it together with the "
+                   f"`preamble_pinned: true` line and no release will ever touch it again.")
 
 
 @app.command(name="install-hooks")
@@ -4446,6 +4458,24 @@ def _install_ambient_rule_cmd(path: Path, host: str) -> None:
     _print_mcp_config(path)
 
 
+def _preamble_plan_note(config_path: Path) -> str | None:
+    """What ``install`` would do to the committed ``config.yaml``, in one line — ``None`` if nothing.
+
+    Reads the same predicate the installer acts on, so the preview cannot promise a write the verb
+    would decline or stay quiet about one it would make.
+    """
+    retiring = preamble_copy_class(config_path)
+    if retiring is None:
+        return None
+    if retiring == PREAMBLE_COPY_CURRENT:
+        return ("yigraf/config.yaml — would retire the live `preamble:` key (its text is byte-identical "
+                "to the one this yigraf ships) and leave that text in the file, commented. If you "
+                "PINNED it by hand rather than inheriting it from a 1.9.0-1.10.0 `init`, add "
+                "`preamble_pinned: true` beside the key FIRST and install will leave it alone.")
+    return ("yigraf/config.yaml — would retire the live `preamble:` key (an older default yigraf "
+            "shipped) and leave the current text in the file, commented.")
+
+
 def _build_install_plan(path: Path, config: dict, host: str) -> dict:
     """Inspect the host + repo and return the menu of what *would* be wired — the data an agent shows
     the human before touching anything.
@@ -4473,6 +4503,11 @@ def _build_install_plan(path: Path, config: dict, host: str) -> dict:
             "git_repo": (Path(path) / ".git").is_dir(),
         },
         "hosts": {"detected": detected, "target": choice, "push_targets": push_targets},
+        # The ONE thing `install` writes that git tracks, so it is the one thing a dry-run most owes
+        # the reader. `--plan` returns before `_retire_stale_preamble` by construction (inspect-only
+        # must write nothing), which had the side effect of making the preview silent about it —
+        # so the preview names it here instead, in the same words (feedback-v9 H#1, 1.12.1).
+        "committed_write": _preamble_plan_note(Path(path) / "yigraf" / "config.yaml"),
         # The generic channel is host-independent and always wired — it works with any agent.
         "generic_channel": [
             "post-commit hook — re-materializes the gitignored view (.local/graph.db) on every commit",
@@ -4518,6 +4553,12 @@ def _render_plan(plan: dict) -> None:
                else "— none (drift/maturity degrade gracefully)"))
     hosts = plan["hosts"]
     typer.echo("  detected host(s): " + (", ".join(hosts["detected"]) or "none"))
+
+    if plan.get("committed_write"):
+        # First, and marked: everything else in this menu is per-machine or gitignored. This is the
+        # only line that describes a change to a file the team shares.
+        typer.echo("\n⚠ Will change a COMMITTED file:")
+        typer.echo(f"  • {plan['committed_write']}")
 
     typer.echo("\nWill wire (generic — every host, always on):")
     for item in plan["generic_channel"]:

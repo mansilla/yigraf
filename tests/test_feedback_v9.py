@@ -313,7 +313,7 @@ def test_a_declared_pin_survives_an_amendment_of_the_shipped_default(tmp_path: P
     cfg = _pin(root, PINNED_AT_1_11_1, declared=True)
     before = cfg.read_text()
 
-    assert refresh_preamble(cfg) is False, "the remedy declines a file that declares itself pinned"
+    assert refresh_preamble(cfg) is None, "the remedy declines a file that declares itself pinned"
     assert not preamble_behind(cfg), "…and so does the nudge"
     assert runner.invoke(app, ["install", str(root), "--host", "mcp"]).exit_code == 0
 
@@ -351,3 +351,86 @@ def test_an_undeclared_pin_of_the_current_text_is_retired_with_it(tmp_path: Path
     assert "preamble" not in yaml.safe_load(cfg.read_text())["session_start"], "the live key is gone"
     assert commented_preamble_block() in cfg.read_text(), "and the text is still there to re-pin"
     assert "preamble_pinned: true" in commented_preamble_block(), "…declaring itself this time"
+
+
+# --- 1.12.1: the retirement of an AMBIGUOUS copy is never silent -----------------------------------
+#
+# 1.12.0 shipped the accepted loss and shipped it quietly, which is the part that was wrong. The two
+# classes are retired identically and must be REPORTED differently: a superseded copy is provably ours
+# and worth one line, while a copy of the current text has two possible histories — a 1.9.0-1.10.0
+# mint, or a pin made before the marker existed — and for one of them this is a choice being
+# overridden. Nothing is destroyed either way (the bytes are the ones we ship and they stay in the
+# file, commented), so saying so is a COMPLETE remedy rather than an apology.
+
+def _install(root: Path, *extra: str):
+    return runner.invoke(app, ["install", str(root), "--host", "mcp", *extra])
+
+
+def test_retiring_a_copy_of_the_current_text_says_it_might_have_been_a_pin(tmp_path: Path):
+    root = _repo(tmp_path)
+    _pin(root, PINNED_AT_1_11_1, declared=False)
+
+    out = _install(root).output
+
+    assert "PINNED by hand" in out, "the ambiguous history has to be named"
+    assert "preamble_pinned: true" in out, "…with the one-command way to make it stick next time"
+    assert "nothing is lost" in out, "…and the fact that the bytes are still in the file"
+
+
+def test_retiring_a_superseded_copy_stays_one_line(tmp_path: Path):
+    """The control, and design law #4: a copy only an `init` through 1.8.0 could have written is
+    provably abandoned. There is no choice being overridden, so there is nothing to warn about."""
+    root = _repo(tmp_path)
+    _pin(root, SUPERSEDED_SESSION_PREAMBLES[0], declared=False)
+
+    out = _install(root).output
+
+    assert "retired the committed copy" in out
+    assert "PINNED by hand" not in out
+
+
+def test_refresh_preamble_reports_which_class_it_retired(tmp_path: Path):
+    """A bool could not carry the difference, which is why the caller could not say it."""
+    from yigraf.config import PREAMBLE_COPY_CURRENT, PREAMBLE_COPY_SUPERSEDED, preamble_copy_class
+
+    current = _pin(_repo(tmp_path / "a"), PINNED_AT_1_11_1, declared=False)
+    superseded = _pin(_repo(tmp_path / "b"), SUPERSEDED_SESSION_PREAMBLES[0], declared=False)
+    declared = _pin(_repo(tmp_path / "c"), PINNED_AT_1_11_1, declared=True)
+
+    assert preamble_copy_class(current) == PREAMBLE_COPY_CURRENT
+    assert preamble_copy_class(superseded) == PREAMBLE_COPY_SUPERSEDED
+    assert preamble_copy_class(declared) is None
+    assert refresh_preamble(current) == PREAMBLE_COPY_CURRENT
+    assert refresh_preamble(current) is None, "and it is idempotent — nothing left to retire"
+
+
+def test_the_dry_run_names_the_one_committed_file_install_touches(tmp_path: Path):
+    """`--plan` returns before the retirement by construction (inspect-only must write nothing), and
+    that had made the one preview a cautious reader has silent about the only git-tracked write."""
+    root = _repo(tmp_path)
+    cfg = _pin(root, PINNED_AT_1_11_1, declared=False)
+    before = cfg.read_text()
+
+    out = runner.invoke(app, ["install", str(root), "--plan"])
+
+    assert out.exit_code == 0, out.output
+    assert "COMMITTED file" in out.output
+    assert "preamble_pinned: true" in out.output, "and how to opt out BEFORE the write, not after"
+    assert cfg.read_text() == before, "--plan still writes nothing"
+
+
+def test_the_dry_run_is_silent_when_there_is_nothing_to_retire(tmp_path: Path):
+    out = runner.invoke(app, ["install", str(_repo(tmp_path)), "--plan"])
+    assert out.exit_code == 0 and "COMMITTED file" not in out.output
+
+
+def test_the_plan_json_carries_it_for_an_agent(tmp_path: Path):
+    """`--plan --json` is what an orchestrator reads before deciding to apply; the warning is useless
+    if it only exists in the prose rendering."""
+    import json
+    root = _repo(tmp_path)
+    _pin(root, PINNED_AT_1_11_1, declared=False)
+
+    built = json.loads(runner.invoke(app, ["install", str(root), "--plan", "--json"]).output)
+
+    assert "preamble_pinned: true" in built["committed_write"]

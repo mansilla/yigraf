@@ -230,7 +230,7 @@ def test_a_declared_pin_survives_even_when_its_text_goes_superseded(tmp_path: Pa
     cfg = _pinned(root, SUPERSEDED_SESSION_PREAMBLES[0], declared=True)
     before = cfg.read_text()
 
-    assert refresh_preamble(cfg) is False
+    assert refresh_preamble(cfg) is None
     assert runner.invoke(app, ["install", str(root), "--host", "mcp"]).exit_code == 0
     assert cfg.read_text() == before
 
@@ -297,7 +297,7 @@ def test_an_ambiguous_file_is_declined_rather_than_guessed_at(tmp_path: Path):
     cfg = _stale(root)
     cfg.write_text(cfg.read_text() + '\npreamble: "a second live key we cannot choose between"\n')
 
-    assert refresh_preamble(cfg) is False
+    assert refresh_preamble(cfg) is None
     assert preamble_behind(cfg), "declining must leave the nudge in place"
 
 
