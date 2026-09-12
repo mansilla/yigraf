@@ -4,6 +4,103 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.12.0] — 2026-09-11
+
+**Three claims the store could not retract, and a byte-identity that had two victims on opposite
+clocks.** All four from the 1.11.1 field report (feedback-v9).
+
+### A preamble pin now declares itself, and an undeclared copy is retired
+
+`preamble_behind` matched a preamble byte-exactly against what yigraf once shipped, and justified that
+as *"proof the text in the file is ours rather than the team's."* Byte-exactness proves where text came
+from; **it cannot prove how the copy got into the file.** `init` minting the key and a human running
+the documented *"uncomment the block below to pin your own"* produce identical bytes. One predicate,
+two victims, on opposite clocks:
+
+* a **deliberate pin** of today's text would be silently deleted by the first release that amends the
+  default — the pin ages into `SUPERSEDED_SESSION_PREAMBLES` and the next `install` rewrites it;
+* and *until* that release, every repo `init`ed at **1.9.0–1.10.0** was invisible to the remedy. The
+  default text last changed at 1.9.0 and minting stopped at 1.11.0, so those repos carry a live key
+  matching the *current* default — `preamble_behind` was `False` and they were never migrated, keeping
+  the exact two-copy hazard 1.11.0 exists to remove. Only 1.4.0–1.8.0 repos were reachable.
+
+No ordering of the tuple separates them, because they are the same bytes. So provenance moves to where
+the human's own action already is:
+
+* **`preamble_pinned: true` ships inside the commented block**, so the one uncomment that takes
+  ownership also declares it. `preamble_behind` and `refresh_preamble` skip any file carrying it,
+  whatever the bytes say — and it outlives every later amendment, which byte-identity could not. It is
+  the discipline `installed_skill_version`'s stamp already applies; the gap was only that the preamble
+  had no stamp to read.
+* **The match widens to every default we ever shipped, the current one included**, which reaches the
+  stranded 1.9.0–1.10.0 population at last. `SUPERSEDED_SESSION_PREAMBLES` is unchanged and its
+  invariant still holds — the current text must never be listed *there*, or a stale entry nags forever.
+* **`preamble_behind` now reads `config.yaml` as committed** (`committed_config`) instead of taking a
+  merged config, and that is load-bearing: `load_config` fills an absent `preamble:` from the default,
+  so in a merged mapping a healthy 1.11+ file is indistinguishable from the stranded one. The file is
+  the only place the difference exists.
+
+⚠ **The cost, taken deliberately.** A pin made by hand *before* this release carries no marker and is
+retired like a mint. That is a real choice being overridden, it is bounded to one transition, and it
+is one uncomment from being re-made — with its declaration this time. Leaving the tuple alone would
+instead strand the 1.9.0–1.10.0 repos permanently. Bounded loss over unbounded.
+
+⭐ **The guard for this was already in the suite and could not fail**, which the field found by reading
+the sdist: `test_a_current_preamble_pinned_by_hand_is_left_alone` built its fixture from
+`DEFAULT_SESSION_PREAMBLE` **at run time**, while `test_the_current_default_is_not_also_listed_as_superseded`
+guarantees that text is never in the tuple. The fixture moved with every release; a team's committed
+file does not. `tests/test_feedback_v9.py` carries the field's own replacement, with the pinned bytes
+**frozen as a literal** — their fix, their test, kept whole.
+
+### `link` retires the `unanchored:` marker
+
+`mark_task_unanchored` shipped a complete `unanchored=False` branch that **no CLI call site reached**,
+so nothing cleared the marker `close --force` writes — verified across eleven verbs, `link` and
+`unlink` and `--reopen` among them. Two states followed, and `close`'s own output invites the first:
+it prints *"if the work later grows a symbol, `yigraf link` re-earns that."*
+
+* **`--force` then `link` minted a state `close` refuses to write** — `unanchored:` *and* an
+  `implements` edge — in which the shipped claim "an unanchored completion can never go STALE" is
+  false: edit the anchored symbol and it reports STALE.
+* **`--force` → `link` → `unlink` left the task permanently exempt** from `_capture_gaps`, which
+  checks the marker *before* it looks for an implements edge. Two tasks in identical end states, and
+  only the never-forced one was reported.
+
+`link`'s `sym:`/`file:` branch now clears it, and says so. Confined to that branch: `link <task>
+int:<slug>` declares that the task *tracks* an intent, which asserts nothing about whether it
+implements a symbol. The marker is a claim about the task **now** — which is how `_capture_gaps` reads
+it — not a historical fact about how it was closed.
+
+`--force`'s help string said *"an unanchored completion can never go stale"*, the claim above
+falsifies, and the cheatsheet renders it verbatim. It now says what `--force` actually does: it
+**records** the choice. The MCP `close` tool description, accurate for 1.10.0 and silent since, says it
+too.
+
+### `reaffirm --evidence` says which list it wrote to
+
+On a belief with no `grounded_by` list, `--evidence` reported *"grounds-drift cleared"* — describing an
+event that never happened, on a node that had no grounds-drift to clear. A caller who arrived from the
+`reanchor`/`unlink` drop ⚠ — whose own text correctly says *no verb adds a `concerns` anchor back* —
+read that as compliance, and the locus had in fact landed on `grounded_by`, where it means the opposite
+thing: evidence **for** the claim rather than code the claim **governs**, so it no longer surfaces as a
+governed locus. The success line now claims cleared drift only when there was drift, and names the list
+when a locus lands on it for the first time on a node that also carries `concerns` anchors.
+
+### The migration says how to take the preamble back
+
+`refresh_preamble` splices the `preamble:` key and nothing else — the right scope for a text write into
+a committed file, and the reason a migrated ≤1.8.x config still reads *"Yours to rewrite"* directly
+above a now-**commented-out** block, with the word "uncomment" nowhere in it. A reader who follows that
+prose edits the text where they find it, leaves it commented, and commits a house rule every session
+silently ignores. Widening the splice would be a much larger unrequested write, so the installer says
+it instead, at the moment of the migration.
+
+Not changed: the capture gap is still unnamed in the skill's §4 *"four re-verify signals"*. The runtime
+⚠ names the exact command with the exact task id, fires uncapped at every SessionStart, and works on a
+task that is already done — it is very nearly the whole channel, and a fifth entry costs the context
+budget at every session start (design law #2). The two prose surfaces that were *wrong* rather than
+merely absent are fixed above.
+
 ## [1.11.1] — 2026-09-07
 
 **`close --force` was the escape hatch the refusal named, and taking it left the warning standing

@@ -58,11 +58,16 @@ DEFAULT_SESSION_PREAMBLE = """\
 #: prove we shipped. ``test_the_current_default_is_not_also_listed_as_superseded`` guards the other
 #: direction (a stale entry would nag everyone forever); nothing but this note guards the omission.
 #:
-#: Detection is a byte-for-byte match against what we ONCE shipped — never "differs from the current
+#: Detection is a byte-for-byte match against what we shipped — never "differs from the current
 #: default". The file says the preamble is yours to rewrite, so a rewritten one must stay silent; a
-#: match here is proof of an untouched older copy rather than a guess about one, the same discipline
+#: match is proof of an untouched copy of ours rather than a guess about one, the same discipline
 #: :func:`yigraf.hooks.installed_skill_version` applies to an unstamped skill. One entry covers every
 #: release that had a preamble: the text was introduced at 1.4.0 and was unchanged through 1.8.0.
+#:
+#: :func:`preamble_behind` matches this tuple PLUS the current default, because a live key holding
+#: today's text is a 1.9.0-1.10.0 mint that has simply not gone stale yet (feedback-v9 H#1) — so this
+#: tuple is no longer the whole detected set, and the invariant that the current text must never be
+#: listed *here* still holds for the reason it always did: a stale entry would nag everyone forever.
 SUPERSEDED_SESSION_PREAMBLES = ("""\
 [yigraf] Standing rules for this session — instructions, not reference:
 - Read yigraf's own guidance before driving the CLI: the `yigraf` skill if your host loads skills,
@@ -79,13 +84,63 @@ SUPERSEDED_SESSION_PREAMBLES = ("""\
 """,)
 
 
-def preamble_behind(config: dict[str, Any]) -> bool:
-    """Whether this repo's committed preamble is an untouched copy of an *older* shipped default.
+def committed_config(path: Path) -> dict[str, Any]:
+    """The repo's ``config.yaml`` exactly as written — no defaults merged, ``{}`` when absent/unreadable.
 
-    False for a rewritten preamble and for the current one alike — see
-    :data:`SUPERSEDED_SESSION_PREAMBLES` for why only an exact match earns the nudge.
+    :func:`load_config` answers "what is in effect"; this answers "what did the team COMMIT", and the
+    preamble questions are all the second kind. Fail-soft on a malformed file on purpose: this feeds a
+    nudge and a statusline, and neither may raise (design law #5).
     """
-    return config.get("session_start", {}).get("preamble") in SUPERSEDED_SESSION_PREAMBLES
+    path = Path(path)
+    if not path.exists():
+        return {}
+    try:
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def preamble_behind(config_path: Path) -> bool:
+    """Whether this repo carries a committed *live* copy of a preamble yigraf itself shipped.
+
+    False for a rewritten preamble, for ``preamble: ""``, for an absent key, and — the part that is a
+    declaration rather than a deduction — for any file carrying ``preamble_pinned: true``.
+
+    Reads ``config_path`` AS COMMITTED rather than taking a merged config, and that is load-bearing
+    now that the current default is matched too: :func:`load_config` fills an absent ``preamble:`` key
+    from :data:`DEFAULT_SESSION_PREAMBLE`, so in a merged mapping the healthy 1.11+ file (no key, falls
+    through) is byte-identical to the very state this reports. The file is the only place the
+    difference exists. One small read, like :func:`yigraf.hooks.installed_skill_version` beside it.
+
+    **Byte-identity proves where text came from; it cannot prove how the copy got into the file**
+    (feedback-v9 H#1). ``init`` minting the key and a human running the documented "uncomment the block
+    below to pin your own" produce identical bytes, and nothing else in the file separates them. That
+    one predicate had two victims on opposite clocks: a deliberate pin is deleted by the first release
+    that amends the default (the pin becomes byte-identical to a superseded one), while *until* that
+    release every repo initialized at 1.9.0–1.10.0 — a live key matching the still-CURRENT default,
+    because the text last changed at 1.9.0 and minting stopped at 1.11.0 — was invisible to the remedy
+    and kept the exact two-copy hazard 1.11.0 exists to remove. No ordering of
+    :data:`SUPERSEDED_SESSION_PREAMBLES` separates them, because they are the same bytes.
+
+    So the match is widened to every default we have ever shipped, the current one included, and
+    provenance moves to where the human's own action already is: :func:`commented_preamble_block` ships
+    ``preamble_pinned: true`` *inside* the commented block, so the one-command uncomment declares
+    itself. Nothing written by 1.10.0 or earlier can carry that line, which is what keeps the stranded
+    population reachable. It is the discipline :func:`yigraf.hooks.installed_skill_version` already
+    applies to an unstamped skill; the gap was only that the preamble had no stamp to read.
+
+    **The cost, taken deliberately:** a pin made by hand *before* the marker shipped carries no marker
+    and is indistinguishable from a mint, so it is retired like one. That is a real loss of a real
+    choice, and it is bounded — one transition, for pins made between 1.9.0 and the release that adds
+    this line — where leaving the tuple alone strands the 1.9.0–1.10.0 repos permanently instead. A
+    repo left carrying a live copy that silently stops tracking the CLI is the failure this whole
+    mechanism exists to end, so the finite loss is preferred to the unbounded one.
+    """
+    session = (committed_config(config_path).get("session_start") or {})
+    if session.get("preamble_pinned"):  # the team said so, in the file, on purpose — believe them
+        return False
+    return session.get("preamble") in SUPERSEDED_SESSION_PREAMBLES + (DEFAULT_SESSION_PREAMBLE,)
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -234,6 +289,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "session_start": {
         # Verbatim house rules, before the ranked slice. "" / null ⇒ the channel is silent.
         "preamble": DEFAULT_SESSION_PREAMBLE,
+        # Set true in a committed config.yaml to declare "the preamble above is OURS": it is the one
+        # fact byte-identity cannot carry, and it stops every install verb retiring the key
+        # (feedback-v9 H#1). False here is a default, never a claim — a repo that never uncommented
+        # the block has no preamble of its own to protect.
+        "preamble_pinned": False,
         # End the packet's head with the one-line `yigraf status` summary, so the rules arrive with
         # the live counts attached instead of as abstract advice.
         "append_status": True,
@@ -384,8 +444,12 @@ session_start:
   # you are running ships — upgrade the CLI and the text moves with it. Uncomment the block below to
   # pin your own (this file is committed, so a team's yigraf conventions live with the repo instead
   # of in each agent's private memory); from that point the rules are yours and yigraf never touches
-  # them again. `yigraf cheatsheet --preamble` prints the current shipped text. `preamble: ""`
-  # silences the channel entirely.
+  # them again. Uncomment `preamble_pinned: true` WITH it — that line is what says the text is yours,
+  # and without it a copy that still matches something yigraf ships is read as ours and retired on the
+  # next `yigraf install`. Rewrite the text and the marker is optional: a preamble that no longer
+  # matches anything we shipped is self-evidently yours.
+  # `yigraf cheatsheet --preamble` prints the current shipped text. `preamble: ""` silences the
+  # channel entirely.
 __PREAMBLE__
   append_status: true   # end the head with the one-line `yigraf status` summary (rules + live counts)
   pinned_budget: 800    # tokens for `pinned` memories, rendered IN FULL, whole nodes only
@@ -462,12 +526,20 @@ def commented_preamble_block(indent: str = "  ") -> str:
     how a team learns the channel exists and what it currently says.
 
     Uncommenting is exact-reversible — strip ``"# "`` from each line and the result is the block scalar
-    the file used to carry (2-space key, 4-space body). That is deliberate: the act of owning the
-    preamble should be one editor command, not a retype.
+    the file used to carry (2-space key, 4-space body), plus the pin marker. That is deliberate: the
+    act of owning the preamble should be one editor command, not a retype.
+
+    ``preamble_pinned: true`` rides directly above the key, inside the same block, so the single
+    uncomment that takes ownership also *declares* it. That declaration is the whole point:
+    :func:`preamble_behind` cannot tell a hand-pinned copy of today's text from an init-minted one by
+    its bytes, and guessing wrong in either direction costs a team something (feedback-v9 H#1). The
+    marker is the one fact the bytes do not carry, put where the human already has the file open.
     """
     body = "\n".join(f"{indent}#   {line}".rstrip()
                      for line in DEFAULT_SESSION_PREAMBLE.rstrip("\n").splitlines())
-    return f"{indent}# preamble: |\n{body}"
+    return (f"{indent}# preamble_pinned: true   # keep this line when you uncomment the block below:\n"
+            f"{indent}#                         # it is what tells yigraf the text is yours, not ours.\n"
+            f"{indent}# preamble: |\n{body}")
 
 
 #: The written file. The preamble rides along commented out — see :func:`commented_preamble_block` for
@@ -481,16 +553,20 @@ _PREAMBLE_KEY = re.compile(r"^(?P<indent>[ \t]*)preamble:")
 
 
 def refresh_preamble(config_path: Path) -> bool:
-    """Retire a committed preamble that is an untouched copy of an older shipped default. Returns
-    whether the file was rewritten.
+    """Retire a committed live copy of a preamble yigraf ships. Returns whether the file was rewritten.
 
     The remedy half of :func:`preamble_behind`, and it inherits that predicate's evidence standard
-    verbatim: it acts **only** on a byte-exact match against a preamble yigraf itself once shipped,
-    which is proof the text in the file is ours rather than the team's. A rewritten preamble, the
-    current default, and an already-absent key are all no-ops. That is what makes writing to a
-    committed, user-owned file defensible here — this does not edit anyone's content, it removes a
-    stale copy of *ours* — and it is why the call sites are the ``install`` verbs (an explicit request
-    to bring yigraf's own surfaces current) and never a read path or a hook.
+    verbatim: it acts **only** on a byte-exact match against a preamble yigraf itself shipped — which
+    is proof of where the text came from, though never of how the copy got into the file, which is why
+    the team's own ``preamble_pinned: true`` outranks it. A rewritten preamble, ``preamble: ""``, an
+    already-absent key and any declared pin are all no-ops. That is what makes writing to a committed,
+    user-owned file defensible here — this does not edit anyone's content, it removes an undeclared
+    copy of *ours* — and it is why the call sites are the ``install`` verbs (an explicit request to
+    bring yigraf's own surfaces current) and never a read path or a hook.
+
+    Nothing is destroyed that one editor command cannot restore: the key is replaced by
+    :func:`commented_preamble_block`, so the full text stays in the file, one uncomment from being
+    re-pinned — with its declaration, this time.
 
     The file is edited as *text*, not round-tripped through the YAML parser, because the parser would
     discard every comment in it — and this file is mostly comments, which are the only documentation
@@ -498,7 +574,7 @@ def refresh_preamble(config_path: Path) -> bool:
     False and leaves the nudge standing — a notice that persists one more release costs far less than
     a wrong splice into a committed file.
     """
-    if not preamble_behind(load_config(config_path)):
+    if not preamble_behind(config_path):
         return False
     lines = config_path.read_text(encoding="utf-8").splitlines(keepends=True)
     hits = [i for i, line in enumerate(lines) if _PREAMBLE_KEY.match(line)]

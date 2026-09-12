@@ -735,7 +735,7 @@ def _resolve_task(workspace: Path, task_id: str):
 def close(
     task_id: str = typer.Argument(..., help="Task locator, e.g. task:<plan>/1."),
     reopen: bool = typer.Option(False, "--reopen", help="Re-open a done task instead of closing it."),
-    force: bool = typer.Option(False, "--force", help="Close even with no implements link (an unanchored completion can never go stale)."),
+    force: bool = typer.Option(False, "--force", help="Close even with no implements link; records that the task shipped no symbol, so it stops being a capture gap (a later `link` retires the record)."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
     """Mark a task done (or, with ``--reopen``, not done) by writing its checkbox in the plan file.
@@ -777,8 +777,9 @@ def close(
             _rebuild(repo)
             typer.echo(f"Recorded {task_id} as implementing nothing, on purpose — [x] was already "
                        f"written; what was missing was the reason it names no symbol.")
-            typer.echo("It stops being reported as a capture gap. It still can never go STALE: if the "
-                       "work later grows a symbol, `yigraf link` re-earns that.")
+            typer.echo("It stops being reported as a capture gap. While it names no symbol it can "
+                       "never go STALE: if the work later grows one, `yigraf link` re-earns that and "
+                       "retires this record.")
             return
         _guidance(f"{task_id} is already done. To re-open it, `yigraf close {task_id} --reopen`.")
     if not task.implements and not force:
@@ -794,8 +795,9 @@ def close(
     anchored = ", ".join(i.sym for i in task.implements) or "nothing (forced)"
     typer.echo(f"Closed {task_id} — [x] in {plan_file.name}, implementing {anchored}.")
     if not task.implements:
-        typer.echo("Recorded as unanchored, so it is not reported as a capture gap. It can never go "
-                   "STALE either — that is the price of the anchor it does not have.")
+        typer.echo("Recorded as unanchored, so it is not reported as a capture gap. While it names no "
+                   "symbol it can never go STALE either — that is the price of the anchor it does not "
+                   "have, and `yigraf link` re-earns both.")
         return
     typer.echo("Its anchors now carry the completion: if they drift, it surfaces as a STALE completion "
                "(`yigraf drift --stale`), cleared by re-`link` once re-verified.")
@@ -886,9 +888,27 @@ def link(
         artifacts.add_edge_to_plan(plan_file, task_id, "implements", target, anchor=anchor,
                                    anchor_algo=algo, stamped_at=counters._head_sha(repo),
                                    replaces=moved_from)
+        # The task now names a symbol, so the `unanchored:` marker it may carry — "this completion
+        # implements nothing, on purpose" — has stopped being true, and `_capture_gaps` reads it in the
+        # PRESENT tense: what it needs to know is whether the task names a symbol NOW (feedback-v9 H#2).
+        # Nothing else cleared it, and `close --force`'s own output sends the reader straight here
+        # ("if the work later grows a symbol, `yigraf link` re-earns that"), so the marker outlived the
+        # assertion in two ways. It let this verb mint a state `close` refuses to write — marked
+        # unanchored AND carrying an implements edge, where the promised "can never go STALE" is simply
+        # false — and, once a later `unlink` retired that edge, the surviving marker exempted a
+        # genuinely gap-shaped task from the detector for good. Clearing here closes both: the first
+        # state can no longer exist, and the second decays to an honest unmarked gap.
+        # Only this branch. `link <task> int:<slug>` declares that the task TRACKS an intent, which
+        # asserts nothing about whether it implements a symbol — clearing there would re-open the nag
+        # on work that genuinely shipped none.
+        unmarked = artifacts.mark_task_unanchored(plan_file, task_id, False)
         typer.echo(f"Linked {task_id} —implements→ {target} (anchored {anchor[:12]})"
                    + (f" — settled the rename from {moved_from}, which the graph had re-anchored by "
                       f"content hash and this artifact had not." if moved_from else ""))
+        if unmarked:
+            typer.echo(f"{task_id} is no longer recorded as unanchored: it names a symbol now, so it "
+                       f"can go STALE when that symbol drifts — and it is an ordinary capture gap "
+                       f"again if you retire this edge.")
     elif target.startswith("int:"):
         artifacts.add_edge_to_plan(plan_file, task_id, "tracks", target)
         typer.echo(f"Linked {task_id} —tracks→ {target}")
@@ -2521,6 +2541,12 @@ def reaffirm(
         # into a ping-pong — the refusal writes nothing, so re-running with only the ref it named then
         # refuses naming the other one (feedback-v4 #2).
         pre_stale = _stale_grounds(repo, config, node)
+        # Also captured before the upsert, for the success line: whether there was any grounds-drift to
+        # clear, and which refs the node already grounded on. `--evidence` upserts onto `grounded_by`
+        # whatever the ref is, so without these two the message cannot tell "re-observed the drifting
+        # locator" from "filed a brand-new locus on a list this node did not have" (feedback-v9 H#5).
+        pre_dead = _dead_grounds(repo, config, node)
+        pre_grounds = {e.ref for e in node.evidence}
         added_evidence = _reaffirm_evidence(repo, config, node, evidence or [])
         # The empirical tier must NAME a live observation — the same gate as capture (int:memory-grounding).
         # This closes the reaffirm loophole: `--grounding empirical` no longer upgrades on the agent's word.
@@ -2590,8 +2616,30 @@ def reaffirm(
             # message an agent is most likely to believe and stop on.
             left = ((stale_grounds if node.grounding == "empirical" else [])
                     + _dead_grounds(repo, config, node))
+            # …and only claim there WAS drift when there was: a node with no `grounded_by` list has no
+            # grounds-drift, so "cleared" on its first-ever observation described an event that never
+            # happened — and it read as compliance to a caller who had arrived from the reanchor/unlink
+            # drop ⚠ trying to put a `concerns` anchor back (feedback-v9 H#5).
+            had_drift = bool(pre_stale) or bool(pre_dead)
             typer.echo(f"Reaffirmed {target}: grounded by {', '.join(added_evidence)}"
-                       + ("." if left else " — grounds-drift cleared."))
+                       + (" — grounds-drift cleared." if had_drift and not left else "."))
+            # Name the list when a locus lands on it for the first time and the node also carries
+            # `concerns` anchors, because there the two lists are both live and mean different things:
+            # `grounded_by` is evidence FOR the claim, `concerns` is the code the claim GOVERNS. Only a
+            # governed locus surfaces as one, so a ref filed here instead is not the anchor the drop ⚠
+            # says no verb restores — it is a different assertion that happens to name the same locus.
+            fresh = [r for r in added_evidence if r not in pre_grounds]
+            if fresh and node.concerns:
+                one = len(fresh) == 1
+                anchors = " ".join(f"--concerns {r}" for r in [c.sym for c in node.concerns] + fresh)
+                plural = "" if one else "s"
+                typer.echo(f"  {', '.join(fresh)} {'is' if one else 'are'} now evidence FOR {target}, "
+                           f"on `grounded_by` — not {'a ' if one else ''}`concerns` anchor{plural}, "
+                           f"which is the code the claim GOVERNS, and only a governed locus surfaces "
+                           f"as one. This does not add a `concerns` anchor back; no verb does. If the "
+                           f"belief governs {'it' if one else 'them'} too, restate it with the anchors "
+                           f"it should carry: `yigraf supersede {target} \"<the belief, restated>\" "
+                           f"{anchors}` (--concerns replaces the list, so name every one).")
         if restamped:
             typer.echo(f"Reaffirmed {target}: re-anchored {', '.join(restamped)} to current code — drift cleared.")
         elif not gone and not upgraded and not added_evidence:
@@ -4189,10 +4237,22 @@ def _retire_stale_preamble(workspace: Path, indent: str = "") -> None:
 
     Nothing is printed when the file is already current: the installers are noisy enough, and design
     law #4 applies to a human reading a transcript too.
+
+    The second line is not decoration. ``refresh_preamble`` splices the KEY and nothing else, so a
+    migrated file keeps whatever prose the writing release put above it — in a ≤1.8.x file, a paragraph
+    that says the preamble is "yours to rewrite" now sitting directly above a *commented-out* block,
+    and the word "uncomment" appears nowhere in it (feedback-v9 H#3). A reader who follows that prose
+    literally edits the text where they find it, leaves it commented, and commits a house rule every
+    session silently ignores. Widening the splice to the surrounding comment block would be a much
+    larger unrequested write into a committed file, which is the thing this function is careful not to
+    do — so the transition is explained here instead, at the one moment the reader is looking.
     """
     if refresh_preamble(workspace / "config.yaml"):
-        typer.echo(f"{indent}preamble    → retired the stale copy in {workspace.name}/config.yaml; this "
-                   f"repo now tracks the preamble yigraf ships (commit the change)")
+        typer.echo(f"{indent}preamble    → retired the committed copy in {workspace.name}/config.yaml; "
+                   f"this repo now tracks the preamble yigraf ships (commit the change)")
+        typer.echo(f"{indent}            the text is still in the file, now commented out: uncomment "
+                   f"that block to take the rules back. Any prose above it that predates 1.11.0 "
+                   f"describes the old live key")
 
 
 @app.command(name="install-hooks")

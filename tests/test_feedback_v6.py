@@ -303,7 +303,7 @@ def test_an_already_initialized_repo_is_told_its_committed_preamble_is_stale(tmp
 
     root = _doc_repo(tmp_path)
     cfg = _downgrade_preamble(root)
-    assert preamble_behind(load_config(cfg)), "the fixture must actually carry the older default"
+    assert preamble_behind(cfg), "the fixture must actually carry the older default"
 
     assert "⬆ preamble" in runner.invoke(app, ["status", "--repo", str(root)]).output
 
@@ -319,7 +319,7 @@ def test_a_rewritten_preamble_is_never_nudged(tmp_path: Path):
     cfg.write_text(cfg.read_text().replace("[yigraf] Standing rules for this session",
                                            "[acme] House rules for this session"))
 
-    assert not preamble_behind(load_config(cfg))
+    assert not preamble_behind(cfg)
     assert "preamble" not in runner.invoke(app, ["status", "--repo", str(root)]).output
 
 

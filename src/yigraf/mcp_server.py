@@ -362,7 +362,9 @@ def build_server(default_repo: str | None = None):
         Args:
             task: the task locator, e.g. "task:auth-hardening/3".
             reopen: re-open a done task instead of closing it (the change regressed the work).
-            force: close despite no implements link — for a task that shipped no symbol.
+            force: close despite no implements link — for a task that shipped no symbol. It RECORDS
+                that choice in the plan, which is what stops the capture-gap warning firing on it;
+                a later `link` retires the record.
         """
         return run_close(repo or default_repo, task, reopen, force)
 

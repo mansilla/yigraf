@@ -192,9 +192,10 @@ class Task:
     #: work shipped none to name (prose in a module-level constant, a config key, a refusal). Recorded
     #: because ``--force`` used to write *nothing*: the checkbox moved and the capture-gap warning —
     #: whose own guidance offers ``--force`` as the exit — went on firing at every SessionStart with no
-    #: verb that could clear it. An unanchored completion still can never go STALE; the marker asserts
-    #: that is intended, so the signal stops being noise instead of the completion pretending to
-    #: evidence it does not have.
+    #: verb that could clear it. While the task names no symbol it still can never go STALE; the marker
+    #: asserts that is intended, so the signal stops being noise instead of the completion pretending to
+    #: evidence it does not have. It is a claim about the task NOW, not a historical fact about how it
+    #: was closed, so ``link`` retires it the moment the work grows a symbol (feedback-v9 H#2).
     unanchored: bool = False
 
 

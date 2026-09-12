@@ -486,6 +486,6 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
         diverged=len(graph.graph.get("diverged") or ()),
         semantic=embedded > 0, embedded=embedded,
         head=head[:7] if head else None, update=available, skill_behind=skill_behind,
-        preamble_behind=_preamble_behind(config),
+        preamble_behind=_preamble_behind(root / "yigraf" / "config.yaml"),
         ctx_used=ctx_used, ctx_limit=ctx_limit, ctx_soft_limit=soft_limit,
     )
