@@ -59,6 +59,20 @@ from yigraf.log import Assertion, Log, causal_order
 #: belief) and sets them itself. ``provenance``/``family``/``scope`` come off the envelope, not attrs.
 _DERIVED_KEYS = frozenset({"accepted", "superseded_in", "supersedes_out"})
 
+#: The fold's own version, stamped onto every graph it produces (and so onto every materialized view).
+#:
+#: A materialized view is only ever checked for staleness against the LOG HEAD — the right question
+#: while the fold is a fixed function, and the wrong one the moment the fold itself changes. When
+#: ``_live_revisions`` started dropping superseded revisions, every already-materialized view kept
+#: serving the old answer and would have kept serving it forever, because no new assertion was coming
+#: to move the head. Bumping this invalidates those views exactly once, on the next read.
+#:
+#: **Bump it whenever the fold would produce a different graph for the SAME log.** Not for a new
+#: optional attribute a reader ignores; yes for anything that changes which nodes, edges or attribute
+#: values come out. A view stamped with an older value (or none — every view written before this
+#: existed) is treated as stale and refolded.
+FOLD_VERSION = 1
+
 
 def fold(log: Log, base: nx.DiGraph | None = None) -> nx.DiGraph:
     """Materialize the graph by folding ``log``'s assertions in causal order onto ``base``.
@@ -71,6 +85,7 @@ def fold(log: Log, base: nx.DiGraph | None = None) -> nx.DiGraph:
     graph = base if base is not None else empty_graph()
     for assertion in log.iter_assertions_in_causal_order():
         _apply(graph, assertion)
+    graph.graph["fold_version"] = FOLD_VERSION
     return graph
 
 
@@ -109,6 +124,7 @@ def fold_assertions(assertions: Iterable[Assertion], base: nx.DiGraph | None = N
                 declined.append(assertion)
             continue
         _apply(graph, assertion)
+    graph.graph["fold_version"] = FOLD_VERSION
     return ordered
 
 

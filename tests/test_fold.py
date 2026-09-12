@@ -222,3 +222,95 @@ def test_collapsed_scope_reaches_the_view():
         _node("mem:1", scope=("assume:online",)),
     ))
     assert g.nodes["mem:1"]["scope"] == ["assume:local", "assume:online"]
+
+
+# --------------------------------------------------------------------------------------------------
+# Revisioned families: two ids, one node — so the linearization's id tiebreak must not decide which
+# --------------------------------------------------------------------------------------------------
+
+
+def _revision(locator, rev, family="plan", attrs=None, actor="me@example.com"):
+    """One revision of a revisioned locator: the id carries the revision, the body carries the
+    locator, and ``fold._node_id`` maps every revision back onto the one node (yigraf.filelog).
+
+    ``actor`` is load-bearing, not decoration: superseding is keyed on ``(locator, actor)``, so only a
+    revision the SAME principal replaced is dropped as their own history."""
+    body = {"family": family, "locator": locator, "attrs": attrs or {}, "edges": []}
+    return Assertion(id=f"{locator}@{rev}", kind=family, body=body, parents=(),
+                     provenance=[{"actor": actor}] if actor else [], scope=())
+
+
+def test_the_newer_revision_wins_even_when_its_id_sorts_lower():
+    """The regression. Two revisions of one task are causally unrelated, so the linearization called
+    them concurrent and ordered them by id — a content hash. The larger hash was applied last and won,
+    whatever it said. Here the NEWER revision hashes LOWER, which is the losing half of that coin flip.
+
+    Measured live before the fix: a closed task rendered as open in exactly this case
+    (``7e936ef1 < 87387891``), i.e. for about half of all closes.
+    """
+    graph = fold(_log(_revision("task:p/1", "ffff", attrs={"kind": "task", "state": "todo"}),
+                      _revision("task:p/1", "0000", attrs={"kind": "task", "state": "done"})))
+    assert graph.nodes["task:p/1"]["state"] == "done", "arrival order decides, not the id's hash"
+
+
+def test_the_newer_revision_wins_when_its_id_sorts_higher_too():
+    """The half that passed by luck before — it must keep passing for the same reason as the other."""
+    graph = fold(_log(_revision("task:p/1", "0000", attrs={"kind": "task", "state": "todo"}),
+                      _revision("task:p/1", "ffff", attrs={"kind": "task", "state": "done"})))
+    assert graph.nodes["task:p/1"]["state"] == "done"
+
+
+def test_a_superseded_revision_leaves_no_trace_in_the_view():
+    """One locator is one node: the replaced revision is history in the log, not a second node."""
+    graph = fold(_log(_revision("int:x", "aaaa", family="intent", attrs={"status": "proposed"}),
+                      _revision("int:x", "bbbb", family="intent", attrs={"status": "satisfied"})))
+    assert [n for n in graph.nodes if n.startswith("int:x")] == ["int:x"]
+    assert graph.nodes["int:x"]["status"] == "satisfied"
+
+
+def test_three_revisions_collapse_to_the_last_arrival():
+    graph = fold(_log(_revision("task:p/2", "ccc", attrs={"kind": "task", "state": "todo"}),
+                      _revision("task:p/2", "aaa", attrs={"kind": "task", "state": "done"}),
+                      _revision("task:p/2", "bbb", attrs={"kind": "task", "state": "todo"})))
+    assert graph.nodes["task:p/2"]["state"] == "todo"
+
+
+def test_unrevisioned_families_still_fork_rather_than_collapse():
+    """The guarantee this must not weaken: memory/resolution are content-addressed with no locator, so
+    two differing bodies remain two comparable nodes for detect_conflicts (mem:c40131f8bbc3d374)."""
+    graph = fold(_log(_node("mem:1", attrs={"label": "tokens never expire"}),
+                      _node("mem:2", attrs={"label": "tokens expire in 30d"})))
+    assert {"mem:1", "mem:2"} <= set(graph.nodes)
+
+
+def test_revisions_of_different_locators_are_all_kept():
+    """Only revisions of the SAME locator compete; one plan's edit never drops another's."""
+    graph = fold(_log(_revision("task:p/1", "aaa", attrs={"kind": "task", "state": "todo"}),
+                      _revision("task:p/2", "bbb", attrs={"kind": "task", "state": "todo"}),
+                      _revision("task:p/1", "000", attrs={"kind": "task", "state": "done"})))
+    assert graph.nodes["task:p/1"]["state"] == "done"
+    assert graph.nodes["task:p/2"]["state"] == "todo"
+
+
+def test_a_teammates_revision_is_never_dropped_by_my_later_one():
+    """The guard, at the fold this time. Superseding is keyed on (locator, ACTOR), so arriving later
+    than a teammate never silences them — their machine may still hold that revision, so it stays the
+    open question divergence exists to raise (mem:98b78c14157ea054). Both survive the linearization;
+    which one the fold then shows is the contested-revision question this fix does NOT claim to answer.
+    """
+    from yigraf.log import causal_order
+
+    theirs = _revision("task:p/1", "aaa", attrs={"kind": "task", "state": "todo"},
+                       actor="teammate@example.com")
+    mine = _revision("task:p/1", "bbb", attrs={"kind": "task", "state": "done"})
+    surviving = {a.id for a in causal_order([theirs, mine])}
+    assert surviving == {theirs.id, mine.id}, "a different principal's revision is never superseded"
+
+
+def test_a_revision_without_a_named_actor_is_never_dropped():
+    """No actor means no way to know it is the same author's own history, so it is left alone."""
+    from yigraf.log import causal_order
+
+    a = _revision("task:p/1", "fff", attrs={"kind": "task", "state": "todo"}, actor=None)
+    b = _revision("task:p/1", "000", attrs={"kind": "task", "state": "done"}, actor=None)
+    assert {x.id for x in causal_order([a, b])} == {a.id, b.id}

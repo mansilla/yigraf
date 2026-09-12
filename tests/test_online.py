@@ -39,6 +39,7 @@ from yigraf.onlinelog import (
     validate_ingest,
     verify_provenance,
 )
+from yigraf.fold import FOLD_VERSION
 from yigraf.onlineview import ReadService
 from yigraf.status import compute_status
 
@@ -294,6 +295,38 @@ def test_consistency_flips_on_append_and_heals_on_refold():
     assert not c.current and c.view_seq == 1 and c.log_seq == 2
     rs.refold()
     assert rs.consistency().current
+
+
+def test_a_view_folded_by_an_older_fold_is_stale_even_at_the_current_head():
+    """The half of the revision fix that decides whether it reaches anyone.
+
+    Staleness asked only "has the log moved?", which is the right question while the fold is a fixed
+    function and the wrong one the moment it changes. A deployed engine whose fold now answers
+    differently would have gone on serving every already-materialized view unchanged — forever, since
+    no new assertion was coming to move the head. A view stamped with a different FOLD_VERSION (or
+    none, as every view written before the stamp existed) is stale and refolds exactly once.
+    """
+    from yigraf.onlinelog import ViewRow
+
+    log = _online()
+    log.append(_mem("mem:1", "a"))
+    rs = ReadService(log)
+    rs.refold()
+    assert rs.consistency().current
+
+    stored = log.store.read_view(log.project)
+    assert stored.node_link["graph"]["fold_version"] == FOLD_VERSION, "refold stamps the fold"
+
+    stale = dict(stored.node_link)
+    stale["graph"] = {k: v for k, v in stale["graph"].items() if k != "fold_version"}
+    log.store.write_view(log.project, ViewRow(node_link=stale, head_seq=stored.head_seq,
+                                              head_hash=stored.head_hash))
+    c = rs.consistency()
+    assert not c.current, "the log has not moved, but the function over it has"
+    assert c.view_seq == c.log_seq, "and it is NOT stale for the usual reason"
+
+    rs.load_current()
+    assert rs.consistency().current, "one refold heals it"
 
 
 def test_notify_drives_the_view_to_current_state():

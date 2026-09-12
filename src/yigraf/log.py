@@ -103,6 +103,72 @@ def assertion_id(kind: str, body: dict) -> str:
     return hashlib.sha256(blob).hexdigest()[:16]
 
 
+def _live_revisions(by_id: dict[str, Assertion]) -> dict[str, Assertion]:
+    """Keep only the newest revision of each revisioned locator; drop the history behind it.
+
+    The revisioned families (intent, plan — the ones whose ``body`` carries a stable ``locator`` while
+    their *id* carries the revision, :mod:`yigraf.filelog`) are the one case where two DIFFERENT ids
+    materialize the SAME node: :func:`yigraf.fold._node_id` maps every revision of ``task:<plan>/<n>``
+    back onto one node. So the fold's upsert is not "apply each id once" — it is a series of writes to
+    one node, and the LAST one wins.
+
+    That made the linearization's tiebreak load-bearing for something it cannot decide. Two revisions
+    of one task are causally unrelated (neither names the other as a parent), so they are "concurrent",
+    so the min-heap above ordered them **by id** — a content hash. The larger hash was applied last and
+    won, whatever it said and whenever it was written. Measured on the live server: of eight tasks in
+    one plan, the closed ones rendered as open exactly when their newer revision happened to hash lower
+    (``7e936ef1 < 87387891``), so a closed task read as open roughly half the time.
+
+    **Arrival order decides, and that is not a clock.** The later-appended revision is live. ``ts`` in
+    provenance could not do this job: the authority stamps ``actor`` but takes ``ts`` from the client
+    (``yigraf_server.service.OnlineService._stamp_actor``), so a workspace with a skewed clock would win
+    every race forever. Append order is the authority's own (``seq`` + the Merkle chain), and
+    log-append *is* how int:concurrent-write-model coordinates writes. This is the same rule
+    :meth:`yigraf.onlinelog.OnlineLog.superseded_revisions` already applies to answer the neighbouring
+    question ("strictly earlier arrival" = my own replaced history, not a teammate's disagreement); it
+    only never reached the fold.
+
+    Substrate-independence (mem:056080f0) is untouched, because the guarantee it makes is not exercised
+    here: it says the file and online substrates linearize the SAME content identically, and the file
+    substrate never holds two revisions of one locator — the FileLog emits the current file, once. The
+    id tiebreak therefore keeps deciding every case it was written for; it just stops deciding the one
+    case where "reproducible" and "right" had come apart.
+
+    ``by_id`` is relied on to be in arrival order: dicts preserve insertion order, and both substrates
+    insert in the order the log yields (``OnlineLog._collapsed`` walks ``iter_events`` by ``seq``). A
+    re-appended identical id keeps its first position, which is correct — same id means same content.
+
+    **Not a resolution of concurrent disagreement.** When two principals revise one locator
+    independently, this picks the one that landed second, which is last-writer-wins over a pair that
+    int:concurrent-write-model would rather surface as a conflict. It is strictly better than the hash
+    coin-flip it replaces and correct for the case that actually occurs (one author revising their own
+    plan over time), but the honest fix for contested revisions is to fork or flag them, and that needs
+    its own intent — the pair cannot even be compared today, because both revisions collapse to one node
+    (mem:c40131f8bbc3d374).
+    """
+    def _claims(a: Assertion) -> list[tuple[str, str]]:
+        """The ``(locator, actor)`` pairs this assertion is a revision of — empty for every
+        unrevisioned family, and for a revision whose provenance names no actor."""
+        locator = a.body.get("locator") if isinstance(a.body, dict) else None
+        if not locator:
+            return []
+        return [(locator, p["actor"]) for p in a.provenance
+                if isinstance(p, dict) and p.get("actor")]
+
+    position = {aid: i for i, aid in enumerate(by_id)}  # arrival order
+    newest: dict[tuple[str, str], int] = {}
+    for aid, a in by_id.items():
+        for key in _claims(a):
+            newest[key] = max(newest.get(key, -1), position[aid])
+    if not newest:
+        return by_id
+
+    superseded = {aid for aid, a in by_id.items()
+                  if (claims := _claims(a))
+                  and all(position[aid] < newest[key] for key in claims)}
+    return by_id if not superseded else {k: v for k, v in by_id.items() if k not in superseded}
+
+
 def causal_order(assertions: Iterable[Assertion]) -> list[Assertion]:
     """Deterministically linearize the causal-parent DAG (Kahn's algorithm, content-id tiebreak).
 
@@ -116,10 +182,14 @@ def causal_order(assertions: Iterable[Assertion]) -> list[Assertion]:
     ref) are ignored for ordering — the fold tolerates missing content. A cycle (append-only makes this
     impossible; guards a corrupt input) never hangs: once no zero-in-degree node remains, the rest are
     flushed in id order.
+
+    Superseded revisions are dropped first (:func:`_live_revisions`) — see there for why the id
+    tiebreak above cannot decide between two revisions of one locator, and must not try.
     """
     by_id: dict[str, Assertion] = {}
     for a in assertions:  # last-write-wins on an exact id dupe; real collapse happens in append()
         by_id[a.id] = a
+    by_id = _live_revisions(by_id)
 
     # In-degree counts only intra-log parent edges; children maps parent -> its dependents.
     indegree: dict[str, int] = {aid: 0 for aid in by_id}

@@ -30,7 +30,7 @@ from typing import Callable
 
 import networkx as nx
 
-from yigraf.fold import fold
+from yigraf.fold import FOLD_VERSION, fold
 from yigraf.graph import from_node_link, to_node_link
 from yigraf.onlinelog import GENESIS_HASH, OnlineLog, ViewRow
 
@@ -91,7 +91,12 @@ class ReadService:
         head = self.store.head(self.project)
         log_seq = head.seq if head else 0
         view_seq = view.head_seq if view else 0
-        return Consistency(current=(view is not None and view_seq == log_seq),
+        # A view folded by a DIFFERENT fold is stale even at the current head: the log has not moved,
+        # but the function over it has. Views written before the stamp existed carry no key and so are
+        # refolded once, which is what an upgrade should do.
+        folded_by = (view.node_link.get("graph") or {}).get("fold_version") if view else None
+        return Consistency(current=(view is not None and view_seq == log_seq
+                                    and folded_by == FOLD_VERSION),
                            view_seq=view_seq, log_seq=log_seq,
                            head_hash=head.entry_hash if head else GENESIS_HASH)
 

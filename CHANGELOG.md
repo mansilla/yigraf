@@ -4,6 +4,60 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.13.0] — 2026-09-12
+
+**A closed task read as open on the shared graph, and which half of them did was decided by a hash.**
+
+Found on the live console, not in a test: `task:graph-console/8` was checked off locally and rendered
+as open for everyone else. The log was right — it held both revisions, the newer one saying `done`.
+The fold picked the wrong one.
+
+### Arrival order decides which revision is live, not the id's hash
+
+The revisioned families (intent, plan) carry a stable `locator` in the body while the *id* carries the
+revision, and `fold._node_id` maps every revision back onto **one node**. So the fold is not "apply
+each id once" — it is a series of writes to one node, and the last write wins. Which write lands last
+was decided by `causal_order`: two revisions of one task name no causal parent, so they count as
+concurrent, so they were ordered **by id** — a content hash. The larger hash was applied last and won,
+whatever it said and whenever it was written.
+
+Measured on the live server: of eight tasks in one plan, the closed ones rendered as open exactly when
+their newer revision happened to hash lower (`7e936ef1 < 87387891`). About half of all closes.
+
+`log._live_revisions` now drops a revision that a later one **by the same actor** replaces, before the
+linearization runs. Three things that rule is careful about:
+
+* **It is not a clock.** The authority stamps `actor` but takes `ts` from the client, so ordering by
+  timestamp would let one skewed workspace clock win every race forever. Append order is the
+  authority's own (`seq` + the Merkle chain), and log-append is how int:concurrent-write-model
+  coordinates writes in the first place.
+* **Same actor only** — the same key `OnlineLog.superseded_revisions` already uses for the neighbouring
+  question. A *different* principal's revision is never dropped: their machine may still hold it, so it
+  stays the open question divergence exists to raise. This is what keeps the fix from quietly becoming
+  the last-writer-wins that int:concurrent-write-model forbids.
+* **Substrate-independence is untouched.** The id tiebreak exists so the file and online substrates
+  linearize the same content identically — a guarantee never exercised here, because the file substrate
+  never holds two revisions of one locator. It keeps deciding every case it was written for.
+
+Still open, and not claimed fixed: when two principals revise one locator independently, the pair
+collapses to one node and cannot even be compared. Forking or flagging contested revisions needs its
+own intent. (mem:5c1978661baeadfd)
+
+### A view now knows which fold produced it
+
+The fix would have changed nothing in production without this. A materialized view was checked for
+staleness against the **log head** only — the right question while the fold is a fixed function, and
+the wrong one the moment the fold changes. Every already-materialized view would have gone on serving
+the old answer forever, because no new assertion was coming to move the head.
+
+`FOLD_VERSION` is stamped by `fold()`/`fold_assertions()` onto every graph they produce, and
+`ReadService.consistency` treats a view folded by a different version — or by none, as every view
+written before this — as stale. One refold on the next read, then current. It rides inside the view's
+node-link JSON because the `views` table has no migration step at all, and it is set by the fold rather
+than by the view writer so the materialized view stays byte-identical to an in-memory fold of the same
+log. **Bump it whenever the fold would produce a different graph for the same log.**
+(mem:3bf26eadc94eb85a)
+
 ## [1.12.2] — 2026-09-12
 
 **The hashes a server cannot derive, sent by the client that already holds them.**
