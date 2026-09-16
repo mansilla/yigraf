@@ -4840,7 +4840,12 @@ def install_cmd(
         else:
             typer.echo(f"  post-commit → left your existing non-yigraf hook at {r.path} untouched")
     except FileNotFoundError:
-        typer.echo("  post-commit → skipped (not a git repository)")
+        # Say what git does and does not change, or the agent fills it in — the first field install of
+        # 1.14.1 in a non-git folder reported "drift anchoring runs in degraded mode" to its principal,
+        # from a line that named only the skip (1.14.2). Drift is content-hashed; it never needed git.
+        typer.echo("  post-commit → skipped (not a git repository). Drift detection is UNAFFECTED — it "
+                   "hashes content, not commits. Without git the view re-materializes on the next read "
+                   "instead of at each commit, and the survival clock for belief maturity cannot run.")
     typer.echo(f"  AGENTS.md   → {_write_agents_block(path / 'AGENTS.md')} (host-agnostic instructions)")
     typer.echo("  MCP pull server — the universal *fallback* channel, printed (not written) for any MCP")
     typer.echo("  host. If a push-hook host (Claude Code / Codex) is detected below, its hooks ARE your")

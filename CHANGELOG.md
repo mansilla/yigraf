@@ -4,6 +4,21 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.14.2] — 2026-09-16
+
+**A skipped git hook read as degraded drift detection.**
+
+In a folder with no `.git`, `yigraf install` printed `post-commit → skipped (not a git repository)` and
+nothing else. The first agent to install 1.14.1 in such a folder told its principal that *"drift
+anchoring runs in degraded mode"* and that `git init` would enable *"full drift detection"*. Neither is
+true: drift hashes content, never commits. A consequence left unsaid is a consequence the agent
+invents (design law #1), so the line now says what git changes and what it does not — without git the
+view re-materializes on the next read instead of at each commit, and the survival clock for belief
+maturity cannot run. Drift is unaffected.
+
+Also: the README's install section now opens with the one line an agent asked to "install
+github.com/mansilla/yigraf" needs — install the CLI from PyPI, do not clone the repo into the project.
+
 ## [1.14.1] — 2026-09-16
 
 **The first field install of 1.14.0 showed two things in one transcript.**

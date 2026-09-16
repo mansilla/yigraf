@@ -1,6 +1,6 @@
 [project]
 name = "yigraf"
-version = "1.14.1"
+version = "1.14.2"
 description = "A truth maintenance system for AI coding agents: one connected graph over code, intent, plan, and the why — every belief justified, anchored to the code it concerns, and flagged when it stops holding."
 readme = "README.md"
 requires-python = ">=3.11"

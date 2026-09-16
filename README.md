@@ -91,6 +91,10 @@ A capable agent installs the CLI, indexes your code, and connects yigraf to your
 Codex, Cursor, and friends are auto-detected; anything else gets the universal MCP server. It won't
 touch your `requirements.txt` (yigraf is a dev tool, not a runtime dependency).
 
+**If you are that agent:** the CLI comes from PyPI — `uv tool install yigraf` (or `pipx install yigraf`).
+This GitHub URL is the documentation, not the install source; do not clone the repo into the project.
+Then `yigraf init`, `yigraf build`, `yigraf install`, in the project root.
+
 Rather do it yourself? Three lines:
 
 ```bash

@@ -391,3 +391,14 @@ def test_the_agents_block_and_the_skill_tell_a_new_host_to_wire_itself():
     from yigraf import hooks
     assert "yigraf install --host <your-host>" in hooks._AGENTS_BLOCK
     assert "yigraf install --host <name>" in hooks.skill_text()
+
+
+# --- 1.14.2: a skipped git hook must not read as degraded drift --------------------------------------
+
+def test_install_without_git_says_drift_is_unaffected(tmp_path):
+    root = _repo(tmp_path)  # tmp_path holds no .git
+    res = runner.invoke(app, ["install", str(root), "--host", "mcp"])
+    assert res.exit_code == 0, res.output
+    assert "post-commit → skipped (not a git repository)" in res.output
+    assert "Drift detection is UNAFFECTED" in res.output
+    assert "degraded" not in res.output
