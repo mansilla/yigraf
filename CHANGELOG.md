@@ -4,6 +4,35 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.14.1] — 2026-09-16
+
+**The first field install of 1.14.0 showed two things in one transcript.**
+
+### A folder merely *named* `yigraf` above you is not an ancestor store
+
+The J#3 ancestor warning shipped in 1.14.0 tested only that a parent held a directory called
+`yigraf/`. The folder that contains this project's own clone is called `yigraf`, sits above every
+sibling repo under `~/Dev`, and holds no store — so `yigraf init` in a neighbouring repo warned about a
+workspace that did not exist, and the agent that met it wrote it off as *"harmless, a sibling
+folder"*. A false ⚠ is what teaches an agent to read the true one the same way. A workspace is now a
+`yigraf/` **with its `config.yaml`** — in the ancestor scan and in the hooks' root fallback alike.
+
+### `install` wires the hosts that have driven this repo, and only *names* the rest
+
+A repo marker (`.cursor/` here) says a host has worked in this repo; a HOME marker (`~/.cursor`) says
+only that it is installed. Since 1.12 `install` wired both and announced the directories it was about
+to create (feedback-v4). The announcement arrived in the same pass as the write, so it could not
+inform a choice, and the result — `.cursor/` and `GEMINI.md` in a repo those hosts had never opened —
+was deleted by the next agent that met it, in two repos in one day, without understanding it.
+
+Now `install` (auto) wires the repo-marker hosts and prints the HOME-only ones as *installed on this
+machine, never used in this repo — NOT wired*, with the `--host <name>` that wires one and the new
+`--host all` that wires every host detected. `install --plan` lists them under their own heading. The
+developer who drives one repo from two hosts is served by the second host's own first visit: it
+creates its repo marker, and the **AGENTS.md block** — the one surface every host reads — now tells a
+host with no yigraf wiring here to run `yigraf install --host <its-name>` once before starting. The
+skill says the same in §0. (Supersedes mem:300b01d0 and mem:643ef324.)
+
 ## [1.14.0] — 2026-09-16
 
 **Every fresh install shipped a dead `yigraf mcp`, and every hook went silent one `cd` below the root.**

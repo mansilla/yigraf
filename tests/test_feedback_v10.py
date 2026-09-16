@@ -139,6 +139,19 @@ def test_init_below_a_governed_root_warns_and_names_the_ancestor(tmp_path):
     assert str(root.resolve() / "yigraf") in res.output
 
 
+def test_a_directory_merely_named_yigraf_above_is_not_an_ancestor_store(tmp_path):
+    """`~/Dev/yigraf/yigraf` is this project's own clone: the folder that CONTAINS it is called
+    `yigraf`, sits above every sibling repo, and holds no config.yaml. It must not warn."""
+    (tmp_path / "yigraf" / "yigraf").mkdir(parents=True)  # a clone's parent folder, not a workspace
+    project = tmp_path / "arithmos"
+    project.mkdir()
+    assert cli._ancestor_workspace(project) is None
+    res = _run(project, "status")  # no store anywhere: the plain refusal, naming nothing above
+    assert res.exit_code == 1 and "one exists above you" not in res.output
+    res = runner.invoke(app, ["init", str(project)])
+    assert res.exit_code == 0 and "ancestor" not in res.output
+
+
 def test_init_at_a_plain_root_does_not_warn(tmp_path):
     res = runner.invoke(app, ["init", str(tmp_path)])
     assert res.exit_code == 0 and "ancestor" not in res.output
@@ -324,3 +337,57 @@ def test_both_hook_verbs_say_that_they_write():
 def test_the_migration_proof_skips_by_name_without_the_self_hosted_store():
     src = (REPO / "tests" / "test_migrate.py").read_text()
     assert "allow_module_level=True" in src and "self-hosted store" in src
+
+
+# --- 1.14.1: the two things the first field install of 1.14.0 showed ------------------------------
+
+def test_install_auto_wires_repo_hosts_and_only_names_home_only_hosts(tmp_path, monkeypatch):
+    """A HOME marker says 'installed on this machine', not 'used here'. 1.14.0 wired it anyway and the
+    next agent deleted `.cursor/` and `GEMINI.md` without understanding them — twice in one day."""
+    from yigraf import hooks
+    root = _repo(tmp_path)
+    home = tmp_path / "home"
+    (home / ".cursor").mkdir(parents=True)
+    (home / ".gemini").mkdir()
+    (root / ".claude").mkdir()
+    monkeypatch.setattr(hooks.Path, "home", classmethod(lambda cls: home))
+    assert hooks.detect_hosts_split(root) == (["claude"], ["cursor", "gemini"])
+    assert hooks.detect_hosts(root) == ["claude", "cursor", "gemini"]  # the union is unchanged
+    plan = runner.invoke(app, ["install", str(root), "--plan"]).output
+    assert "• claude" in plan and "○ cursor" in plan and "NOT wired" in plan
+    res = runner.invoke(app, ["install", str(root), "--host", "auto"])
+    assert res.exit_code == 0, res.output
+    assert "cursor, gemini: installed on this machine, never used in this repo — NOT wired" in res.output
+    assert "== claude" in res.output and "== cursor" not in res.output
+    assert not (root / ".cursor").exists() and not (root / "GEMINI.md").exists()
+
+
+def test_install_host_all_still_wires_every_detected_host(tmp_path, monkeypatch):
+    from yigraf import hooks
+    root = _repo(tmp_path)
+    home = tmp_path / "home"
+    (home / ".cursor").mkdir(parents=True)
+    monkeypatch.setattr(hooks.Path, "home", classmethod(lambda cls: home))
+    res = runner.invoke(app, ["install", str(root), "--host", "all"])
+    assert res.exit_code == 0, res.output
+    assert "== cursor" in res.output and (root / ".cursor" / "rules" / "yigraf.mdc").is_file()
+    assert "NOT wired" not in res.output
+
+
+def test_a_repo_marker_wires_the_host_on_its_own(tmp_path, monkeypatch):
+    """The newcomer path: a host's first visit creates its repo marker, and the next install wires it."""
+    from yigraf import hooks
+    root = _repo(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(hooks.Path, "home", classmethod(lambda cls: home))
+    (root / ".cursor").mkdir()
+    res = runner.invoke(app, ["install", str(root)])
+    assert res.exit_code == 0 and "== cursor" in res.output
+    assert (root / ".cursor" / "rules" / "yigraf.mdc").is_file()
+
+
+def test_the_agents_block_and_the_skill_tell_a_new_host_to_wire_itself():
+    from yigraf import hooks
+    assert "yigraf install --host <your-host>" in hooks._AGENTS_BLOCK
+    assert "yigraf install --host <name>" in hooks.skill_text()

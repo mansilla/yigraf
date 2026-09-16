@@ -2,7 +2,7 @@
 name: yigraf
 description: "Keep intent, code, and the reasoning behind them in sync when changing code in this repo. Read this skill before driving the CLI — the wrong verb rubber-stamps or destroys a trail. Before you report done, run `yigraf status`: up to date means no drift, no stale AND no unsettled rename, not the same as no open tasks."
 ---
-<!-- yigraf-skill-version: 1.14.0 -->
+<!-- yigraf-skill-version: 1.14.1 -->
 
 # yigraf — the intent↔code spine
 
@@ -27,6 +27,11 @@ Two companions to `context`, for the two questions it structurally cannot answer
 - **Don't know what to ask for?** Session start lists the *titles* of memories the packet didn't show
   ("Also known"). You can't formulate a query for knowledge you don't know exists, and a fresh session
   doesn't know any of it exists — so skim the titles, then `show` or `context` what looks relevant.
+
+**Switching or adding an agent host?** `yigraf install` wires only the hosts that have already driven
+this repo (a repo marker such as `.cursor/`), and only *names* the ones installed on the machine. The
+first time a new host works here, run `yigraf install --host <name>` once — `yigraf install --plan`
+lists every host it sees and which are unwired.
 
 ## 0b. Before you say you're done: `yigraf status`
 "Up to date" means **no drift, no stale, and no unsettled rename**. Those are all different from "no

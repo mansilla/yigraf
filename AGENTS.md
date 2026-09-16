@@ -9,6 +9,10 @@ written by a verb, never by hand; `yigraf tasks --open` lists what is left), and
 non-obvious choices (with
 `--why` and `--concerns <sym>`) — as the work lands, not as a closing ritual.
 
+If you are an agent host that has no yigraf wiring in this repo yet (no hook or rule of yours mentions
+yigraf), run `yigraf install --host <your-host>` once before you start — `install` wires only the hosts
+that have already driven this repo, so a newcomer wires itself.
+
 Before you report done, run `yigraf status`: "up to date" means **no drift, no stale and no unsettled
 rename**, which is not the same as no open tasks. Settle the rename first — it is the only one of the
 three that expires. `yigraf drift` explains the drift and lists any pending rename; `yigraf gc --apply`

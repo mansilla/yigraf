@@ -32,7 +32,7 @@ from yigraf.extract import build_graph, symbol_content_hash
 from yigraf.graph import from_node_link, write_graph  # legacy graph.json union-merge driver only
 from yigraf.languages import available_extractors, extension_map
 from yigraf.hooks import (AMBIENT_HOSTS, HOST_FIDELITY, SUPPORTED_HOSTS, TIER_AMBIENT, TIER_EVENT,
-                          _HOST_MARKERS, _write_agents_block, detect_hosts, install_ambient_rule,
+                          _HOST_MARKERS, _write_agents_block, detect_hosts, detect_hosts_split, install_ambient_rule,
                           install_antigravity, install_claude_hooks, install_codex_hooks,
                           install_post_commit_hook)
 from yigraf.scaffold import WORKSPACE_DIRNAME, init_workspace
@@ -390,6 +390,18 @@ def build(
         _guidance(f"  ⚠ {unwritable}")
 
 
+def _is_workspace(root: Path) -> bool:
+    """Does ``root`` hold a yigraf workspace — a ``yigraf/`` dir WITH its ``config.yaml``?
+
+    The directory name alone is not the test. A folder called ``yigraf`` that merely *contains* a
+    clone of this project (``~/Dev/yigraf/yigraf``) sits above every sibling repo under ``~/Dev``,
+    and the ancestor scan below walks all the way to ``/`` — so ``is_dir()`` alone warned every repo
+    on the author's own disk about a store that does not exist. A false ⚠ is what teaches an agent to
+    read the true one as harmless (design law #1). ``config.yaml`` is what ``init`` always writes.
+    """
+    return (Path(root) / WORKSPACE_DIRNAME / "config.yaml").is_file()
+
+
 def _ancestor_workspace(root: Path) -> Path | None:
     """The nearest ancestor of ``root`` that holds a ``yigraf/`` workspace, or ``None``.
 
@@ -402,7 +414,7 @@ def _ancestor_workspace(root: Path) -> Path | None:
     except OSError:
         return None
     for parent in resolved.parents:
-        if (parent / WORKSPACE_DIRNAME).is_dir():
+        if _is_workspace(parent):
             return parent / WORKSPACE_DIRNAME
     return None
 
@@ -4671,8 +4683,11 @@ def _build_install_plan(path: Path, config: dict, host: str) -> dict:
     the two on one source of truth means the menu can't drift from what the installer actually does.
     """
     choice = host.lower()
+    in_repo, home_only = detect_hosts_split(path)
     detected = detect_hosts(path)
     if choice == "auto":
+        push_targets = in_repo  # a home-only host is NAMED below, never wired unasked (1.14.1)
+    elif choice == "all":
         push_targets = detected
     elif choice in SUPPORTED_HOSTS:
         push_targets = [choice]
@@ -4688,7 +4703,8 @@ def _build_install_plan(path: Path, config: dict, host: str) -> dict:
             "python_ok": (py.major, py.minor) >= (3, 11),
             "git_repo": (Path(path) / ".git").is_dir(),
         },
-        "hosts": {"detected": detected, "target": choice, "push_targets": push_targets},
+        "hosts": {"detected": detected, "target": choice, "push_targets": push_targets,
+                  "home_only": home_only if choice == "auto" else []},
         # The ONE thing `install` writes that git tracks, so it is the one thing a dry-run most owes
         # the reader. `--plan` returns before `_retire_stale_preamble` by construction (inspect-only
         # must write nothing), which had the side effect of making the preview silent about it —
@@ -4753,6 +4769,11 @@ def _render_plan(plan: dict) -> None:
         typer.echo("\nWill wire (native push, by fidelity tier):")
         for h in hosts["push_targets"]:
             typer.echo(f"  • {h} — Tier {_TIER_LABEL.get(_host_tier(h), _host_tier(h))}")
+    if hosts["home_only"]:
+        typer.echo("\nInstalled on this machine, never used in this repo — NOT wired "
+                   "(`yigraf install --host <name>` when one of them drives this repo; `--host all` wires every one):")
+        for h in hosts["home_only"]:
+            typer.echo(f"  ○ {h} — would create {', '.join(m for m in _HOST_MARKERS[h] if m)} here")
 
     typer.echo("\nCore capabilities (included):")
     for item in plan["capabilities"]["core"]:
@@ -4774,9 +4795,10 @@ def _render_plan(plan: dict) -> None:
 def install_cmd(
     path: Path = typer.Argument(Path("."), help="Repo root to wire up."),
     host: str = typer.Option("auto", "--host",
-                             help="auto | claude | codex | antigravity | kilo | cursor | windsurf | "
+                             help="auto | all | claude | codex | antigravity | kilo | cursor | windsurf | "
                                   "kiro | gemini | copilot | mcp "
-                                  "(default: auto-detect)."),
+                                  "(default: auto — wires the hosts that have driven THIS repo; "
+                                  "`all` also wires every host installed on the machine)."),
     plan: bool = typer.Option(False, "--plan",
                               help="Inspect only: print the menu of what would be wired, apply nothing."),
     as_json: bool = typer.Option(False, "--json",
@@ -4854,22 +4876,24 @@ def install_cmd(
 
     # --- Host-specific push channels (layered on top of the generic channel above) ----------------
     choice = host.lower()
-    if choice == "auto":
-        targets = detect_hosts(path)
-        typer.echo("\nDetected host(s): " + (", ".join(targets) if targets
+    if choice in ("auto", "all"):
+        in_repo, home_only = detect_hosts_split(path)
+        targets = in_repo + home_only if choice == "all" else in_repo
+        typer.echo("\nDetected host(s): " + (", ".join(in_repo + home_only) if in_repo + home_only
                    else f"none ({', '.join(SUPPORTED_HOSTS)}) — the generic MCP channel covers you"))
-        # Say what is about to appear in the tree, and how to narrow it. Auto-detect is documented, and
-        # wiring two hosts is right for someone who drives this repo from two — but a host detected only
-        # by a HOME marker is "installed on this machine", not "used here", and those directories arrive
-        # untracked in a tree where every yigraf artifact is deliberately git-excluded, so they have to
-        # be excluded by hand before a commit can pick them up (feedback-v4). One line, before the fact.
-        from_home = [h for h in targets if h not in detect_hosts(path, home=path / "__no_home__")]
-        if from_home:
-            dirs = ", ".join(sorted({m for h in from_home for m in _HOST_MARKERS[h] if m}))
-            typer.echo(f"  {', '.join(from_home)} matched a marker in your HOME dir, not this repo — "
-                       f"wiring {'them' if len(from_home) > 1 else 'it'} creates {dirs} here. For one "
-                       f"host only, re-run with `--host <name>`; `yigraf install --plan` shows the "
-                       f"whole menu without applying any of it.")
+        # A host detected only by a HOME marker is "installed on this machine", not "used here". 1.12
+        # wired it anyway and announced the directories it was about to create (feedback-v4); the
+        # announcement arrived in the same pass as the write, so it could not inform a choice, and the
+        # files it named were deleted by the next agent that met them, twice in a day. Now it is NAMED
+        # and not wired: the host's first visit to this repo creates its marker, and the AGENTS.md block
+        # tells a newcomer to run `install --host <name>` (1.14.1). `--host all` is the one-command
+        # path for the developer who knows they drive this repo from every host on the machine.
+        if home_only and choice == "auto":
+            dirs = ", ".join(sorted({m for h in home_only for m in _HOST_MARKERS[h] if m}))
+            typer.echo(f"  {', '.join(home_only)}: installed on this machine, never used in this repo — "
+                       f"NOT wired (it would create {dirs} here). When one of them drives this repo, "
+                       f"`yigraf install --host <name>`; `yigraf install --host all` wires every host "
+                       f"detected. The AGENTS.md block tells a new host to do this itself.")
     elif choice in SUPPORTED_HOSTS:
         targets = [choice]
     else:  # "mcp" or any unrecognized host name → generic MCP channel above is all that's needed
@@ -4939,7 +4963,7 @@ def _hook_root(data: dict) -> Path:
     project_dir = ((data.get("workspace") or {}).get("project_dir") if isinstance(data.get("workspace"), dict)
                    else None)
     for candidate in (cwd, project_dir, os.environ.get(PROJECT_DIR_ENV)):
-        if candidate and (Path(candidate) / WORKSPACE_DIRNAME).is_dir():
+        if candidate and _is_workspace(Path(candidate)):
             return Path(candidate)
     return cwd
 

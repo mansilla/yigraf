@@ -122,6 +122,11 @@ Two companions to `context`, for the two questions it structurally cannot answer
   ("Also known"). You can't formulate a query for knowledge you don't know exists, and a fresh session
   doesn't know any of it exists — so skim the titles, then `show` or `context` what looks relevant.
 
+**Switching or adding an agent host?** `yigraf install` wires only the hosts that have already driven
+this repo (a repo marker such as `.cursor/`), and only *names* the ones installed on the machine. The
+first time a new host works here, run `yigraf install --host <name>` once — `yigraf install --plan`
+lists every host it sees and which are unwired.
+
 ## 0b. Before you say you're done: `yigraf status`
 "Up to date" means **no drift, no stale, and no unsettled rename**. Those are all different from "no
 open tasks", and an empty `context` packet is evidence of none of them — `context` answers the *topic*
@@ -397,6 +402,10 @@ searches by meaning and cannot match an id). After finishing a task, run
 written by a verb, never by hand; `yigraf tasks --open` lists what is left), and `yigraf remember` the
 non-obvious choices (with
 `--why` and `--concerns <sym>`) — as the work lands, not as a closing ritual.
+
+If you are an agent host that has no yigraf wiring in this repo yet (no hook or rule of yours mentions
+yigraf), run `yigraf install --host <your-host>` once before you start — `install` wires only the hosts
+that have already driven this repo, so a newcomer wires itself.
 
 Before you report done, run `yigraf status`: "up to date" means **no drift, no stale and no unsettled
 rename**, which is not the same as no open tasks. Settle the rename first — it is the only one of the
@@ -865,12 +874,30 @@ def detect_hosts(root: Path, home: Path | None = None) -> list[str]:
     antigravity, then the VS Code family kilo, cursor, windsurf); empty ⇒ `yigraf install` falls back to
     the universal MCP server.
     """
+    in_repo, home_only = detect_hosts_split(root, home)
+    return [h for h in SUPPORTED_HOSTS if h in in_repo or h in home_only]
+
+
+def detect_hosts_split(root: Path, home: Path | None = None) -> tuple[list[str], list[str]]:
+    """Detected hosts in two classes: ``(used in this repo, installed on this machine only)``.
+
+    A repo marker (``.cursor/`` here) says the host has driven THIS repo; a home marker (``~/.cursor``)
+    says only that it is installed. ``yigraf install`` auto-wires the first class and *names* the
+    second with the ``--host`` that wires it, because wiring on a home marker alone wrote ``.cursor/``
+    and ``GEMINI.md`` into repos those hosts never opened — twice in one day, in two repos, and both
+    times the agent deleted them without understanding why they were there (1.14.1, supersedes
+    mem:300b01d0). The developer who really drives one repo from two hosts is served by the host's own
+    first visit: it creates the repo marker, and the AGENTS.md block tells the newcomer to run
+    ``yigraf install --host <name>``. ``home`` is injectable for testing. Both lists are in install order.
+    """
     root = Path(root)
     home = Path(home) if home is not None else Path.home()
-    found = []
+    in_repo, home_only = [], []
     for host in SUPPORTED_HOSTS:
         repo_hit = any((root / m).exists() for m in _HOST_MARKERS[host])
         home_hit = any((home / m).exists() for m in _HOST_HOME_MARKERS[host])
-        if repo_hit or home_hit:
-            found.append(host)
-    return found
+        if repo_hit:
+            in_repo.append(host)
+        elif home_hit:
+            home_only.append(host)
+    return in_repo, home_only
