@@ -1,6 +1,6 @@
 """yigraf MCP server (int:mcp-server) — the verbs-as-functions and the tool registration surface.
 
-The MCP SDK is a core dependency (``yigraf install`` wires the pull channel by default), so
+The MCP SDK is a core dependency (``yigraf install`` prints the pull channel's host config), so
 ``build_server`` and the tool surface are always importable; the ``run_*`` functions are the CLI verbs
 as plain functions and need no SDK at all.
 """

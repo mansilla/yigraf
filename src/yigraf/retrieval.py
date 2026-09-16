@@ -638,7 +638,7 @@ def _manifest(graph: nx.DiGraph, config: dict, exclude: set[str], cap: int,
     ordered = _by_standing(graph, rest, config)
     header = ("Also known — titles only, so you know what there is to ask for "
               "(`yigraf show <id>` reads one in full):")
-    budget = None if char_cap is None else char_cap - len(header) - 100  # 100 ≈ the elision tail
+    budget = None if char_cap is None else char_cap - len(header) - 160  # 160 ≈ the elision tail
     lines, spent = [], 0
     for node_id in ordered[:cap]:
         attrs = graph.nodes[node_id]
@@ -653,9 +653,22 @@ def _manifest(graph: nx.DiGraph, config: dict, exclude: set[str], cap: int,
     if not lines:
         return []
     out = [header, *lines]
-    if len(ordered) > len(lines):
-        out.append(f"  … +{len(ordered) - len(lines)} more not listed — "
-                   f"`yigraf context \"<topic>\"` to search.")
+    # Two different absences, and the tail has to tell them apart (feedback-v10 C.1): titles the
+    # `manifest_titles` cap never reached (nothing is wrong — that is the cap working) versus titles the
+    # cap DID reach and the packet budget then cut. One title of fifteen at the shipped defaults read as
+    # a design choice, because "+443 more not listed" moves 4% between one title and fifteen and names
+    # no cause. The pin tail already names its knob at the moment it cuts; this is the same asymmetry
+    # closed — the count, the key that would have kept them, and the other thing that spends it.
+    cut = min(len(ordered), cap) - len(lines)
+    beyond = len(ordered) - min(len(ordered), cap)
+    tail = []
+    if cut > 0:
+        tail.append(f"+{cut} title(s) cut by the packet budget (session_start.token_budget — raise it, "
+                    f"or trim the preamble that spent it)")
+    if beyond > 0:
+        tail.append(f"+{beyond} more not listed")
+    if tail:
+        out.append(f"  … {' and '.join(tail)} — `yigraf context \"<topic>\"` to search.")
     return [*out, ""]
 
 
@@ -1376,8 +1389,14 @@ def session_context(graph: nx.DiGraph, config: dict, budget_tokens: int | None =
     so a bloated preamble visibly costs the ranked content it displaces, which is the feedback whoever
     wrote it needs. ``None`` (silent) only when there is genuinely nothing to say.
     """
-    budget = budget_tokens or config.get("retrieval", {}).get("query_token_budget", 4000)
     scfg = config.get("session_start", {}) or {}
+    # The packet's own budget (feedback-v10 C.1), on the precedent of `retrieval.hook_token_budget`
+    # for the edit hook. It sized itself from `query_token_budget` — the knob for a `context` answer —
+    # so tuning either moved the other, and a repo whose preamble + pins outgrew the knob could not
+    # widen the packet without also widening every query. Falls back to the query budget when unset,
+    # which is byte-identical to the old behaviour for every existing config.yaml.
+    budget = (budget_tokens or scfg.get("token_budget")
+              or config.get("retrieval", {}).get("query_token_budget", 4000))
     seeds = sorted(
         n for n, a in graph.nodes(data=True)
         if a.get("family") == "intent"

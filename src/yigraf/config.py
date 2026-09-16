@@ -325,6 +325,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # End the packet's head with the one-line `yigraf status` summary, so the rules arrive with
         # the live counts attached instead of as abstract advice.
         "append_status": True,
+        # Token budget for the whole SessionStart packet — the ranked slice and the titles manifest are
+        # sized to what the preamble and the pin block leave of it. Its own key (feedback-v10 C.1): it
+        # used to borrow `retrieval.query_token_budget`, the knob for a `context` answer, so one number
+        # sized two things that are tuned for different reasons.
+        "token_budget": 4000,
         # Token budget for `pinned` memories, rendered IN FULL. Whole nodes in or out, in relevance
         # order, with the elision stated — a pin tier only works if the budget BINDS (if everything
         # is pinned, session start is the new wallpaper). Most repos pin nothing and pay nothing.
@@ -480,6 +485,7 @@ session_start:
   # channel entirely.
 __PREAMBLE__
   append_status: true   # end the head with the one-line `yigraf status` summary (rules + live counts)
+  token_budget: 4000    # tokens for the whole packet; preamble + pins spend it first, then slice + titles
   pinned_budget: 800    # tokens for `pinned` memories, rendered IN FULL, whole nodes only
   manifest_titles: 15   # titles-only of that many memories the packet didn't show (0 = off)
 

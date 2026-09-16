@@ -2,7 +2,7 @@
 name: yigraf
 description: "Keep intent, code, and the reasoning behind them in sync when changing code in this repo. Read this skill before driving the CLI — the wrong verb rubber-stamps or destroys a trail. Before you report done, run `yigraf status`: up to date means no drift, no stale AND no unsettled rename, not the same as no open tasks."
 ---
-<!-- yigraf-skill-version: 1.13.1 -->
+<!-- yigraf-skill-version: 1.14.0 -->
 
 # yigraf — the intent↔code spine
 
@@ -70,8 +70,14 @@ plus the rejected option is enough; capture at the *conclusion*, not mid-thinkin
   supersedes trail** — a locus repair is not a mind-change, and filing it as one writes a false entry
   into the most valuable structure in the graph. An anchor that never belonged at all →
   `yigraf unlink mem:<id> <ref>` (works for `concerns` and `grounded_by`). Reanchoring onto a locus the
-  node **already carries** cannot move anything, so it drops `<old>` and says so — that is a removal,
-  and no verb adds a `concerns` anchor back.
+  node **already carries** cannot move anything, so it drops `<old>` and says so — that is a removal;
+  a content `concerns` anchor comes back only by editing the file, a policy one by
+  `yigraf reaffirm mem:<id> --governs <locus>`.
+- A claim about how a file is **used** (not what it contains) that was captured on a content hash
+  drifts on every edit that obeys it. Re-kind it in place, no supersede:
+  `yigraf reanchor mem:<id> <locus> <locus> --governs` (or `reaffirm mem:<id> --governs <locus>`,
+  which also ADDS the policy anchor if the node does not carry it yet). A `--governs` anchor has no
+  hash and never drifts — so it is wrong for a claim about a *value* at a key, which you want to drift.
 - Decision holds but what you WROTE about it is wrong (a `--why` your shell mangled, a typo in the
   claim)? `yigraf amend mem:<id> --why "<the reasoning, stated right>"` repairs the record, also with
   no supersedes trail. It reports a NEW id — a memory id is a hash of its own statement/why/rejected —

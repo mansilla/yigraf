@@ -4,6 +4,127 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.14.0] — 2026-09-16
+
+**Every fresh install shipped a dead `yigraf mcp`, and every hook went silent one `cd` below the root.**
+
+The seventh field send (feedback-v10, against 1.13.1). Both headline defects reproduced here before a
+line was changed, and neither could have been seen from inside this repo — which is the finding.
+
+### The MCP dependency is capped at `<2` (J#1)
+
+`mcp>=1.2` had no upper bound. mcp 2.0.0 (2026-07-28) renamed `FastMCP` to `MCPServer` and left a
+stub module whose import raises, so from that day every `pip install yigraf` resolved 2.x and
+`build_server` died at start-up with `ModuleNotFoundError: mcp.server.fastmcp`. A host reports only
+`✘ Failed to connect`; the message mcp wrote for exactly this case reaches no surface a user reads. No
+other verb was affected — the import is lazy — so nothing failed at install time.
+
+`uv.lock` pinned 1.28.1, which is why the dev loop and the suite never saw it: **a lockfile protects the
+developer and not the user**, and the only observation that separates the two is an *unlocked* install
+of the built wheel, the one thing a maintainer never runs. Now:
+
+* `"mcp>=1.2,<2"`; the lock moves to 1.30.0 (uploaded the same day as 2.2.0, so the 1.x line is
+  current). Moving to `MCPServer` is a deliberate port when it happens, not a resolver accident.
+* `.github/workflows/unlocked-install.yml` — the field's YAML, taken: build the wheel, install it into a
+  bare venv with no lockfile on the floor and the ceiling of `requires-python`, assert `build_server`
+  constructs and every verb starts. It would have gone red on 2026-07-28.
+* `yigraf mcp --help` no longer ends *"so this always runs"* — that was the false sentence a reader met
+  while diagnosing. Same correction in `mcp_server.py`, `docs/mcp.md` and the MCP test module.
+
+### Hooks resolve the root from `$CLAUDE_PROJECT_DIR` when `cwd` holds no store (J#3)
+
+All three hook handlers resolved the workspace from the payload's `cwd`, which by the host's own
+documentation *"follows Claude: … the new directory after Claude runs `cd`"*. One `cd` in a shell call
+and SessionStart, PostToolUse and Stop all measured **0 bytes** — with fail-open making that
+indistinguishable from "nothing to say" (design law #4 working correctly, which is exactly why silence
+cannot carry this signal). The field proposed falling back to the payload's `workspace.project_dir`;
+that field is documented for the statusLine event only. The documented contract for hook commands is
+the **`CLAUDE_PROJECT_DIR` environment variable** — *"the project root where the session started"*,
+exported to every hook command and stdio MCP server, pinned across `cd` and worktrees — which this
+repo's own `docs/statusline.md` already used and no code read.
+
+`_hook_root` now takes the first candidate that *holds* a workspace: `cwd` (unchanged first choice, so
+a nested store the agent is inside still wins), then `workspace.project_dir` when a host supplies it,
+then `$CLAUDE_PROJECT_DIR`. Still **no parent-directory search** — the hook reads the store the CLI
+would. The statusline resolves the same way; it read `current_dir`, which follows `cd` too.
+
+Around the same defect: the refusal read *"No yigraf workspace at yigraf"* from anywhere below the root
+(`--repo` defaults to `.` and the path was interpolated unresolved). It now names the resolved path,
+states the rule, and when an ancestor holds a store, **names it and the `--repo` that reaches it**.
+Following the old advice — `yigraf init` from a subdirectory — succeeded silently and created a second
+store nothing above ever read; `init` now warns and names the ancestor. Warn, not refuse: a monorepo
+package may legitimately want its own store, and the harm measured was silence, not breakage.
+
+### `--governs` on the repair verbs — the verb carried from R§5, both halves (C.2)
+
+A claim about how a file is *used* ("`status.md` holds ONLY status") captured on a content hash drifts
+on every edit that obeys it; the field watched one drift three times in a day. `--governs` existed on
+three capture verbs only, so converting an existing claim needed a `supersede` filing a mind-change
+nobody had — or the two-line frontmatter edit the field found working off-contract.
+
+* `yigraf reanchor <id> <locus> <locus> --governs` re-kinds the anchor **in place** (this is not the
+  "already carried → drop" branch; same locus, new kind is the whole point). With a different `new`, it
+  moves and converts in one step. Refused on an evidence-only ref: grounding cites contents and is never
+  a policy anchor.
+* `yigraf reaffirm <id> --governs <locus>` re-kinds a carried anchor, or **adds** the policy anchor if the
+  node does not carry it — the one anchor a re-verification may add, because it has no hash to stamp
+  over code you would have had to re-read. Validated exactly as capture validates `--governs`: the locus
+  exists now, and a line range is refused. This is the *adds* half (G#5/G#10) for the policy kind; the
+  `reanchor`/`unlink` drop ⚠ and the reaffirm evidence line now name it instead of *"no verb adds a
+  `concerns` anchor back"*. A content `concerns` anchor still comes back only through `supersede` (a
+  restatement) or an edit.
+
+The skill teaches both routes, and when `--governs` is *wrong*: a claim about a value at a key wants to
+drift when the key changes.
+
+### The manifest tail names its cause, and SessionStart has its own budget (C.1)
+
+`_manifest` is built last and trimmed to whatever the preamble, pins and slice left; at the shipped
+defaults with a 108-line preamble it emitted **one title of fifteen**, and its tail — `+443 more not
+listed` — moved 4% between one title and fifteen and named no cause. One title reads as a design
+choice. The pin tail already names its knob at the moment it cuts; the asymmetry is closed: `+14
+title(s) cut by the packet budget (session_start.token_budget — raise it, or trim the preamble that
+spent it) and +426 more not listed`. The two absences are different facts and are now said apart.
+
+`session_start.token_budget` (default 4000) sizes the packet, on the precedent of
+`retrieval.hook_token_budget` for the edit hook. It borrowed `retrieval.query_token_budget` — the knob
+for a `context` answer — so tuning either moved the other. Unset, it falls back to the query budget:
+byte-identical for every existing config.
+
+### Smaller
+
+* **`tests/test_migrate.py` skips as a module, by name, where it would be vacuous (J#2).** The proof
+  runs over the self-hosted store, which is gitignored; on a clone or the sdist `_family_nodes` is empty,
+  seven of eight tests compared `set() == set()`, and the one that failed was the only honest signal.
+  The skip says what is missing. The durable fix — a small fixture store so the proof runs anywhere —
+  is the field's offer, and it is accepted: send it.
+* **Three surfaces said `install` wires the MCP server; it prints the config (J#4).** The pyproject
+  comment, `install --plan` and `install --help` now say *printed for you to paste, not written*. Raised
+  because `--plan` is the preview a cautious reader trusts, and the field trusted it.
+* **`yigraf hook session-start --dry-run` renders without recording (J#5).** The verb recorded every
+  shown node as a surfacing, so rendering the packet to inspect it perturbed the counters — after a
+  measurement baseline had been frozen. Both hook verbs' help now say they write.
+
+**Not changed (§B — the fifth send's five, routed):**
+
+* **G#7** (`section_offer_margin` inert on `(0, 1.0]`) — *agree, not fixed here*: `wins_by` is right that
+  `top ≥ runner_up` by construction; the fix is to refuse or clamp a margin ≤ 1.0 at config load with a
+  message, and it rides with the ledger work below. **§H: collect the accept rate at 1.2.**
+* **G#11** (a workspace shadows the installed package) — *disagree, for now*: the shadow is a property of
+  running Python from a repo root with a `yigraf/` directory, and `conftest.py` already fails once with
+  the one-line fix; the remaining exposure is a user importing yigraf from a shell at their own repo root,
+  which the CLI entry point never does.
+* **G#12** (`tasks ""` is `plan`'s wording) — *too small this round*, taken as a string fix next.
+* **G#9** (the offer-ledger row carries no margin) — *fixed differently, later*: the row keeps both scores
+  so any margin re-scores offline; a `margin` key would be one more thing to keep honest.
+* **G#6** (duplicate `int:` id on a case-sensitive volume) — *not triaged*: no case-sensitive volume here
+  either.
+
+**Open, and yours to settle if you can (§G):** `cryptography` 50.0.1 publishes arm64-only macOS wheels
+and reaches yigraf through `mcp → pyjwt → cryptography`. Confirmed on PyPI. Whether that makes
+`pip install yigraf` fail on real Intel macOS without a Rust toolchain is unmeasured; if it does, the
+fix is a floor on `cryptography` or a source-wheel route, not a cap.
+
 ## [1.13.1] — 2026-09-12
 
 **A task you deleted came back, because absence is invisible to an append-only log.**

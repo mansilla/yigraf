@@ -1,6 +1,6 @@
 [project]
 name = "yigraf"
-version = "1.13.1"
+version = "1.14.0"
 description = "A truth maintenance system for AI coding agents: one connected graph over code, intent, plan, and the why — every belief justified, anchored to the code it concerns, and flagged when it stops holding."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -47,9 +47,13 @@ dependencies = [
     "tree-sitter-bash>=0.23,<0.25",
     "tree-sitter-sql>=0.3,<0.4",
     # The MCP SDK is a core dependency, not an extra: `yigraf mcp` is the universal pull channel every
-    # host speaks, and `yigraf install` wires it by default (full power out of the box). It's a single
-    # small pure-Python package.
-    "mcp>=1.2",
+    # host speaks, and `yigraf install` prints its host config by default (full power out of the box).
+    # It's a single small pure-Python package. CAPPED at <2: mcp 2.x renamed FastMCP → MCPServer and
+    # left a stub whose import raises, so an unbounded spec shipped a dead `yigraf mcp` to every fresh
+    # install while uv.lock kept the dev loop on 1.x (feedback-v10 J#1). The lockfile protects the
+    # developer, never the user — .github/workflows/unlocked-install.yml is the check that resolves
+    # what `pip install yigraf` resolves. Moving to 2.x is a deliberate port, not a resolver accident.
+    "mcp>=1.2,<2",
     # Semantic recall over memory+intent (M8, docs/retrieval-design.md §10) — now CORE, on by default.
     # fastembed runs the same bge-small model on ONNX Runtime (~68MB) instead of torch (~1GB+), with
     # measured ≈0.9999 cosine parity on this task (its default artifact is fp16, not int8). That makes

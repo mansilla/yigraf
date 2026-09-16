@@ -338,11 +338,19 @@ def init(
     """Create the yigraf/ workspace in a repo (idempotent)."""
     result = init_workspace(path)
     if result.already_initialized:
-        typer.echo(f"yigraf workspace already present at {result.workspace} — nothing to do.")
+        typer.echo(f"yigraf workspace already present at {result.workspace.resolve()} — nothing to do.")
         raise typer.Exit()
-    typer.echo(f"Initialized yigraf workspace at {result.workspace}")
+    typer.echo(f"Initialized yigraf workspace at {result.workspace.resolve()}")
     for rel in result.created:
         typer.echo(f"  + {rel}")
+    # Warn, never refuse (feedback-v10 J#3): a monorepo package or a submodule may want its own store.
+    # The harm measured in the field was silence — an agent that followed "run `yigraf init`" from a
+    # subdirectory wrote a month of decisions into a store the repo above never read.
+    if (above := _ancestor_workspace(Path(path))) is not None:
+        typer.echo(f"  ⚠ An ancestor already holds a yigraf workspace at {above}. yigraf does not search "
+                   f"parent directories, so from here every verb and hook reads THIS store and nothing "
+                   f"captured here surfaces there. If you meant that repo, remove this one "
+                   f"(`rm -rf {result.workspace.resolve()}`) and run from {above.parent}.")
     if result.skipped:
         typer.echo(f"  ({len(result.skipped)} item(s) already existed, left untouched)")
 
@@ -356,10 +364,7 @@ def build(
 ) -> None:
     """Extract the structure graph into the gitignored SQLite materialized view (yigraf/.local/graph.db)."""
     root = Path(path)
-    workspace = root / WORKSPACE_DIRNAME
-    if not workspace.is_dir():
-        typer.echo(f"No yigraf workspace at {workspace} — run `yigraf init` first.", err=True)
-        raise typer.Exit(code=1)
+    workspace = _require_workspace(root)
 
     config = load_config(workspace / "config.yaml")
     graph, stats = graphdb.rebuild(root, config)  # build + materialize the view (survival git-derived, R2)
@@ -385,11 +390,49 @@ def build(
         _guidance(f"  ⚠ {unwritable}")
 
 
+def _ancestor_workspace(root: Path) -> Path | None:
+    """The nearest ancestor of ``root`` that holds a ``yigraf/`` workspace, or ``None``.
+
+    Read-only, and used only to *name* it — yigraf does not search parent directories (a repo-root
+    tool resolves from where it is invoked, and a monorepo package may legitimately want its own
+    store). What it must never do is stay silent about the difference (feedback-v10 J#3).
+    """
+    try:
+        resolved = root.resolve()
+    except OSError:
+        return None
+    for parent in resolved.parents:
+        if (parent / WORKSPACE_DIRNAME).is_dir():
+            return parent / WORKSPACE_DIRNAME
+    return None
+
+
+def _no_workspace(root: Path) -> NoReturn:
+    """The one stop-condition refusal: no store here. Resolved path, the rule, and the way out.
+
+    ``--repo`` defaults to ``.``, so the unresolved form read *"No yigraf workspace at yigraf"* from
+    anywhere below the root — the same defect wearing a longer path with ``--repo sub/deeper``. And
+    the advice it gave, ``yigraf init``, *succeeds* one directory down and creates a second store that
+    nothing above ever reads (feedback-v10 J#3). Naming the ancestor turns that into the retry that
+    works (design law #1); the exit stays non-zero because a missing workspace is a genuine stop.
+    """
+    workspace = (root / WORKSPACE_DIRNAME).resolve()
+    above = _ancestor_workspace(root)
+    if above is not None:
+        typer.echo(f"No yigraf workspace at {workspace}. yigraf does not search parent directories, "
+                   f"and one exists above you at {above} — run from {above.parent} or pass "
+                   f"`--repo {above.parent}`. (`yigraf init` here would create a SECOND store that the "
+                   f"one above never reads.)", err=True)
+    else:
+        typer.echo(f"No yigraf workspace at {workspace} — run `yigraf init` at the repo root first "
+                   f"(yigraf does not search parent directories).", err=True)
+    raise typer.Exit(code=1)
+
+
 def _require_workspace(root: Path) -> Path:
     workspace = root / WORKSPACE_DIRNAME
     if not workspace.is_dir():
-        typer.echo(f"No yigraf workspace at {workspace} — run `yigraf init` first.", err=True)
-        raise typer.Exit(code=1)
+        _no_workspace(root)
     return workspace
 
 
@@ -1073,9 +1116,16 @@ def reanchor(
     target: str = typer.Argument(..., help="The memory id (mem:NNN) whose anchor moved."),
     old: str = typer.Argument(..., help="The anchor to move, exactly as the node carries it (concerns or grounded_by)."),
     new: str = typer.Argument(..., help="Where the subject now lives: sym:<path>#<name>, file:<path>[:L<a>-L<b>] or — in markdown — file:<path>#<section>."),
+    governs: bool = typer.Option(False, "--governs", help="Re-KIND the moved anchor as a policy anchor (governs the USE of the locus: no content hash, never drifts). `reanchor <id> X X --governs` converts an anchor in place."),
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
 ) -> None:
     """Move ONE anchor to the locus its subject moved to — a locus repair, not a mind-change.
+
+    ``--governs`` is the re-kind half of the same repair (feedback-v10 C.2): a claim about how a file
+    is *used* that was captured on a content hash drifts on every edit that obeys it, and until now
+    the only in-contract route to a policy anchor was a ``supersede`` filing a mind-change nobody had.
+    ``reanchor <id> <locus> <locus> --governs`` converts it where it stands; with a different ``new``
+    it moves and converts in one step. The claim, its why and its history stay untouched either way.
 
     The missing verb the field paid for four times (feedback-v3 #2): re-pointing a moved anchor had to
     route through `supersede`, which files a mind-change nobody had — four nodes whose entire body
@@ -1109,6 +1159,10 @@ def reanchor(
     if not (new.startswith("sym:") or new.startswith("file:")):
         _guidance(f"the new locus must be sym:<path>#<name>, file:<path>[:L<a>-L<b>] or, in markdown, "
                   f"file:<path>#<section>, got: {new}")
+    if governs and not in_concerns:
+        _guidance(f"--governs re-kinds a `concerns` anchor, and {target} carries {old} only as evidence "
+                  f"(`grounded_by`). Evidence cites contents, so it is never a policy anchor — move it "
+                  f"without --governs, or `yigraf unlink {target} {old}` if it never belonged.")
     graph, _ = build_graph(repo, config)
     if new.startswith("sym:") and "#" not in new:
         _refuse_bare_sym(graph, new, "reanchor")
@@ -1118,8 +1172,10 @@ def reanchor(
     # success line says "the claim and its history are unchanged" (true of the claim, false of what the
     # anchor MEANS). GOVERNS_ALGO's docstring named `reaffirm` as the only re-stamper that must leave it
     # alone; `reanchor` is the second. The new locus is validated as a policy locus, not merely resolved.
-    governs_move = in_concerns and any(
+    already_policy = in_concerns and any(
         c.sym == old and (c.anchor_algo or "") == memory.GOVERNS_ALGO for c in node.concerns)
+    governs_move = already_policy or (governs and in_concerns)
+    rekinded = governs and in_concerns and not already_policy
     # Evidence is never a policy anchor (grounding cites contents, not use), so a ref carried on BOTH
     # lists resolves twice — the policy kind for the concern, a content hash for the evidence.
     content_anchor = None
@@ -1149,7 +1205,12 @@ def reanchor(
     if in_concerns:
         anchor, algo = (None, memory.GOVERNS_ALGO) if governs_move else content_anchor
         label = "governs" if governs_move else "concerns"
-        if any(c.sym == new for c in node.concerns):
+        if new == old and rekinded:
+            # The in-place conversion (feedback-v10 C.2): same locus, new kind. Not the drop branch
+            # below — `new` being "already carried" is the whole point here, not a collision.
+            node.concerns = [memory.Concern(sym=new, anchor=None, anchor_algo=memory.GOVERNS_ALGO)
+                             if c.sym == old else c for c in node.concerns]
+        elif any(c.sym == new for c in node.concerns):
             node.concerns = [c for c in node.concerns if c.sym != old]  # already anchored there — drop the old
             dropped.append(label)
         else:
@@ -1167,15 +1228,21 @@ def reanchor(
     path.write_text(memory.render_memory(node), encoding="utf-8")
     _rebuild(repo)
     lines = []
+    if rekinded and new == old:
+        lines.append(f"Re-kinded {old} on {target}: it is now a policy anchor (governs — never drifts); "
+                     f"the content hash is gone, so edits to it no longer ask for a reaffirm.")
     if moved:
-        lines.append(f"Reanchored {target} ({' + '.join(moved)}): {old} ⇒ {new}."
-                     + (" It stays a policy anchor (governs — never drifts)." if governs_move else ""))
+        kind_note = ("" if not governs_move else
+                     " It is now a policy anchor (governs — never drifts)." if rekinded else
+                     " It stays a policy anchor (governs — never drifts).")
+        lines.append(f"Reanchored {target} ({' + '.join(moved)}): {old} ⇒ {new}." + kind_note)
     if dropped:
         lines.append(f"⚠ Dropped {old} from {target} ({' + '.join(dropped)}) — {new} was already there, "
                      f"so this REMOVED an anchor rather than moving one, exactly as "
                      f"`yigraf unlink {target} {old}` would have. That is one fewer locus watched for "
-                     f"drift, and no verb adds a `concerns` anchor back: recovering both needs an edit "
-                     f"to {path.name}.")
+                     f"drift. A content `concerns` anchor comes back only by editing {path.name}; as a "
+                     f"POLICY anchor (governs — never drifts), `yigraf reaffirm {target} --governs {old}` "
+                     f"restores it without a supersede.")
     lines.append("The claim and its history are unchanged — no supersede recorded.")
     typer.echo(" ".join(lines))
 
@@ -2500,6 +2567,7 @@ def _guard_reaffirm_burst(repo: Path, config: dict, target: str, verified: str |
 def reaffirm(
     target: str = typer.Argument(..., help="A memory id (mem:NNN → reaffirm its concerns) or a locus (sym:<path>#<name> or file:<path> → reaffirm every memory concerning it)."),
     concerns: list[str] = typer.Option(None, "--concerns", help="With a mem: id, re-anchor only these loci (default: all the node's concerns)."),
+    governs: list[str] = typer.Option(None, "--governs", help="With a mem: id, make this locus a POLICY anchor (governs the USE of it: no content hash, never drifts) — re-kinding it if the node already concerns it, adding it if not. sym:<path>#<name>, file:<path> or file:<path>#<section>; must exist (repeatable)."),
     grounding: str = typer.Option(None, "--grounding", help=f"With a mem: id, upgrade its grounding in place ({' | '.join(memory.GROUNDINGS)}) — e.g. a live spike just confirmed an inferred decision."),
     evidence: list[str] = typer.Option(None, "--evidence", help="With a mem: id, name/re-anchor the observation grounding it (required to reach empirical): sym:<path>#<test> | file:<path> | commit:<sha> | <url> (repeatable)."),
     verified: str = typer.Option(None, "--verified", help="One line naming what you actually re-read. Required past a burst of unverified single-id reaffirms; recorded in the local audit ledger."),
@@ -2518,11 +2586,20 @@ def reaffirm(
     **every** memory concerning that locus — the honest batch for an edit-heavy session, scoped to a
     locus you actually re-verified. There is deliberately no blanket "clear all drift" (that would
     rubber-stamp decisions you never re-checked — the dishonesty ``reaffirm`` exists to avoid; mem:031).
+
+    ``--governs <locus>`` is the one anchor a re-verification may ADD as well as re-kind (feedback-v10
+    C.2, the verb carried from R§5): a policy anchor has no content hash, so "this belief governs how
+    that locus is used" is exactly the statement re-verifying the belief entitles you to make, and it is
+    the anchor the ``reanchor``/``unlink`` drop ⚠ used to say no verb could restore. A *content*
+    ``concerns`` anchor is still not added here — that stamps a hash over code you would have to have
+    re-read, which is ``supersede``'s restatement, not a reaffirm.
     """
     workspace = _require_workspace(repo)
     config = load_config(workspace / "config.yaml")
     if grounding is not None and grounding not in memory.GROUNDINGS:
         _guidance(f"--grounding must be one of {', '.join(memory.GROUNDINGS)} (got {grounding}).")
+    if governs and not target.startswith("mem:"):
+        _guidance("--governs names a policy anchor on ONE memory — give the mem: id, not a locus.")
 
     if target.startswith("mem:"):
         path = memory.find_memory(repo, target)
@@ -2585,10 +2662,24 @@ def reaffirm(
                       f"`yigraf unlink {target} {stale_grounds[0]}`.")
         # A pure grounding upgrade is meaningful even for a memory with no concerns anchor (the claim is
         # unchanged; only its epistemic status advances) — so require concerns only when nothing else acts.
-        if not node.concerns and grounding is None and not added_evidence:
+        if not node.concerns and grounding is None and not added_evidence and not governs:
             _guidance(f"{target} concerns no symbol/file and you named no --evidence, so there is nothing "
                       f"to re-anchor. To record that a live observation confirms it, "
-                      f"`yigraf reaffirm {target} --grounding empirical --evidence <locus>`.")
+                      f"`yigraf reaffirm {target} --grounding empirical --evidence <locus>`; to say "
+                      f"it governs how a locus is used, `yigraf reaffirm {target} --governs <locus>`.")
+        # Policy anchors first, so the re-stamp below sees them as GOVERNS and leaves them alone. Each
+        # locus is validated exactly as capture validates `--governs` (exists now, not a line range).
+        policy_rekinded, policy_added = [], []
+        if governs:
+            graph, _ = build_graph(repo, config)
+            for pol in _resolve_governs(repo, config, graph, governs):
+                carried = next((c for c in node.concerns if c.sym == pol.sym), None)
+                if carried is None:
+                    node.concerns.append(pol)
+                    policy_added.append(pol.sym)
+                elif (carried.anchor_algo or "") != memory.GOVERNS_ALGO:
+                    carried.anchor, carried.anchor_algo = None, memory.GOVERNS_ALGO
+                    policy_rekinded.append(pol.sym)
         only = set(concerns or [])
         unknown = only - {c.sym for c in node.concerns}
         if unknown:
@@ -2636,13 +2727,24 @@ def reaffirm(
                 typer.echo(f"  {', '.join(fresh)} {'is' if one else 'are'} now evidence FOR {target}, "
                            f"on `grounded_by` — not {'a ' if one else ''}`concerns` anchor{plural}, "
                            f"which is the code the claim GOVERNS, and only a governed locus surfaces "
-                           f"as one. This does not add a `concerns` anchor back; no verb does. If the "
-                           f"belief governs {'it' if one else 'them'} too, restate it with the anchors "
-                           f"it should carry: `yigraf supersede {target} \"<the belief, restated>\" "
-                           f"{anchors}` (--concerns replaces the list, so name every one).")
+                           f"as one. This does not add a `concerns` anchor back. If the belief governs "
+                           f"how {'it is' if one else 'they are'} USED, `yigraf reaffirm {target} "
+                           + " ".join(f"--governs {r}" for r in fresh)
+                           + f"` adds {'a ' if one else ''}policy anchor{plural} (never drifts) with no "
+                           f"supersede; if it depends on {'its' if one else 'their'} CONTENTS, restate it "
+                           f"with the anchors it should carry: `yigraf supersede {target} "
+                           f"\"<the belief, restated>\" {anchors}` (--concerns replaces the list, so "
+                           f"name every one).")
+        if policy_rekinded:
+            typer.echo(f"Reaffirmed {target}: {', '.join(policy_rekinded)} re-kinded to a policy anchor "
+                       f"(governs — never drifts); the content hash is gone, so edits that obey it no "
+                       f"longer ask for a reaffirm.")
+        if policy_added:
+            typer.echo(f"Reaffirmed {target}: now governs {', '.join(policy_added)} (policy anchor — "
+                       f"surfaces at the edit hook, never drifts). No supersede recorded.")
         if restamped:
             typer.echo(f"Reaffirmed {target}: re-anchored {', '.join(restamped)} to current code — drift cleared.")
-        elif not gone and not upgraded and not added_evidence:
+        elif not gone and not upgraded and not added_evidence and not policy_rekinded and not policy_added:
             typer.echo(f"Reaffirmed {target}: anchors already matched the current code (no drift to clear).")
         if gone:
             typer.echo(f"⚠ {target} concerns {', '.join(gone)}, which no longer resolve(s) in the source — "
@@ -3138,7 +3240,9 @@ def _claude_ctx(data: dict) -> tuple[Path, int | None, int | None]:
     usage record ⇒ no ctx, and the bar simply renders without the gauge.
     """
     workspace = data.get("workspace") or {}
-    repo = Path(workspace.get("current_dir") or data.get("cwd") or ".")
+    # `current_dir` follows `cd` exactly like a hook's `cwd`; resolve like the hooks do so the bar does
+    # not go dark one directory below the root (feedback-v10 J#3) — with the same no-parent-search rule.
+    repo = _hook_root({**data, "cwd": workspace.get("current_dir") or data.get("cwd") or "."})
     model_id = ((data.get("model") or {}).get("id") or "")
     limit = 1_000_000 if "1m" in model_id.lower() else 200_000
     used: int | None = None
@@ -3194,8 +3298,8 @@ def mcp_cmd(
     """Run yigraf as an MCP server (stdio) — the host-agnostic pull channel (int:mcp-server).
 
     Any MCP host (Codex, Antigravity, Cursor, Claude Code, …) can then pull the graph as tool calls:
-    `context` (the governing slice) and `status`. See docs/mcp.md for per-host config. The MCP SDK is
-    a core dependency, so this always runs.
+    `context` (the governing slice) and `status`. See docs/mcp.md for per-host config. The MCP SDK
+    (1.x, capped `<2` in pyproject) is a core dependency, so a `pip install yigraf` carries it.
     """
     from yigraf import mcp_server  # lazy: keep the SDK import off every other command's path
     raise typer.Exit(code=mcp_server.run(repo))
@@ -4594,7 +4698,7 @@ def _build_install_plan(path: Path, config: dict, host: str) -> dict:
         "generic_channel": [
             "post-commit hook — re-materializes the gitignored view (.local/graph.db) on every commit",
             "AGENTS.md instruction block — any agent reads it",
-            "MCP pull server (`yigraf mcp`) — the universal channel every MCP host speaks",
+            "MCP pull server (`yigraf mcp`) — its host config is PRINTED for you to paste, not written",
         ],
         # Capabilities the human chooses from. Core is always on; plugins carry their real cost so the
         # decision is deliberate, not a surprise mid-install.
@@ -4683,8 +4787,9 @@ def install_cmd(
 
     The **generic** channel installs unconditionally, because it works regardless of agent host: the
     post-commit hook (re-materializes the gitignored view at each commit),
-    the AGENTS.md instruction block (any agent reads it), and the MCP pull server (the universal
-    channel every MCP host speaks). Then ``auto`` detects each supported host and layers its native
+    the AGENTS.md instruction block (any agent reads it), and the MCP pull server's host config —
+    PRINTED for you to paste, never written (the universal channel every MCP host speaks). Then
+    ``auto`` detects each supported host and layers its native
     push at the highest tier its seams allow — Tier E (edit/session hooks: Claude Code, Codex) or Tier A
     (always-on rule + MCP: Antigravity, Kilo, Cursor, Windsurf); ``--host`` forces one. Semantic recall
     is on by default (the fastembed backend is bundled in core); the heavier torch backend stays opt-in.
@@ -4807,6 +4912,38 @@ def _run_hook(handler) -> None:
     raise typer.Exit(code=0)
 
 
+#: The env var Claude Code exports to every hook command and stdio MCP server: "the project root where
+#: the session started", pinned across `cd` and worktrees. The documented contract; the hook payload's
+#: `cwd` follows Claude instead ("the new directory after Claude runs `cd`"), and `workspace.project_dir`
+#: is documented for the statusLine event only.
+PROJECT_DIR_ENV = "CLAUDE_PROJECT_DIR"
+
+
+def _hook_root(data: dict) -> Path:
+    """The repo root a hook serves: the first candidate that HOLDS a workspace, else the payload's cwd.
+
+    Every channel resolved from ``cwd`` alone, and ``cwd`` follows the agent — one ``cd`` in a shell
+    call moved the field, and SessionStart, PostToolUse and Stop all went silent one directory below
+    the root, with fail-open making that indistinguishable from "nothing to say" (feedback-v10 J#3).
+    A hook takes no ``--repo``, so the fallback has to come from the payload or the environment:
+
+    1. ``cwd`` — unchanged first choice, so a nested store the agent is actually inside still wins
+       (the CLI reads the same one from there);
+    2. ``workspace.project_dir`` when the host supplies it (statusLine's documented field);
+    3. ``$CLAUDE_PROJECT_DIR`` — the launch root, exported to hook commands by contract.
+
+    No parent-directory search, deliberately: that is the rule the CLI states, and the hook must read
+    the store the CLI would. Returning ``cwd`` when nothing holds a store keeps the silent path silent.
+    """
+    cwd = Path(data.get("cwd") or os.getcwd())
+    project_dir = ((data.get("workspace") or {}).get("project_dir") if isinstance(data.get("workspace"), dict)
+                   else None)
+    for candidate in (cwd, project_dir, os.environ.get(PROJECT_DIR_ENV)):
+        if candidate and (Path(candidate) / WORKSPACE_DIRNAME).is_dir():
+            return Path(candidate)
+    return cwd
+
+
 def _hook_graph(root: Path):
     """Build the graph for a hook, or None if there's no workspace (→ stay silent)."""
     if not (root / WORKSPACE_DIRNAME).is_dir():
@@ -4887,7 +5024,7 @@ def _post_tool_use(data: dict) -> dict | None:
     file_path = _edited_file(data)
     if not file_path:
         return None
-    root = Path(data.get("cwd") or os.getcwd())
+    root = _hook_root(data)
     built = _hook_graph(root)
     if built is None:
         return None
@@ -4948,8 +5085,8 @@ def _session_status_line(root: Path, graph, config: dict) -> str | None:
         return None  # a status failure must not cost the agent its rules and its plan (design law #5)
 
 
-def _session_start(data: dict) -> dict | None:
-    root = Path(data.get("cwd") or os.getcwd())
+def _session_start(data: dict, *, record: bool = True) -> dict | None:
+    root = _hook_root(data)
     built = _hook_graph(root)
     if built is None:
         return None
@@ -4961,7 +5098,8 @@ def _session_start(data: dict) -> dict | None:
     result = retrieval.session_context(graph, config, root=root, status_line=status_line)
     if result is None:
         return None
-    _record_injection(root, graph, result)  # the re-injection is a soft usage signal (sidecar)
+    if record:
+        _record_injection(root, graph, result)  # the re-injection is a soft usage signal (sidecar)
     return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": result.text}}
 
 
@@ -4982,7 +5120,7 @@ def _stop(data: dict) -> dict | None:
     Silent unless something is *newly* unresolved (design law #4), and fail-open throughout: no
     workspace, no obligations, or an unchanged fingerprint all return ``None``.
     """
-    root = Path(data.get("cwd") or os.getcwd())
+    root = _hook_root(data)
     if not (root / WORKSPACE_DIRNAME).is_dir():
         return None
     config = load_config(root / WORKSPACE_DIRNAME / "config.yaml")
@@ -5010,14 +5148,26 @@ def _stop(data: dict) -> dict | None:
 
 @hook_app.command("post-tool-use")
 def hook_post_tool_use() -> None:
-    """PostToolUse(Edit|Write): inject governing intent + drift for the touched file (silent-unless)."""
+    """PostToolUse(Edit|Write): inject governing intent + drift for the touched file (silent-unless).
+
+    Not a read-only probe: an injection is recorded as a surfacing (usage counters), the edit as a
+    survival uphold, and the packet digest in the per-session latch. Feed it a payload to inspect the
+    output and you have moved those three.
+    """
     _run_hook(_post_tool_use)
 
 
 @hook_app.command("session-start")
-def hook_session_start() -> None:
-    """SessionStart(clear|compact|…): re-inject the active plan + governing intents."""
-    _run_hook(_session_start)
+def hook_session_start(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Render the packet WITHOUT recording it as a surfacing — for inspecting what a session receives, or tuning session_start.token_budget."),
+) -> None:
+    """SessionStart(clear|compact|…): re-inject the active plan + governing intents.
+
+    Not a read-only probe by default: every node the packet shows is recorded as a surfacing (a soft
+    usage signal the relevance prior reads), so rendering it to see what a session gets perturbs the
+    thing you may be measuring (feedback-v10 J#5). ``--dry-run`` renders and records nothing.
+    """
+    _run_hook(lambda data: _session_start(data, record=not dry_run))
 
 
 @hook_app.command("stop")

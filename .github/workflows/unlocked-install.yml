@@ -1,0 +1,48 @@
+name: Unlocked install
+
+# The check that `uv sync` / `uv run pytest` structurally cannot perform (feedback-v10 J#1): install the
+# BUILT WHEEL into a bare venv with no lockfile and no constraints, so the resolver lands whatever a
+# user's `pip install yigraf` lands today — then prove the one lazy import that a version drift breaks
+# (the MCP server) and that every verb at least starts. uv.lock protects the developer; this protects
+# the user. It found nothing for months while `mcp>=1.2` quietly resolved to 2.x on every fresh install
+# and to 1.28.1 on every maintainer's disk.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  wheel-in-a-bare-venv:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]  # the floor and the ceiling of requires-python
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Build the wheel
+        run: pipx run build --wheel
+      # No uv sync, no lockfile, no constraints: resolve exactly what a user's `pip install yigraf` resolves.
+      - name: Install the wheel into a bare venv
+        run: |
+          python -m venv /tmp/bare
+          /tmp/bare/bin/pip install --upgrade pip
+          /tmp/bare/bin/pip install dist/*.whl
+      - name: Record what the specs actually resolved to
+        run: /tmp/bare/bin/pip freeze
+      - name: The MCP channel must be importable
+        # `build_server` is the exact call that raises under an incompatible SDK; running `yigraf mcp`
+        # itself would block on stdio.
+        run: /tmp/bare/bin/python -c "from yigraf.mcp_server import build_server; build_server('.')"
+      - name: Every verb must at least start
+        run: |
+          for v in status tasks conflicts drift cheatsheet context mcp; do
+            /tmp/bare/bin/yigraf "$v" --help > /dev/null || exit 1
+          done

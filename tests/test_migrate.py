@@ -18,6 +18,8 @@ adds must be backed by an authored verdict claiming exactly that pair and relati
 """
 from pathlib import Path
 
+import pytest
+
 from yigraf import artifacts, memory
 from yigraf.config import default_config
 from yigraf.extract import build_graph
@@ -26,6 +28,17 @@ from yigraf.fold import fold
 
 REPO = Path(__file__).resolve().parents[1]
 FAMILIES = {"intent", "plan", "memory"}
+
+# The proof is over the self-hosted store, which is gitignored: a clone, an sdist and every CI checkout
+# hold no `yigraf/memory/`, so `_family_nodes` is empty there and seven of these eight tests compare
+# `set() == set()` — seven green ticks proving nothing, with the verdict test below the only one that
+# said so by failing (feedback-v10 J#2). Skip the MODULE, by name, so a reader sees what is missing
+# instead of a vacuous pass; the durable fix is a small fixture store so the proof runs anywhere.
+if not any((REPO / "yigraf" / d).is_dir() and any((REPO / "yigraf" / d).glob("*.md"))
+           for d in ("memory", "intents", "plans")):
+    pytest.skip("the migration proof needs the self-hosted store (yigraf/ with authored intents, plans "
+                "and memories) — absent on this checkout, so every assertion here would be vacuous",
+                allow_module_level=True)
 
 #: Attrs handled by a dedicated assertion below, excluded from the source-claim attr diff: derived
 #: belief + reserved scope + envelope provenance (the fold's additions), and the two dangling

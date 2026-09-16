@@ -66,8 +66,8 @@ answer, not a failure.
 yigraf init && yigraf build     # the repo needs a built graph
 ```
 
-The MCP SDK ships as a core dependency, so there's nothing extra to install — `yigraf install` wires
-the pull channel by default.
+The MCP SDK (1.x) ships as a core dependency, so there's nothing extra to install — `yigraf install`
+prints the snippet below for your host; paste it where that host reads MCP config.
 
 The server picks its repo from (in order): the tool call's `repo` arg › `$YIGRAF_REPO` › the process
 cwd. Pin a repo with `--repo /abs/path` or `YIGRAF_REPO`. If `yigraf` isn't on the host's PATH, use an

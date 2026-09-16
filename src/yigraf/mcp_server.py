@@ -7,7 +7,8 @@ hook *pushing* it). Per the A-series eval pull is the weaker channel, but on a h
 hook (e.g. the Antigravity IDE) it's the only one — so it's how those hosts get yigraf at all.
 
 The MCP SDK is a core dependency (not an extra): ``yigraf mcp`` is the universal pull channel every host
-speaks, and ``yigraf install`` wires it by default — so this module's import always resolves.
+speaks, and ``yigraf install`` prints its host config by default. The SDK is pinned to 1.x
+(``mcp<2``): 2.x renamed ``FastMCP`` and its stub module raises on import (feedback-v10 J#1).
 
 Read tools (``context``, ``status``) run **in-process** so the structure graph + the embedding model
 stay **warm** across calls in a session — a second ``context`` query doesn't re-pay the cold build/model
