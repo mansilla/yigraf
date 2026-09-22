@@ -19,7 +19,7 @@ from typing import NoReturn
 
 import typer
 
-from yigraf import (__version__, artifacts, counters, embeddings, graphdb, memory,
+from yigraf import (__version__, artifacts, counters, embeddings, graphdb, hookbudget, memory,
                     obligations, relations, resolution, retrieval, sectionfit, status, update)
 from yigraf import show as show_mod  # aliased: the module and the `show` command share a name
 from yigraf.astnorm import (ANCHOR_ALGO, DOC_SUFFIXES, locus_hash, parse_file_target,
@@ -3187,6 +3187,61 @@ def cheatsheet(
     typer.echo("\n".join(lines).rstrip())
 
 
+@app.command("doctor")
+def doctor(
+    repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
+    limit: int = typer.Option(10, "--limit", help="How many of the slowest recent runs to show."),
+    as_json: bool = typer.Option(False, "--json", help="Emit the rows as JSON (to paste into a report)."),
+) -> None:
+    """Why was a hook slow? The recorded phase breakdown of runs that ran long or hit the budget.
+
+    yigraf's installer writes a 15 s timeout into the host's hook definition, and the field measured
+    that bound being reached — silently, since a cancelled hook emits nothing and the session simply
+    proceeds as though the store had nothing to say (feedback-v11 K#4). Reproduction failed on this
+    repo's store (every hook sub-second), so the cause is store- or environment-shaped and the only
+    honest instrument is one that records the next occurrence *where it happens*.
+
+    A run at or past ``hooks.slow_run_ms``, or one that hit ``hooks.deadline_seconds``, leaves a row
+    here. A quiet report is the good outcome and means exactly one thing: no hook has been slow since
+    the ledger was last written. It is **not** evidence that the hooks are wired — ``yigraf status``
+    and ``install --plan`` answer that.
+    """
+    root = repo.resolve()
+    _require_workspace(root)
+    rows = hookbudget.read_ledger(root)
+    if as_json:
+        typer.echo(json.dumps(rows[-limit:] if limit > 0 else rows, indent=2))
+        return
+    config = load_config(root / WORKSPACE_DIRNAME / "config.yaml")
+    hcfg = config.get("hooks", {}) or {}
+    raw_deadline = hcfg.get("deadline_seconds", hookbudget.DEFAULT_DEADLINE_SECONDS)
+    try:  # `:g` so a config's 1.0 and the ledger's 1.0 both read "1s" — one spelling per number
+        deadline = f"{float(raw_deadline):g}"
+    except (TypeError, ValueError):
+        deadline = f"{hookbudget.DEFAULT_DEADLINE_SECONDS:g}"
+    slow = hcfg.get("slow_run_ms", hookbudget.DEFAULT_SLOW_RUN_MS)
+    if not rows:
+        typer.echo(f"No slow hook runs recorded. (Recording at ≥{slow}ms; budget "
+                   f"{'disarmed' if not float(raw_deadline or 0) else f'{deadline}s'}.) "
+                   f"This says nothing about whether hooks are INSTALLED — `yigraf status` does.")
+        return
+    tripped = [r for r in rows if r.get("tripped")]
+    worst = sorted(rows, key=lambda r: -int(r.get("total_ms") or 0))[:max(1, limit)]
+    typer.echo(f"{len(rows)} slow run(s) recorded, {len(tripped)} of which hit the "
+               f"{deadline}s budget. Slowest first:")
+    for r in worst:
+        when = _dt.datetime.fromtimestamp(float(r.get("at") or 0)).strftime("%Y-%m-%d %H:%M:%S")
+        mark = "⚠ BUDGET" if r.get("tripped") else "        "
+        phases = "  ".join(f"{p.get('name')}={p.get('ms')}ms" for p in (r.get("phases") or []))
+        typer.echo(f"  {mark}  {when}  {str(r.get('event')):13} {int(r.get('total_ms') or 0):>7}ms   {phases}")
+    if tripped:
+        typer.echo("\n⚠ A budget trip means yigraf stopped itself BEFORE the host's timeout could kill it "
+                   "silently: SessionStart served the previous packet, the edit hook said so and named "
+                   "the verb, `Stop` stayed quiet. Raise `hooks.deadline_seconds` only if the phase "
+                   "above genuinely needs the time — a hook that blocks the agent longer is worse, not "
+                   "better (design law #5).")
+
+
 @app.command("status")
 def status_cmd(
     repo: Path = typer.Option(Path("."), "--repo", help="Repo root (default: current dir)."),
@@ -4980,11 +5035,16 @@ def _hook_root(data: dict) -> Path:
     return cwd
 
 
-def _hook_graph(root: Path):
-    """Build the graph for a hook, or None if there's no workspace (→ stay silent)."""
+def _hook_graph(root: Path, config: dict | None = None):
+    """Build the graph for a hook, or None if there's no workspace (→ stay silent).
+
+    ``config`` may be passed in when the caller already loaded it — the hook budget has to be armed
+    *before* the graph build, which is the expensive step, so it reads the deadline first and hands
+    the same dict down rather than paying for a second YAML read.
+    """
     if not (root / WORKSPACE_DIRNAME).is_dir():
         return None
-    config = load_config(root / WORKSPACE_DIRNAME / "config.yaml")
+    config = config if config is not None else load_config(root / WORKSPACE_DIRNAME / "config.yaml")
     graph, _ = graphdb.load_or_build(root, config)  # materialized view keeps the hot edit path cheap
     return graph, config
 
@@ -5061,7 +5121,34 @@ def _post_tool_use(data: dict) -> dict | None:
     if not file_path:
         return None
     root = _hook_root(data)
-    built = _hook_graph(root)
+    config = load_config(root / WORKSPACE_DIRNAME / "config.yaml") if _is_workspace(root) else {}
+    with hookbudget.Budget(root, "PostToolUse", config) as budget:
+        try:
+            return _post_tool_use_inner(data, root, config, file_path, budget)
+        except hookbudget.DeadlineExceeded:
+            budget.disarm()
+            # NOT the previous packet, unlike SessionStart. This hook's payload is drift and governing
+            # intent for the symbol just edited, and a cached one describes the code as it was BEFORE
+            # the edit that triggered this — the single most misleading thing yigraf could say at this
+            # moment. So it names the gap instead and points at the verb that answers it correctly.
+            # Repo-relative for the message, because the `context` call it hands over is one the agent
+            # will paste — and the host gives an absolute path. Pure path math with a fallback: at this
+            # point we have already run out of budget, so it must not be able to cost anything or raise.
+            try:
+                shown = Path(file_path).resolve().relative_to(root.resolve()).as_posix()
+            except (ValueError, OSError):
+                shown = file_path
+            return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": (
+                f"[yigraf] Computing the governing intent and drift for {shown} exceeded the "
+                f"{budget.seconds:g}s hook budget, so nothing is being injected for this edit — this is "
+                f"a timeout, NOT 'nothing governs it'. Run `yigraf context \"{shown}\"` if you are "
+                f"changing behaviour there; `yigraf doctor` shows which phase ran long.")}}
+
+
+def _post_tool_use_inner(data: dict, root: Path, config: dict, file_path: str,
+                         budget: hookbudget.Budget) -> dict | None:
+    with budget.phase("graph"):
+        built = _hook_graph(root, config=config or None)
     if built is None:
         return None
     # Claude Code hands an absolute path; Codex's apply_patch path is repo-relative — anchor it to root.
@@ -5088,11 +5175,14 @@ def _post_tool_use(data: dict) -> dict | None:
     if (rel.suffix not in extension_map(available_extractors(config))
             and not retrieval.locus_nodes(graph, rel.as_posix())):
         return None  # neither indexed nor anchored → nothing this hook could say
-    _ranked_with_telemetry(root, graph, config)  # recency/popularity + maturity verdict (R1)
-    result = retrieval.context_for_locus(graph, rel.as_posix(), config, root=root)
+    with budget.phase("telemetry"):
+        _ranked_with_telemetry(root, graph, config)  # recency/popularity + maturity verdict (R1)
+    with budget.phase("render"):
+        result = retrieval.context_for_locus(graph, rel.as_posix(), config, root=root)
     if result is None:
         return None  # silent: nothing governs this locus and no drift
-    _record_edit_upholds(root, graph, config, rel.as_posix())  # silent survival = a weak maturity uphold
+    with budget.phase("record"):
+        _record_edit_upholds(root, graph, config, rel.as_posix())  # silent survival = weak uphold
     # A packet byte-identical to one this session already received is pure re-read cost (Ask A) —
     # inject nothing. The uphold above still books (the edit happened); the injection signal does not
     # (no injection happened). Anything yigraf would say differently re-injects by digest change.
@@ -5158,22 +5248,81 @@ def _orphan_session_notice(root: Path) -> dict | None:
     return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}}
 
 
+def _session_packet_cache(root: Path) -> Path:
+    """The last SessionStart packet served, kept so a timed-out render has something honest to fall
+    back to (feedback-v11 K#4). Machine-local and gitignored — a rendered packet is derived, and
+    design law #6 keeps derived state out of the view."""
+    return Path(root) / WORKSPACE_DIRNAME / ".local" / "last-session-packet.json"
+
+
+def _remember_session_packet(root: Path, text: str) -> None:
+    """Keep this packet as the fallback for a future timed-out render. Silent on failure (law #5)."""
+    try:
+        path = _session_packet_cache(root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"at": time.time(), "text": text}), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _stale_session_packet(root: Path, seconds: float) -> dict | None:
+    """Serve the previous packet when this render ran out of budget — the field's third ask.
+
+    A SessionStart packet is orientation: house rules, pinned beliefs, the active plan, open
+    obligations. None of that is invalidated by the seconds that just elapsed, so the *previous* one
+    is a good answer and a lost one is the worst outcome there is — the session then behaves as though
+    the store did not exist, which looks exactly like yigraf correctly having nothing to say.
+
+    The staleness is stated rather than hidden, because a packet presented as current when it is not
+    is the failure mode this whole channel exists to avoid. With no cached packet there is nothing
+    honest to serve, so this says only that the render timed out and how to get it by hand — which is
+    still infinitely more than the silence it replaces.
+    """
+    note = (f"[yigraf] The SessionStart render exceeded its {seconds:g}s budget and was stopped before "
+            f"the host's own timeout could kill it silently.")
+    try:
+        cached = json.loads(_session_packet_cache(root).read_text(encoding="utf-8"))
+        text, at = cached["text"], float(cached.get("at") or 0)
+    except (OSError, ValueError, KeyError, TypeError):
+        return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": (
+            f"{note} No earlier packet is cached, so this session has NOT been oriented: run "
+            f"`yigraf context \"<topic>\"` before editing, and `yigraf doctor` to see what was slow.")}}
+    age = max(0, int(time.time() - at))
+    return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": (
+        f"{note} What follows is the PREVIOUS packet, rendered {age}s ago — treat the counts and drift "
+        f"as of then, not now, and re-read anything it governs with `yigraf context`. "
+        f"`yigraf doctor` shows which phase ran long.\n\n{text}")}}
+
+
 def _session_start(data: dict, *, record: bool = True) -> dict | None:
     root = _hook_root(data)
-    built = _hook_graph(root)
-    if built is None:
-        return _orphan_session_notice(root)
-    graph, config = built
-    scfg = config.get("session_start", {}) or {}
-    status_line = (_session_status_line(root, graph, config)
-                   if scfg.get("append_status", True) else None)
-    _ranked_with_telemetry(root, graph, config)  # recency/popularity + maturity verdict (R1)
-    result = retrieval.session_context(graph, config, root=root, status_line=status_line)
-    if result is None:
-        return None
-    if record:
-        _record_injection(root, graph, result)  # the re-injection is a soft usage signal (sidecar)
-    return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": result.text}}
+    config = load_config(root / WORKSPACE_DIRNAME / "config.yaml") if _is_workspace(root) else {}
+    with hookbudget.Budget(root, "SessionStart", config) as budget:
+        try:
+            with budget.phase("graph"):
+                built = _hook_graph(root, config=config or None)
+            if built is None:
+                return _orphan_session_notice(root)
+            graph, config = built
+            scfg = config.get("session_start", {}) or {}
+            with budget.phase("status"):
+                status_line = (_session_status_line(root, graph, config)
+                               if scfg.get("append_status", True) else None)
+            with budget.phase("telemetry"):
+                _ranked_with_telemetry(root, graph, config)  # recency/popularity + maturity verdict (R1)
+            with budget.phase("render"):
+                result = retrieval.session_context(graph, config, root=root, status_line=status_line)
+            if result is None:
+                return None
+            if record:
+                with budget.phase("record"):
+                    _record_injection(root, graph, result)  # re-injection is a soft usage signal
+            _remember_session_packet(root, result.text)
+            return {"hookSpecificOutput": {"hookEventName": "SessionStart",
+                                           "additionalContext": result.text}}
+        except hookbudget.DeadlineExceeded:
+            budget.disarm()
+            return _stale_session_packet(root, budget.seconds)
 
 
 def _stop(data: dict) -> dict | None:
@@ -5206,17 +5355,31 @@ def _stop(data: dict) -> dict | None:
     # ~18ms either way.) Once, after the governed set changes, the latch misses its fast path and takes
     # the full path below; that is the rebuild it should be taking.
     session = str(data.get("session_id") or "default")
-    fingerprint = graphdb.current_fingerprint(root, config)
-    if obligations.is_unchanged(root, session, fingerprint):
-        return None
+    with hookbudget.Budget(root, "Stop", config) as budget:
+        try:
+            with budget.phase("fingerprint"):
+                fingerprint = graphdb.current_fingerprint(root, config)
+                unchanged = obligations.is_unchanged(root, session, fingerprint)
+            if unchanged:
+                return None
 
-    graph, _ = graphdb.load_or_build(root, config)
-    current = obligations.obligations(graph, root, config)
-    fresh = obligations.new_obligations(root, current, session, fingerprint=fingerprint)
-    if not fresh:
-        return None
-    max_lines = int(config.get("status", {}).get("obligation_notice_max", obligations.DEFAULT_MAX))
-    return {"systemMessage": obligations.render_notice(fresh, len(current), max_lines)}
+            with budget.phase("graph"):
+                graph, _ = graphdb.load_or_build(root, config)
+            with budget.phase("sweep"):
+                current = obligations.obligations(graph, root, config)
+                fresh = obligations.new_obligations(root, current, session, fingerprint=fingerprint)
+            if not fresh:
+                return None
+            max_lines = int(config.get("status", {}).get("obligation_notice_max", obligations.DEFAULT_MAX))
+            return {"systemMessage": obligations.render_notice(fresh, len(current), max_lines)}
+        except hookbudget.DeadlineExceeded:
+            budget.disarm()
+            # Silence, and this is the one hook where that is right. This channel is the PRINCIPAL's,
+            # edge-triggered on first appearance, and it costs the agent no context — so a missed turn
+            # costs a notice that the next turn re-raises, not knowledge the agent needed now. Saying
+            # "I timed out" on the human's ambient channel would be the furniture mem:ea8dbd6a warns
+            # about. The run is still on the ledger, which is where a timeout on this hook belongs.
+            return None
 
 
 @hook_app.command("post-tool-use")

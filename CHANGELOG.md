@@ -4,6 +4,66 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.15.0] — 2026-09-22
+
+**A hook that runs out of time now says so instead of dying silently — and leaves evidence.**
+
+`K#4` of the eighth field send, and the one finding 1.14.3 did not carry. `install` writes
+`"timeout": 15` into the host's hook definition, and the field measured that bound being **reached**:
+24 `hook_cancelled` records across 58 transcripts, every recorded duration just past 15 000 ms, on a
+store whose warm render is 2.6–3.0 s.
+
+**We could not reproduce it, and that shaped the fix.** On this repo's store — 2404 symbols, 208
+decisions, semantic recall on — the edit hook is 0.51–0.66 s warm, **0.50–0.68 s immediately after a
+source change** (the SHA256 content-extraction cache absorbs the re-extract, so the rebuild is not the
+cost), 1.70 s for eight concurrent invocations, SessionStart 0.29–0.75 s, `Stop` 0.18–0.24 s. Two
+hypotheses died on those numbers: rebuild-on-edit and burst contention. A third guess would be worth no
+more than the two that failed.
+
+So this release does not try to make anything faster. It fixes what is wrong **whatever the cause**: a
+cancellation was both silent and total, and a lost SessionStart packet leaves a session behaving as
+though the store did not exist — which is indistinguishable from the silence design law #4 asks for.
+
+### yigraf keeps a deadline of its own, under the host's
+
+`hooks.deadline_seconds` (default **10**, under the installer's 15) stops the hook before the host can
+kill it, leaving room to render a fallback *and* have it read. What each hook serves on a trip differs,
+because serve-stale is only right where the payload does not describe the thing that just changed:
+
+- **SessionStart** serves the **previous packet**, prefixed with how old it is and what to re-read.
+  Orientation — house rules, pins, the active plan, obligations — is not invalidated by the seconds
+  that just elapsed, and losing it is the worst outcome available. With nothing cached it says the
+  session was not oriented and names the verb that fixes that.
+- **PostToolUse** serves a **note only, never a cached packet**. Its payload is drift and governing
+  intent for the symbol *just edited*, so a cached one describes the code as it was **before** the edit
+  that triggered the hook — the most misleading thing yigraf could say at that moment. The note states
+  that this is a timeout and **not** "nothing governs it", since silence there is exactly the
+  silent-unless default.
+- **`Stop`** stays **silent**. It is the principal's ambient channel, edge-triggered and costing the
+  agent no context, so a missed turn costs a notice the next turn re-raises, not knowledge.
+
+`deadline_seconds: 0` disarms it and restores the pre-1.15 behaviour. The deadline is advisory, armed
+with `SIGALRM` where the platform has it and simply absent where it does not — a budget that failed
+closed would itself be a way to lose the packet.
+
+**Raising the installed 15 s was the field's second ask, and is refused.** The number is ours, but a
+hook that blocks an agent for fifteen seconds already violates design law #5; a later deadline buys a
+slower failure rather than a rarer one.
+
+### `yigraf doctor` — why was a hook slow?
+
+There was **no timing instrumentation anywhere in this codebase**, which is the real reason the
+question has had no answer on either side of the report. A run at or past `hooks.slow_run_ms`
+(default 2000), or one that tripped the budget, now appends its phase breakdown — `graph`, `status`,
+`telemetry`, `render`, `record` — to a bounded ring buffer in gitignored `.local/`. Below the
+threshold nothing is written at all, so the ordinary sub-second run costs one comparison and no I/O.
+
+`yigraf doctor` reads it back, slowest first, marking the runs that hit the budget. Its quiet output
+says explicitly that quiet means *no hook has been slow* and **not** *the hooks are wired* — a
+cancelled hook already caused that confusion once. Both timeout messages name `doctor` themselves, so
+the verb is discovered at the moment it is useful rather than documented upstream — which is the
+field's own §G finding applied to this release.
+
 ## [1.14.3] — 2026-09-21
 
 **Three ways yigraf went quiet where quiet is indistinguishable from "nothing to say."**

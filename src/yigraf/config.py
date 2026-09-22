@@ -347,6 +347,26 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # agent choosing to run `context` at all. 0 ⇒ off.
         "manifest_titles": 15,
     },
+    # Hook execution budget (feedback-v11 K#4). yigraf's installer writes `"timeout": 15` into the
+    # host's hook definition, and the field measured that bound being REACHED — 24 cancellations
+    # across 58 transcripts, every recorded duration just past 15 000 ms — with each one failing
+    # silently and differently. yigraf therefore keeps a deadline of its OWN, under the host's, so a
+    # slow run degrades to something honest instead of being killed having emitted nothing.
+    "hooks": {
+        # Wall-clock seconds before the hook stops and serves its degraded answer. Deliberately under
+        # the installer's 15: the margin is what lets a fallback be rendered AND read. Raising the
+        # host's number instead was the field's ask and is refused — a hook that blocks an agent for
+        # fifteen seconds already violates design law #5, and a later deadline buys a slower failure
+        # rather than a rarer one. `0` disarms the budget and restores the pre-1.15 behaviour.
+        "deadline_seconds": 10,
+        # A run at or past this many ms appends its phase breakdown to the gitignored ring buffer that
+        # `yigraf doctor` reads. Under it, nothing is written — the ordinary sub-second run costs one
+        # comparison and no I/O. This exists because there was no timing instrumentation anywhere, so
+        # "what was slow?" had no answer on either side of the report.
+        "slow_run_ms": 2000,
+        # Ring-buffer depth. Small on purpose: the question is "what was slow last time", not a series.
+        "timings_kept": 50,
+    },
     # Online (int:yigraf-online-v1) — the shared log this workspace participates in. `project` is the
     # key the hosted log is scoped by; `replica` is the local SQLite mirror `yigraf sync` maintains,
     # relative to the workspace dir. With either unset, or the replica absent, the build is purely
@@ -500,6 +520,18 @@ __PREAMBLE__
   #                     # State it only to size the packet independently of a `context` answer.
   pinned_budget: 800    # tokens for `pinned` memories, rendered IN FULL, whole nodes only
   manifest_titles: 15   # titles-only of that many memories the packet didn't show (0 = off)
+
+# --- Hook execution budget (yigraf's own deadline, UNDER the host's) ---
+# `install` writes `"timeout": 15` into the host's hook definition, and that bound gets reached in the
+# field — with each cancellation failing silently: a lost SessionStart packet leaves the session acting
+# as though the store did not exist, which is indistinguishable from yigraf having nothing to say. So
+# yigraf stops itself first and serves a degraded answer that says so.
+hooks:
+  deadline_seconds: 10  # stop and degrade at this; under the host's 15 so the fallback can be read
+                        # (0 disarms: be killed by the host instead). Raising the HOST's number is
+                        # deliberately not the knob — a 15s hook already blocks the agent too long.
+  slow_run_ms: 2000     # at/past this, append the phase breakdown to .local/hook-timings.json
+  timings_kept: 50      # ring-buffer depth for `yigraf doctor`
 
 # --- Relevance prior (how a node's standing weight is scored at read time) ---
 relevance:                     # w1·log(1+refs_in) + w2·recency + w3·maturity − w4·[superseded] − w5·[proposed]
