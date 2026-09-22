@@ -27,7 +27,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-from yigraf.astnorm import section_texts
+from yigraf.astnorm import DOC_SUFFIXES, section_texts
 
 #: Identifier-ish words. Short tokens are dropped before scoring: they carry no subject and would let
 #: an accidental ``for``/``the`` collision decide which section a belief is filed under.
@@ -37,6 +37,24 @@ _MIN_TERM = 3
 
 def _terms(text: str) -> set[str]:
     return {w.casefold() for w in _WORD.findall(text) if len(w) >= _MIN_TERM}
+
+
+def offerable_document(relpath: str) -> bool:
+    """Can a ``#section`` anchor on ``relpath`` exist at all? Markdown only (feedback-v11 K#2).
+
+    :func:`yigraf.astnorm.section_texts` gates on ``is_file()`` alone, so it reads *any* ``#`` line as a
+    heading — 87 of them in this package's own shipped ``config.yaml``. Scoring those produced an offer
+    naming a ``#slug`` that ``cli._anchor`` then refuses ("not markdown, so it has no addressable
+    headings"), so the offer could be accepted by nobody and the ledger row behind it could never be
+    scored accepted: no verb can put ``file:<non-markdown>#<slug>`` on a node.
+
+    Named once and read twice, deliberately. :func:`section_fit` refuses to *score* such a file, which
+    covers :func:`best_section` for free; ``cli._section_offers`` skips it before the ledger, on the
+    same ground as its other structural exemptions — a row whose ``offered`` disagreed with its own
+    scores would poison the re-fit. Neither caller restates the suffix rule, which is what kept
+    ``DOC_SUFFIXES`` to the two call sites that gate an anchor rather than three.
+    """
+    return Path(relpath).suffix.casefold() in DOC_SUFFIXES
 
 
 @dataclass(frozen=True)
@@ -86,7 +104,13 @@ def section_fit(root: Path, relpath: str, statement: str) -> Fit:
     narrowing worth a line of the reader's context. The exemption 1.9.0's notes claimed fell out of
     the design for ``coding-conventions.md`` (a title plus one ``##``) IS this test — it was written on
     ``len(sections)``, which counts the title too, so it never fired there.
+
+    **A non-markdown file scores nothing** (:func:`offerable_document`, feedback-v11 K#2). It is the
+    same exemption as the one above — not a candidate a margin could ever be right about — in its
+    strongest form: not "one subdivision", but no addressable subdivision at all.
     """
+    if not offerable_document(relpath):
+        return Fit(None, 0.0, 0.0)
     sections = section_texts(root, relpath)
     slugs = [slug for slug, _, _ in sections]
     offerable = {slug for slug, _, spans_file in sections

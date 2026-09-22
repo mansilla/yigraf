@@ -1904,6 +1904,13 @@ def _section_offers(node: memory.Memory, repo: Path | None, config: dict | None)
             continue
         if not ref.startswith("file:") or "#" in ref or ":L" in ref:
             continue
+        # Markdown only, and before the ledger for the same reason as the fifth exemption below: on a
+        # file with no addressable headings there is no candidate a margin could ever be right about,
+        # and `sectionfit.section_fit` already refuses to score one. Recording the null row anyway
+        # would file every YAML and TOML anchor ever captured as a suppressed offer, which is exactly
+        # the half of the ledger the re-fit reads (feedback-v11 K#2).
+        if not sectionfit.offerable_document(ref[len("file:"):]):
+            continue
         seen.add(ref)
         fit = sectionfit.section_fit(repo, ref[len("file:"):], node.statement)
         # The node ALREADY carrying the section we would name is the fifth exemption, and the one that
@@ -5114,11 +5121,48 @@ def _session_status_line(root: Path, graph, config: dict) -> str | None:
         return None  # a status failure must not cost the agent its rules and its plan (design law #5)
 
 
+def _orphan_session_notice(root: Path) -> dict | None:
+    """A session launched BELOW the store root: name the store it is not reading (feedback-v11 K#3).
+
+    The CLI is already loud about this — ``_no_workspace`` names the ancestor and hands over the retry
+    that works — and the hook was silent, so a session started one directory down got a 0-byte packet
+    indistinguishable from a store with nothing to say. That is design law #4 turned against itself:
+    the silence that protects the agent's attention on a routine edit is the same silence that hides a
+    store it cannot see. The asymmetry, not the root rule, was the defect.
+
+    So the rule is unchanged and deliberately so (mem:acc91105063a5000 records the parent search as a
+    *rejected* alternative: it would read a store the CLI refuses from the same directory and override
+    a monorepo package's own). This names the ancestor without reading it — one ``is_file()`` per
+    parent, no graph build, no config load.
+
+    SessionStart only, which is what keeps it from becoming the nag law #4 forbids: it fires once per
+    session by construction, at the moment the agent forms its picture of the repo. The edit hook fires
+    on every edit and stays silent. Silent too when no ancestor holds a store — that is an ordinary
+    repo yigraf has nothing to do with, and by far the common case.
+    """
+    above = _ancestor_workspace(root)
+    if above is None:
+        return None
+    # Resolved, like `_no_workspace` — `above` comes back resolved, and printing the launch dir
+    # unresolved beside it spells the same tree two ways (/tmp vs /private/tmp on macOS), which reads
+    # as two different stores at exactly the moment the reader is working out which one is theirs.
+    try:
+        root = root.resolve()
+    except OSError:
+        pass
+    text = (f"[yigraf] No store at {root} — this session started BELOW the repo root, so yigraf is "
+            f"injecting nothing: no house rules, no pinned beliefs, no open work, no drift. A store "
+            f"exists above you at {above}. yigraf does not search parent directories (a package in a "
+            f"monorepo may own its store), so reach it explicitly — `yigraf context \"<topic>\" --repo "
+            f"{above.parent}` — or restart the session at {above.parent} to receive the packet.")
+    return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}}
+
+
 def _session_start(data: dict, *, record: bool = True) -> dict | None:
     root = _hook_root(data)
     built = _hook_graph(root)
     if built is None:
-        return None
+        return _orphan_session_notice(root)
     graph, config = built
     scfg = config.get("session_start", {}) or {}
     status_line = (_session_status_line(root, graph, config)

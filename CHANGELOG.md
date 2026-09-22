@@ -4,6 +4,86 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.14.3] — 2026-09-21
+
+**Three ways yigraf went quiet where quiet is indistinguishable from "nothing to say."**
+
+The eighth field send (feedback-v11, against 1.14.2). All four findings reproduced here before a line
+was changed. They are one defect class wearing three faces: design law #4 says silence is a feature,
+and in each of these the silence that protects the agent's attention on a routine edit was hiding
+something the agent needed. K#4 (hook timeouts) is not in this release — the cause is not yet known
+and tuning it blind would be guessing; it is being measured for 1.15.0.
+
+### The packet budget's documented fallback could not be reached (K#1)
+
+`session_start.token_budget` is read as `scfg.get("token_budget") or retrieval.query_token_budget`,
+and `DEFAULT_CONFIG` supplied `4000` for it. Defaults merge *under* the file, so the left side was
+never falsy and the fallback was dead for every config a file can express. The consequence landed on
+**upgraded** stores: one whose `query_token_budget` was not 4000 had its SessionStart packet silently
+resized at 1.14.0, and `install` does not add the key to an existing config, so no remedy was
+reachable by re-running anything. What leaves a shrinking packet first is the ranked slice and the
+"Also known" titles manifest — the channel that tells a fresh session the graph holds things it has
+not thought to ask about. A store that quietly stops announcing itself is the one failure this
+product cannot afford.
+
+The key is now **deliberately absent** from both `DEFAULT_CONFIG` and the shipped template, on the
+same ground as `preamble`: an omission inherits, so it cannot drift and an upgrade can reach it. A
+fresh store inherits `query_token_budget`'s own 4000 and renders exactly as before — no second silent
+resize. State the key only to size the packet independently of a `context` answer. (Measured on this
+repo's own store, which was in the affected population: with the key absent, raising
+`query_token_budget` to 9000 now moves the packet from 12 408 to 27 604 bytes; on 1.14.2 both
+rendered at the 4000 size.) The patch shape is the field's, after their first attempt was refused by
+`test_default_config_yaml_matches_defaults` — the rule being that the template may omit a key but
+never state a different value.
+
+### The capture-time section offer fired on files that have no headings (K#2)
+
+`section_texts` gates on `is_file()` alone, so it reads any `#` line as a heading — 87 of them in
+this package's own shipped `config.yaml`. A memory concerning a YAML file was therefore offered a
+`#section` anchor that `reanchor` then refuses, because the file is not markdown; the offer could be
+accepted by nobody, and the ledger row behind it could never be scored accepted, since no verb can
+put `file:<non-markdown>#<slug>` on a node.
+
+Markdown is now checked in `sectionfit.offerable_document`, read by `section_fit` (which covers
+`best_section` for free) and by `cli._section_offers` before the ledger — the same placement as its
+other structural exemptions, and for the same reason: not a candidate a margin could ever be right
+about, and a row whose `offered` disagreed with its own scores would poison the re-fit. Naming the
+rule once is what kept `DOC_SUFFIXES` to the two call sites that gate an anchor rather than three.
+
+### A session started below the root got an empty packet (K#3)
+
+`_hook_root` resolves from `cwd`, then `workspace.project_dir`, then `$CLAUDE_PROJECT_DIR` — and
+`CLAUDE_PROJECT_DIR` is the *launch* directory, pinned across a later `cd`. A session **launched** in
+a subdirectory therefore had no candidate holding a store, and every hook returned nothing: a 0-byte
+packet that reads exactly like a store with nothing to say.
+
+The root rule is unchanged, and deliberately: a parent-directory search would read a store the CLI
+refuses from the same directory and would override a monorepo package's own (mem:acc91105063a5000
+records it as a rejected alternative). What was wrong was the **asymmetry** — the CLI has named the
+ancestor store and handed over the retry since 1.14.0, while the hook said nothing. SessionStart now
+names it too: which store exists above, that this session is not reading it, and the `--repo` that
+reaches it. SessionStart only — it fires once per session, where the edit hook fires on every edit —
+and silent when no ancestor holds a store, which is every ordinary repo.
+
+### Supersession counters are stamped on every authored family (feedback-v11 §E)
+
+The field contributed the `test_migrate` fixture store this repo asked for — 21 files, built by real
+verbs, regenerable byte-for-byte by `build-fixture-store.sh` — and sent it **failing**, on an
+`int→int` supersedes edge. They declined to file it, on the ground that this repo's own docstring and
+assertion disagree about whether the counters apply to non-memory families.
+
+They were right to send it and the diagnosis is a third thing: `memory.recompute_counters` had
+exactly one caller left in the tree — the migration proof's own reference — and its stated premise,
+*"only memory nodes carry supersedes edges"*, was falsified by `supersede-intent`, which exists to
+write a real `int→int` edge. Its other premise, `graph.json` bloat, priced a committed artifact that
+no longer exists (mem:059). Both the live path and the fold already count every family; the
+**reference** was the wrong side. It now stamps the authored families (intent, plan, memory), so the
+proof stays strict over every family node instead of buying a pass with a carve-out.
+
+The proof itself no longer skips: it runs over the committed fixture always and the self-hosted store
+when present, and the fixture carries its own canary asserting that every shape the eight comparisons
+need is still in it — a fixture is the fix for a vacuous proof and also the next way to get one.
+
 ## [1.14.2] — 2026-09-16
 
 **A skipped git hook read as degraded drift detection.**

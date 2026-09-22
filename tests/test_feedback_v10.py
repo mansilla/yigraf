@@ -82,8 +82,14 @@ def test_hook_root_falls_back_to_claude_project_dir_when_cwd_holds_no_store(tmp_
     sub = root / "sub" / "deeper"
     sub.mkdir(parents=True)
     monkeypatch.delenv(cli.PROJECT_DIR_ENV, raising=False)
-    assert cli._hook_root(_payload(sub)) == sub  # nothing holds a store → the silent path stays silent
-    assert cli._session_start(_payload(sub)) is None
+    assert cli._hook_root(_payload(sub)) == sub  # the root rule is unchanged: no parent search, ever
+    # …but the SILENCE that used to follow is gone (feedback-v11 K#3). None of the candidates holds a
+    # store, so the packet is empty — and an empty packet read exactly like a store with nothing to
+    # say. The rule stands; the session is now told which store it is not reading.
+    orphan = cli._session_start(_payload(sub))
+    assert orphan is not None
+    notice = orphan["hookSpecificOutput"]["additionalContext"]
+    assert str(root) in notice and "--repo" in notice
     monkeypatch.setenv(cli.PROJECT_DIR_ENV, str(root))
     assert cli._hook_root(_payload(sub)) == root
     packet = cli._session_start(_payload(sub), record=False)
@@ -334,9 +340,25 @@ def test_both_hook_verbs_say_that_they_write():
 
 # --- J#2: the migration proof cannot pass vacuously -----------------------------------------------
 
-def test_the_migration_proof_skips_by_name_without_the_self_hosted_store():
+def test_the_migration_proof_cannot_pass_vacuously():
+    """J#2's guard, re-pointed at the durable fix it asked for (feedback-v11 §E).
+
+    This pinned ``allow_module_level=True`` — the *interim* mechanism, a module-level skip that made a
+    checkout say what was missing instead of showing seven green ticks over ``set() == set()``. The
+    field then sent the committed fixture that skip was a placeholder for, so pinning it would now fail
+    by construction and, worse, would pin the weaker of the two answers. What must stay true is the
+    property, not the mechanism: the proof runs on a checkout with no self-hosted store, and the corpus
+    it runs against cannot be thinned into vacuity without a test saying so.
+    """
     src = (REPO / "tests" / "test_migrate.py").read_text()
-    assert "allow_module_level=True" in src and "self-hosted store" in src
+    assert "allow_module_level=True" not in src, "the skip was replaced by the fixture — don't restore it"
+    assert 'pytest.param(FIXTURE, id="fixture")' in src, "the proof must run without the self-hosted store"
+    assert "def test_the_fixture_store_exercises_every_shape_this_proof_compares" in src, \
+        "the fixture's own canary is what keeps a thinned fixture from passing vacuously"
+    store = REPO / "tests" / "fixtures" / "migration-store"
+    assert (store / "yigraf" / "config.yaml").exists() is False, \
+        "the fixture carries no config.yaml — the proof builds its own (the field's call, kept)"
+    assert len(list((store / "yigraf" / "memory").glob("*.md"))) >= 8
 
 
 # --- 1.14.1: the two things the first field install of 1.14.0 showed ------------------------------

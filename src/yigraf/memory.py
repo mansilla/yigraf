@@ -39,6 +39,12 @@ from yigraf import artifacts
 from yigraf.astnorm import ANCHOR_ALGO
 
 MEMORY_FAMILY = "memory"
+
+#: The families :func:`recompute_counters` stamps supersession counters on — the AUTHORED families,
+#: which is exactly the set :mod:`yigraf.fold` creates nodes for, so the migration proof compares like
+#: with like. Structure nodes stay unstamped: nothing supersedes a symbol, and retrieval reads the
+#: counter with a ``0`` default (feedback-v11 §E, superseding mem:003's memory-only rule).
+_COUNTED_FAMILIES = frozenset({MEMORY_FAMILY, "intent", "plan"})
 CONF = "EXTRACTED"  # agent-asserted at a commit boundary, not inferred
 
 #: Epistemic-grounding axis (int:memory-grounding, C#6): *how* a belief was arrived at — orthogonal to
@@ -855,14 +861,24 @@ def recompute_counters(graph: nx.DiGraph) -> None:
     ``superseded_in`` / ``supersedes_out`` are recomputed on each build (self-healing) so retrieval's
     relevance prior can down-weight a superseded decision in O(1) without a traversal. A node with
     ``superseded_in > 0`` is stale: it sinks in ranking but stays available as a rejected alternative.
-    Only memory nodes carry ``supersedes`` edges, so we stamp only them — non-memory nodes keep the
-    implicit ``0`` (retrieval reads the counter with a default), keeping the projection uncluttered.
+
+    **Every family, not memory alone** (feedback-v11 §E). This used to skip non-memory nodes on the
+    stated ground that "only memory nodes carry ``supersedes`` edges" — true when it was written and
+    falsified by ``supersede-intent``, which exists to write a real ``int→int`` supersedes edge and
+    calls that the most important decision class there is. Nothing caught it because this function has
+    exactly one caller left in the tree — ``tests/test_migrate.py``'s projection reference — so the
+    premise rotted where only the migration proof could see it, and only against a store holding an
+    ``int→int`` supersede, which the self-hosted one did not. The field's fixture supplied that shape,
+    the proof failed, and the *reference* was the thing that was wrong: both the live path
+    (:func:`yigraf.extract.build_graph`, which maintains these inline) and :mod:`yigraf.fold` already
+    count every family. Making this agree with them keeps the proof strict over every family node
+    rather than buying a passing test with a carve-out.
 
     A ``pending`` supersedes edge (of a human-attested node, int:memory-attestation) does NOT count:
     the target stays authoritative (not demoted) until a human resolves the conflict.
     """
     for node_id, attrs in graph.nodes(data=True):
-        if attrs.get("family") != MEMORY_FAMILY:
+        if attrs.get("family") not in _COUNTED_FAMILIES:
             continue
         attrs["superseded_in"] = sum(
             1 for _, _, a in graph.in_edges(node_id, data=True)

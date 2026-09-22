@@ -26,19 +26,41 @@ from yigraf.extract import build_graph
 from yigraf.filelog import FileLog
 from yigraf.fold import fold
 
-REPO = Path(__file__).resolve().parents[1]
+SELF_HOSTED = Path(__file__).resolve().parents[1]
+FIXTURE = Path(__file__).parent / "fixtures" / "migration-store"
 FAMILIES = {"intent", "plan", "memory"}
 
-# The proof is over the self-hosted store, which is gitignored: a clone, an sdist and every CI checkout
-# hold no `yigraf/memory/`, so `_family_nodes` is empty there and seven of these eight tests compare
-# `set() == set()` — seven green ticks proving nothing, with the verdict test below the only one that
-# said so by failing (feedback-v10 J#2). Skip the MODULE, by name, so a reader sees what is missing
-# instead of a vacuous pass; the durable fix is a small fixture store so the proof runs anywhere.
-if not any((REPO / "yigraf" / d).is_dir() and any((REPO / "yigraf" / d).glob("*.md"))
-           for d in ("memory", "intents", "plans")):
-    pytest.skip("the migration proof needs the self-hosted store (yigraf/ with authored intents, plans "
-                "and memories) — absent on this checkout, so every assertion here would be vacuous",
-                allow_module_level=True)
+
+def _has_authored_artifacts(root: Path) -> bool:
+    """Does ``root`` hold an authored store — a ``yigraf/`` with intents, plans or memories in it?
+
+    The self-hosted store is gitignored, so a clone, an sdist and every CI checkout hold no
+    ``yigraf/memory/``: ``_family_nodes`` is empty there and seven of these eight tests compared
+    ``set() == set()``, seven green ticks proving nothing (feedback-v10 J#2). The fix is the committed
+    fixture below, so the proof runs everywhere; this predicate now only decides whether the *richer*
+    self-hosted corpus is available as a second case.
+    """
+    return any((root / "yigraf" / d).is_dir() and any((root / "yigraf" / d).glob("*.md"))
+               for d in ("memory", "intents", "plans"))
+
+
+def _stores() -> list:
+    """Every store this proof runs over: the committed fixture always, the self-hosted one when present.
+
+    Two cases rather than one, because they fail differently. The fixture is small and deterministic and
+    is the reason a checkout can prove anything at all; the self-hosted store is the richest real corpus
+    there is and is where an unforeseen shape shows up first. Losing either would lose something.
+    """
+    cases = [pytest.param(FIXTURE, id="fixture")]
+    if _has_authored_artifacts(SELF_HOSTED):
+        cases.append(pytest.param(SELF_HOSTED, id="self-hosted"))
+    return cases
+
+
+@pytest.fixture(params=_stores())
+def store(request) -> Path:
+    """The store root under test — see :func:`_stores`."""
+    return request.param
 
 #: Attrs handled by a dedicated assertion below, excluded from the source-claim attr diff: derived
 #: belief + reserved scope + envelope provenance (the fold's additions), and the two dangling
@@ -103,9 +125,9 @@ def _got_danglings(graph):
             for n, d in graph.nodes(data=True) for e in d.get("dangling_edges", [])}
 
 
-def test_fold_reproduces_family_node_ids():
-    base, ref = _projection_reference(REPO, default_config())
-    got = fold(FileLog(REPO), base=base.copy())
+def test_fold_reproduces_family_node_ids(store):
+    base, ref = _projection_reference(store, default_config())
+    got = fold(FileLog(store), base=base.copy())
     assert _family_nodes(got) == _family_nodes(ref)
 
 
@@ -126,67 +148,98 @@ def _triples(edges):
     return {(u, rel, v) for u, v, rel, *_rest in edges}
 
 
-def test_fold_reproduces_family_edges():
+def test_fold_reproduces_family_edges(store):
     """Every family edge the fold adds over project_into is an authored verdict's projection."""
-    base, ref = _projection_reference(REPO, default_config())
-    got = fold(FileLog(REPO), base=base.copy())
+    base, ref = _projection_reference(store, default_config())
+    got = fold(FileLog(store), base=base.copy())
     extra = _family_edges(got) - _family_edges(ref)
     assert _triples(extra) <= _verdict_projections(got), \
         "the fold emitted a family edge project_into did not, and no authored verdict projects it"
     assert _family_edges(got) - extra == _family_edges(ref)
 
 
-def test_a_verdicts_projected_edge_is_the_folds_own_addition():
+def test_a_verdicts_projected_edge_is_the_folds_own_addition(store):
     """Keeps the carve-out above from going vacuous — on an empty ``extra`` it would pass trivially.
 
     A verdict lands an edge between two beliefs that ``project_into`` cannot produce at all, which is
     precisely why the resolution family exists (a principal who owns neither belief can still close the
     conflict, mem:66429d96)."""
-    base, ref = _projection_reference(REPO, default_config())
-    got = fold(FileLog(REPO), base=base.copy())
+    base, ref = _projection_reference(store, default_config())
+    got = fold(FileLog(store), base=base.copy())
     landed = _triples(_family_edges(got)) & _verdict_projections(got)
-    assert landed, "the self-hosted repo has authored no verdicts — this proof needs at least one"
+    assert landed, f"{store} has authored no verdicts — this proof needs at least one"
     assert not (landed & _triples(_family_edges(ref))), "project_into cannot see a projected verdict"
 
 
-def test_fold_has_no_unresolved_family_edges_the_old_path_resolved():
-    base, ref = _projection_reference(REPO, default_config())
-    got = fold(FileLog(REPO), base=base.copy())
+def test_fold_has_no_unresolved_family_edges_the_old_path_resolved(store):
+    base, ref = _projection_reference(store, default_config())
+    got = fold(FileLog(store), base=base.copy())
     assert _got_danglings(got) == _ref_danglings(ref)
 
 
-def test_fold_reproduces_source_claim_attrs():
-    base, ref = _projection_reference(REPO, default_config())
-    got = fold(FileLog(REPO), base=base.copy())
+def test_fold_reproduces_source_claim_attrs(store):
+    base, ref = _projection_reference(store, default_config())
+    got = fold(FileLog(store), base=base.copy())
     for n in _family_nodes(ref):
         ref_attrs = {k: v for k, v in ref.nodes[n].items() if k not in _HANDLED}
         got_attrs = {k: v for k, v in got.nodes[n].items() if k not in _HANDLED}
         assert got_attrs == ref_attrs, f"source-claim attrs diverge for {n}"
 
 
-def test_fold_reproduces_provenance_content_as_a_list():
-    base, ref = _projection_reference(REPO, default_config())
-    got = fold(FileLog(REPO), base=base.copy())
+def test_fold_reproduces_provenance_content_as_a_list(store):
+    base, ref = _projection_reference(store, default_config())
+    got = fold(FileLog(store), base=base.copy())
     for n in _family_nodes(ref):
         ref_prov = ref.nodes[n].get("provenance") or {}  # dict on memory, absent elsewhere
         expected = [ref_prov] if ref_prov else []
         assert got.nodes[n]["provenance"] == expected, f"provenance diverges for {n}"
 
 
-def test_fold_reproduces_supersession_counters():
-    base, ref = _projection_reference(REPO, default_config())
-    got = fold(FileLog(REPO), base=base.copy())
+def test_fold_reproduces_supersession_counters(store):
+    base, ref = _projection_reference(store, default_config())
+    got = fold(FileLog(store), base=base.copy())
     for n in _family_nodes(ref):
         assert got.nodes[n]["superseded_in"] == ref.nodes[n].get("superseded_in", 0)
         assert got.nodes[n]["supersedes_out"] == ref.nodes[n].get("supersedes_out", 0)
 
 
-def test_fold_derives_accepted_and_scope_consistently():
+def test_fold_derives_accepted_and_scope_consistently(store):
     """The additive derived attrs: ``accepted`` is exactly "not counted-superseded", and today every
     write carries the empty base environment, so ``scope`` is ``[]`` on every folded node."""
-    base, _ = _projection_reference(REPO, default_config())
-    got = fold(FileLog(REPO), base=base.copy())
+    base, _ = _projection_reference(store, default_config())
+    got = fold(FileLog(store), base=base.copy())
     for n in _family_nodes(got):
         d = got.nodes[n]
         assert d["accepted"] is (d["superseded_in"] == 0)
         assert d["scope"] == []
+
+
+def test_the_fixture_store_exercises_every_shape_this_proof_compares():
+    """The fixture's own canary. If this fails, the fixture stopped being a proof — do NOT delete the
+    assertions it guards, and do not weaken this test to match: regenerate the fixture.
+
+    A fixture store is the fix for a vacuous proof and is also the next way to get one, because it can
+    be thinned by an unrelated edit and every test above will keep passing on ``set() == set()``. So
+    each shape the eight tests actually compare is asserted present *here*, once, by name — a supersede
+    chain for the counters, an authored verdict for the projection carve-out, a dangling edge for the
+    unresolved-edge comparison, an evidence ref for ``grounded_by``, and both a symbol and a whole-file
+    anchor.
+    """
+    base, ref = _projection_reference(FIXTURE, default_config())
+    got = fold(FileLog(FIXTURE), base=base.copy())
+    families = {d.get("family") for _, d in ref.nodes(data=True)}
+    assert FAMILIES <= families, f"fixture is missing a family: {FAMILIES - families}"
+    assert len(_family_nodes(ref)) >= 12, "fixture has been thinned below a useful corpus"
+
+    assert any(d.get("superseded_in", 0) for _, d in ref.nodes(data=True)), \
+        "no superseded node: test_fold_reproduces_supersession_counters would assert 0 == 0"
+    assert _verdict_projections(got), \
+        "no authored verdict: test_a_verdicts_projected_edge_is_the_folds_own_addition cannot fire"
+    assert _got_danglings(got), \
+        "no dangling edge: test_fold_has_no_unresolved_family_edges... would compare two empty sets"
+    assert any(d.get("provenance") for n, d in ref.nodes(data=True) if n.startswith("mem:")), \
+        "no provenance: test_fold_reproduces_provenance_content_as_a_list would compare [] to []"
+
+    relations = {e.get("relation") for _, _, e in ref.edges(data=True)}
+    for required in ("serves", "concerns", "grounded_by", "implements", "supersedes"):
+        assert required in relations, f"fixture exercises no {required} edge"

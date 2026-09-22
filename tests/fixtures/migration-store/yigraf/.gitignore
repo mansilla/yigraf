@@ -1,0 +1,11 @@
+# yigraf runtime state — rebuildable or machine-local, never committed (DESIGN.md R1).
+# index/  : embedding index, rebuilt from memory+intent text
+# cache/  : SHA256 content-extraction cache
+# .local/ : machine-local runtime state — telemetry (usage / last_seen) + the SQLite materialized
+#           view (graph.db). The graph is a derived projection of the committed assertion files
+#           (mem:059), so it is never committed; a stale ``graph.json`` from a pre-v1 workspace is
+#           ignored too, so it drops out of git once removed.
+index/
+cache/
+.local/
+graph.json

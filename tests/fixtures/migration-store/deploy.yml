@@ -1,0 +1,2 @@
+service: thermostat
+interval_seconds: 60

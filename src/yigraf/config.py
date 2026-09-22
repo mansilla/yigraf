@@ -329,7 +329,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # sized to what the preamble and the pin block leave of it. Its own key (feedback-v10 C.1): it
         # used to borrow `retrieval.query_token_budget`, the knob for a `context` answer, so one number
         # sized two things that are tuned for different reasons.
-        "token_budget": 4000,
+        #
+        # DELIBERATELY ABSENT from these defaults, which is what makes the documented fallback reachable:
+        # `session_context` reads `scfg.get("token_budget") or retrieval.query_token_budget`, so a default
+        # here is never falsy and the second term is dead for every config a *file* can express. A store
+        # written before this key existed would then be sized 4000 whatever its query budget said — a
+        # silent packet resize on upgrade, in either direction. The template omits it too, on the same
+        # ground as `preamble`: an omission inherits, so it cannot drift and an upgrade can reach it. A
+        # fresh store therefore inherits `query_token_budget` (4000 there), i.e. renders exactly as before.
+        # State the key only to size the packet independently of a `context` answer.
         # Token budget for `pinned` memories, rendered IN FULL. Whole nodes in or out, in relevance
         # order, with the elision stated — a pin tier only works if the budget BINDS (if everything
         # is pinned, session start is the new wallpaper). Most repos pin nothing and pay nothing.
@@ -485,7 +493,11 @@ session_start:
   # channel entirely.
 __PREAMBLE__
   append_status: true   # end the head with the one-line `yigraf status` summary (rules + live counts)
-  token_budget: 4000    # tokens for the whole packet; preamble + pins spend it first, then slice + titles
+  # token_budget: 4000  # tokens for the whole packet; preamble + pins spend it first, then slice +
+  #                     # titles. DELIBERATELY OMITTED, like `preamble` above: an omission inherits
+  #                     # the fallback (`retrieval.query_token_budget`), which is what the notes
+  #                     # promise and what a store written before this key existed relies on.
+  #                     # State it only to size the packet independently of a `context` answer.
   pinned_budget: 800    # tokens for `pinned` memories, rendered IN FULL, whole nodes only
   manifest_titles: 15   # titles-only of that many memories the packet didn't show (0 = off)
 
