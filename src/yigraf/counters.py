@@ -47,6 +47,7 @@ from typing import Any, Iterable
 
 import networkx as nx
 
+from yigraf import sidecar
 from yigraf.config import replica_path
 from yigraf.memory import DEFAULT_MATURITY, MEMORY_FAMILY, landing_maturity
 
@@ -313,6 +314,12 @@ def load_telemetry(root: Path) -> dict[str, dict]:
         return {}
 
 
+def save_telemetry(root: Path, telemetry: dict[str, dict]) -> None:
+    """Write the sidecar atomically. Callers mutating it hold :func:`yigraf.sidecar.locked` across
+    their :func:`load_telemetry` and this call — the lock is what makes an increment an increment."""
+    sidecar.write_atomic(telemetry_path(root), json.dumps(telemetry, indent=2, sort_keys=True) + "\n")
+
+
 def apply_telemetry(graph: nx.DiGraph, telemetry: dict[str, dict]) -> None:
     """Stamp sidecar ``usage``/``last_seen`` onto the in-memory graph for ranking (read paths only).
 
@@ -338,20 +345,19 @@ def record_injection(root: Path, graph: nx.DiGraph, node_ids: list[str],
     soft ranking signal, not committed state. Returns the ids actually bumped.
     """
     stamp = int(now if now is not None else time.time())
-    telemetry = load_telemetry(root)
     bumped: list[str] = []
-    for node_id in node_ids:
-        attrs = graph.nodes.get(node_id) if node_id in graph else None
-        if attrs is None or attrs.get("family") not in COUNTED_FAMILIES:
-            continue
-        entry = telemetry.setdefault(node_id, {})
-        entry["usage"] = int(entry.get("usage", 0)) + 1
-        entry["last_seen"] = stamp
-        bumped.append(node_id)
-    if bumped:
-        path = telemetry_path(root)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(telemetry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with sidecar.locked(telemetry_path(root)):  # an increment: unlocked, concurrent hooks lose bumps (L#1)
+        telemetry = load_telemetry(root)
+        for node_id in node_ids:
+            attrs = graph.nodes.get(node_id) if node_id in graph else None
+            if attrs is None or attrs.get("family") not in COUNTED_FAMILIES:
+                continue
+            entry = telemetry.setdefault(node_id, {})
+            entry["usage"] = int(entry.get("usage", 0)) + 1
+            entry["last_seen"] = stamp
+            bumped.append(node_id)
+        if bumped:
+            save_telemetry(root, telemetry)
     return bumped
 
 
@@ -366,19 +372,18 @@ def record_uphold(root: Path, graph: nx.DiGraph, node_ids: list[str], weight: fl
     """
     if weight <= 0:
         return []
-    telemetry = load_telemetry(root)
     credited: list[str] = []
-    for node_id in node_ids:
-        attrs = graph.nodes.get(node_id) if node_id in graph else None
-        if attrs is None or attrs.get("family") != MEMORY_FAMILY:
-            continue
-        entry = telemetry.setdefault(node_id, {})
-        entry["upholds"] = round(float(entry.get("upholds", 0.0)) + weight, 4)
-        credited.append(node_id)
-    if credited:
-        path = telemetry_path(root)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(telemetry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with sidecar.locked(telemetry_path(root)):  # an accumulator: same lost-update shape as usage (L#1)
+        telemetry = load_telemetry(root)
+        for node_id in node_ids:
+            attrs = graph.nodes.get(node_id) if node_id in graph else None
+            if attrs is None or attrs.get("family") != MEMORY_FAMILY:
+                continue
+            entry = telemetry.setdefault(node_id, {})
+            entry["upholds"] = round(float(entry.get("upholds", 0.0)) + weight, 4)
+            credited.append(node_id)
+        if credited:
+            save_telemetry(root, telemetry)
     return credited
 
 

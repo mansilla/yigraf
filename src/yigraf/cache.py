@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from yigraf import sidecar
 from yigraf.astnorm import ANCHOR_ALGO
 
 if TYPE_CHECKING:
@@ -111,7 +112,8 @@ class StructureCache:
         out = {"format": CACHE_FORMAT, "algo": self.algo, "files": self.entries,
                "maturity": self.maturity}
         try:
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(json.dumps(out, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            # Atomic, not truncate-in-place: a concurrent build that read a torn file fell back to an
+            # EMPTY cache and re-extracted every source file inside a hook's budget (feedback-v12).
+            sidecar.write_atomic(p, json.dumps(out, indent=2, sort_keys=True) + "\n")
         except OSError:
             pass

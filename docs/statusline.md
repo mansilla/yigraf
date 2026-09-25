@@ -56,48 +56,22 @@ statusline's case**, so the adapter passes `--color`; yigraf keeps `click` from 
 
 ## Wiring it into Claude Code
 
-The statusline is a per-host *adapter* — a thin shim around `yigraf status`. The one non-agnostic
-datum (context %) is computed in the **adapter**, by reading the transcript Claude Code hands it; it
-never leaks into yigraf's core (`mem:013`).
+`yigraf install-claude-hooks` sets Claude Code's `statusLine` to **`yigraf statusline`**. That
+adapter reads the session JSON on stdin, computes context % from the transcript itself (no `jq`, no
+shell), and renders the bar. The context % is the one host-specific datum, and it stays in the adapter
+(`mem:013`). An existing statusLine that isn't yigraf's is left alone. A previous yigraf wiring (the
+old `yigraf-statusline.sh` script or a bare `yigraf status`) is upgraded in place.
 
-1. Drop an adapter script in your repo (or `.claude/`), e.g. `.claude/yigraf-statusline.sh`:
+**Use `yigraf statusline`, not `yigraf status`, for the bar.** The host refreshes the bar on every
+message. `statusline` reads the materialized view the hooks keep current (a stat walk, plus a rebuild
+only when something changed). `status` re-extracts the whole graph on every call so it can compare
+the view against a fresh build — that is its job, and on a large tree it costs seconds each time.
+Before 1.16 the statusline did the same rebuild. `doctor` never saw that load, because the statusline
+is not a hook.
 
-   ```bash
-   #!/usr/bin/env bash
-   set -eo pipefail
-   YIGRAF="$(command -v yigraf)"        # or an absolute venv path: /path/.venv/bin/yigraf
-   in=$(cat)
-   cwd=$(printf '%s' "$in" | jq -r '.workspace.current_dir // .cwd // "."')
-   tx=$(printf '%s' "$in" | jq -r '.transcript_path // empty')
-   limit=$(printf '%s' "$in" | jq -r 'if ((.model.id // "") | test("1m";"i")) then 1000000 else 200000 end')
-   ctx=()
-   if [ -n "$tx" ] && [ -f "$tx" ]; then
-     used=$(jq -rs '[.[] | .message?.usage? // empty] | last
-                    | (.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens) // empty' "$tx" 2>/dev/null || true)
-     [ -n "${used:-}" ] && ctx=(--ctx-used "$used" --ctx-limit "$limit")
-   fi
-   "$YIGRAF" status --repo "$cwd" --color "${ctx[@]}" 2>/dev/null || true
-   ```
-
-   `chmod +x` it. (Needs `jq` for the context %; without `jq` the line still renders, just no `ctx`.)
-
-2. Register it in `.claude/settings.local.json` — the **per-machine** file, not the committed
-   `settings.json` (same convention as `install-claude-hooks`, so an absolute path never reaches a
-   commit; see the M5 caveat):
-
-   ```json
-   {
-     "statusLine": { "type": "command", "command": "/abs/path/.claude/yigraf-statusline.sh" }
-   }
-   ```
-
-### Minimal (no context %)
-
-If you don't want the transcript read, skip the script entirely:
-
-```json
-{ "statusLine": { "type": "command", "command": "yigraf status --color --repo \"$CLAUDE_PROJECT_DIR\"" } }
-```
+Launched in a subdirectory below the store root, the bar shows `⚠ no store here · store at <root>`
+for the whole session instead of going blank. An ordinary repo with no store above it still gets an
+empty bar.
 
 ## Other hosts
 

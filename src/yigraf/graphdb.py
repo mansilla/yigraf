@@ -29,11 +29,13 @@ writes only the replica, so it could never invalidate the view it was trying to 
 """
 from __future__ import annotations
 
+import contextlib
 import errno
 import hashlib
 import json
 import os
 import sqlite3
+import time
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -261,9 +263,12 @@ def materialize(graph: nx.DiGraph, path: Path, fingerprint: str) -> None:
     # `status._freshness` compares this same projection against a rebuild, and a key stripped only on
     # the way to disk makes the two differ over a property neither the source nor the fold produced.
     data = to_node_link(graph)  # detached from ``graph`` — never edits the live graph
-    tmp = path.with_name(path.name + ".tmp")
+    # Per-process temp name: two hooks rebuilding at once shared one `graph.db.tmp`, so one could unlink
+    # the other's half-written file or rename it into place mid-write (feedback-v12, L#1's class).
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
+        _sweep_orphan_temps(path)
         if tmp.exists():
             tmp.unlink()
         conn = sqlite3.connect(tmp)
@@ -297,6 +302,22 @@ def materialize(graph: nx.DiGraph, path: Path, fingerprint: str) -> None:
         except OSError:
             pass
         raise ViewUnwritable(path, exc) from exc
+
+
+#: A temp view older than this belongs to a writer that died (a host SIGKILL at its timeout) — a live
+#: materialize takes seconds. Generous, because sweeping a live writer's file would fail its rename.
+_ORPHAN_TEMP_SECONDS = 600
+
+
+def _sweep_orphan_temps(path: Path) -> None:
+    """Remove temp views left by killed writers. Per-pid names are never reused, so nothing else would."""
+    cutoff = time.time() - _ORPHAN_TEMP_SECONDS
+    for stale in path.parent.glob(f"{path.name}.*.tmp*"):  # `*` after: sqlite's `-journal` siblings too
+        try:
+            if stale.stat().st_mtime < cutoff:
+                stale.unlink()
+        except OSError:
+            pass
 
 
 def view_state(path: Path) -> str:
@@ -411,7 +432,13 @@ def load(path: Path) -> nx.DiGraph | None:
 # --------------------------------------------------------------------------------------------------
 
 
-def _materialize_or_flag(graph: nx.DiGraph, root: Path, config: dict) -> bool:
+def view_unwritable(graph: nx.DiGraph) -> bool:
+    """Did the last :func:`_materialize_or_flag` on ``graph`` fail to persist it?"""
+    return _UNWRITABLE_KEY in graph.graph
+
+
+def _materialize_or_flag(graph: nx.DiGraph, root: Path, config: dict,
+                         fingerprint: str | None = None) -> bool:
     """Materialize the view, or park the guidance on ``graph.graph`` and carry on. Returns whether it stuck.
 
     Both seams below degrade identically, for the same reason: the view is derived (design law #6), so
@@ -427,10 +454,17 @@ def _materialize_or_flag(graph: nx.DiGraph, root: Path, config: dict) -> bool:
     ``graph.graph`` itself and ``materialize`` popped the key out of it, so a serializer's aliasing was
     load-bearing for this function's state. That serializer is pure now, so the write that fixes the
     condition is the one that retracts the guidance.
+
+    ``fingerprint``, when given, is a digest the caller took **before** the build over the same governed
+    set; without it this walks every input again — on a 22k-file tree, as long as the walk that decided
+    to rebuild (feedback-v12 L#3: ``graph.materialize`` measured about equal to ``graph.fingerprint``).
+    The earlier digest is also the *safer* stamp: a file that changes while the build runs leaves the
+    view keyed to the pre-change tree, so the next read rebuilds, where a digest taken after the build
+    would label pre-change content with post-change stats and serve it as current.
     """
     try:
         materialize(graph, db_path(root),
-                    source_fingerprint(root, config, governed_file_paths(graph)))
+                    fingerprint or source_fingerprint(root, config, governed_file_paths(graph)))
         graph.graph.pop(_UNWRITABLE_KEY, None)  # the view is current again ⇒ earlier guidance is stale
         return True
     except ViewUnwritable as exc:
@@ -452,9 +486,23 @@ def rebuild(root: Path, config: dict):
     return graph, stats
 
 
-def load_or_build(root: Path, config: dict) -> tuple[nx.DiGraph, bool]:
+def load_or_build(root: Path, config: dict, *, budget=None,
+                  fingerprint: str | None = None) -> tuple[nx.DiGraph, bool]:
     """The read-path seam: load the materialized view when its fingerprint still matches the inputs,
     else rebuild + re-materialize. Returns ``(graph, was_cached)``.
+
+    ``budget`` is an optional :class:`~yigraf.hookbudget.Budget`. This function is the whole cost of a
+    hook's ``graph`` phase, so a breakdown that stops at ``graph`` cannot say whether a slow run was
+    stat-walking its inputs, reading the view, or re-extracting — three answers with three different
+    remedies. Given a budget, each step names itself as a ``graph.*`` sub-phase: dotted, because the
+    report prints one flat row of phases and siblings there read as addends, while these sit *inside*
+    ``graph`` and summing them with it would double-count.
+
+    ``fingerprint`` lets a caller that already computed one — the way :func:`current_fingerprint` does,
+    over the view's own governed loci — hand it over instead of having the walk repeated (the ``Stop``
+    hook, which walked for its latch). It is the most expensive step here on a large working tree. Taken
+    a moment earlier, it can only cost a needless rebuild or a view one read staler, never a wrong graph.
+    Both ``graph.*`` sub-phases and this pass-through are the field's patch (feedback-v12 L#3).
 
     On a cache hit the git-derived ``survival`` overlay is re-stamped only when the optional survival
     floor is armed (``maturity_survival_floor > 0``) — the landed tier is already persisted, and the
@@ -469,15 +517,33 @@ def load_or_build(root: Path, config: dict) -> tuple[nx.DiGraph, bool]:
     from yigraf import counters  # local: avoid an import cycle at module load
     from yigraf.extract import build_graph
 
+    def timed(name: str):
+        return budget.phase(name) if budget is not None else contextlib.nullcontext()
+
     root = Path(root)
     db = db_path(root)
-    stored, governed = stored_meta(db)
-    if stored is not None and stored == source_fingerprint(root, config, governed):
-        graph = load(db)
+    with timed("graph.fingerprint"):
+        stored, governed = stored_meta(db)
+        # Only when there is a stored fingerprint to compare against: with no view yet the walk cannot
+        # change the outcome, and the original short-circuit skipped it for exactly that reason.
+        current = (None if stored is None else
+                   fingerprint if fingerprint is not None else
+                   source_fingerprint(root, config, governed))
+    if stored is not None and stored == current:
+        with timed("graph.load"):
+            graph = load(db)
         if graph is not None:
+            # Named even though it is inert at the default floor of 0: an unnamed stretch inside a timed
+            # phase is an unattributed residual, and this one makes git calls across every memory path, so
+            # it is exactly the term that would silently absorb the difference on a store that arms it.
             if int(config.get("maturity_survival_floor", 0)) > 0:
-                counters.apply_maturity(graph, root, config)
+                with timed("graph.maturity"):
+                    counters.apply_maturity(graph, root, config)
             return graph, True
-    graph, _ = build_graph(root, config)
-    _materialize_or_flag(graph, root, config)
+    with timed("graph.build"):
+        graph, _ = build_graph(root, config)
+    with timed("graph.materialize"):
+        # The pre-build digest is reusable only if the build found the same governed loci it covered.
+        reuse = current if current is not None and governed_file_paths(graph) == governed else None
+        _materialize_or_flag(graph, root, config, fingerprint=reuse)
     return graph, False

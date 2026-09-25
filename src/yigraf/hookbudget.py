@@ -43,6 +43,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from yigraf import sidecar
+
 #: Seconds yigraf gives itself, under the host's 15. Not a measurement — a margin: it leaves room to
 #: render a fallback and be read, where a budget at the host's own number would be killed mid-write.
 DEFAULT_DEADLINE_SECONDS = 10.0
@@ -181,15 +183,17 @@ class Budget:
                "pid": os.getpid()}
         try:
             path = ledger_path(self.root)
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                data = []
-            rows = [e for e in data if isinstance(e, dict)] if isinstance(data, list) else []
-            rows = rows[-(kept - 1):] if kept > 1 else []
-            rows.append(row)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(rows), encoding="utf-8")
+            # One transaction: a burst of concurrent hooks is the case this ledger exists to explain, and
+            # unlocked, each read the same buffer and overwrote the others' rows (feedback-v12 L#1).
+            with sidecar.locked(path):
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    data = []
+                rows = [e for e in data if isinstance(e, dict)] if isinstance(data, list) else []
+                rows = rows[-(kept - 1):] if kept > 1 else []
+                rows.append(row)
+                sidecar.write_atomic(path, json.dumps(rows))
         except OSError:
             pass
 

@@ -39,6 +39,7 @@ from pathlib import Path
 
 import networkx as nx
 
+from yigraf import sidecar
 from yigraf.contradiction import detect_conflicts
 from yigraf.drift import compute_drift, is_surfaced, pending_renames, stale_completions
 from yigraf.retrieval import drift_verbs
@@ -323,9 +324,7 @@ def _save_latch(root: Path, latch: dict[str, dict], session_id: str) -> None:
         keep = [session_id] + [k for k in reversed(list(latch)) if k != session_id]
         latch = {k: latch[k] for k in keep[:_MAX_SESSIONS] if k in latch}
     try:
-        path = latch_path(root)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(latch, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        sidecar.write_atomic(latch_path(root), json.dumps(latch, indent=2, sort_keys=True) + "\n")
     except OSError:
         pass
 
@@ -346,13 +345,16 @@ def new_obligations(root: Path, current: list[Obligation], session_id: str,
     ``fingerprint`` is recorded (not consulted) so the next turn's :func:`is_unchanged` fast path can
     skip the whole computation while the inputs hold still.
     """
-    latch = _load_latch(root)
-    announced = set(latch.get(session_id, {}).get("keys", []))
-    live = {o.key for o in current}
-    fresh = [o for o in current if o.key not in announced]
-    latch[session_id] = {"fp": fingerprint,
-                         "keys": sorted((announced & live) | {o.key for o in fresh})}
-    _save_latch(root, latch, session_id)
+    # Locked: two sessions' Stop hooks in one repo would otherwise each drop the other's entry, and a
+    # dropped entry re-announces everything to that session (feedback-v12 L#1's shape).
+    with sidecar.locked(latch_path(root)):
+        latch = _load_latch(root)
+        announced = set(latch.get(session_id, {}).get("keys", []))
+        live = {o.key for o in current}
+        fresh = [o for o in current if o.key not in announced]
+        latch[session_id] = {"fp": fingerprint,
+                             "keys": sorted((announced & live) | {o.key for o in fresh})}
+        _save_latch(root, latch, session_id)
     return fresh
 
 

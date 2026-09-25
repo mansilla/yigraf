@@ -20,7 +20,7 @@ from typing import NoReturn
 import typer
 
 from yigraf import (__version__, artifacts, counters, embeddings, graphdb, hookbudget, memory,
-                    obligations, relations, resolution, retrieval, sectionfit, status, update)
+                    obligations, relations, resolution, retrieval, sectionfit, sidecar, status, update)
 from yigraf import show as show_mod  # aliased: the module and the `show` command share a name
 from yigraf.astnorm import (ANCHOR_ALGO, DOC_SUFFIXES, locus_hash, parse_file_target,
                             parse_section_target, section_slug, section_slugs)
@@ -1449,10 +1449,11 @@ def amend(
     # The belief is the same one, so it keeps what it earned — upholds/usage are keyed by id and would
     # otherwise silently reset to zero, demoting a settled node for a typo fix (counters.apply_maturity).
     try:
-        telemetry = counters.load_telemetry(repo)
-        if target in telemetry:
-            telemetry[new_id] = telemetry.pop(target)
-            counters.telemetry_path(repo).write_text(json.dumps(telemetry, indent=2), encoding="utf-8")
+        with sidecar.locked(counters.telemetry_path(repo)):
+            telemetry = counters.load_telemetry(repo)
+            if target in telemetry:
+                telemetry[new_id] = telemetry.pop(target)
+                counters.save_telemetry(repo, telemetry)
     except (OSError, ValueError):
         pass  # a machine-local sidecar must never fail a write that already landed (design law #5)
 
@@ -1855,16 +1856,16 @@ def _record_offer(root: Path, mem_id: str, ref: str, fit: sectionfit.Fit, offere
     """Append one considered offer, keeping the last 500. Silent on any I/O failure (design law #5)."""
     try:
         path = _offer_ledger(root)
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            data = []
-        entries = [e for e in data if isinstance(e, dict)][-499:] if isinstance(data, list) else []
-        entries.append({"at": time.time(), "mem": mem_id, "ref": ref, "candidate": fit.candidate,
-                        "top": round(fit.top, 6), "runner_up": round(fit.runner_up, 6),
-                        "offered": offered})
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(entries), encoding="utf-8")
+        with sidecar.locked(path):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                data = []
+            entries = [e for e in data if isinstance(e, dict)][-499:] if isinstance(data, list) else []
+            entries.append({"at": time.time(), "mem": mem_id, "ref": ref, "candidate": fit.candidate,
+                            "top": round(fit.top, 6), "runner_up": round(fit.runner_up, 6),
+                            "offered": offered})
+            sidecar.write_atomic(path, json.dumps(entries))
     except OSError:
         pass
 
@@ -2526,12 +2527,12 @@ def _read_reaffirm_ledger(root: Path) -> list[dict]:
 
 def _record_reaffirm_claim(root: Path, target: str, verified: str | None) -> None:
     """Append one reaffirm to the ledger, keeping the last 50. Silent on any I/O failure."""
-    entries = _read_reaffirm_ledger(root)[-49:]
-    entries.append({"at": time.time(), "target": target, "verified": verified or None})
     try:
         path = _reaffirm_ledger(root)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(entries), encoding="utf-8")
+        with sidecar.locked(path):
+            entries = _read_reaffirm_ledger(root)[-49:]
+            entries.append({"at": time.time(), "target": target, "verified": verified or None})
+            sidecar.write_atomic(path, json.dumps(entries))
     except OSError:
         pass
 
@@ -3354,11 +3355,22 @@ def statusline_cmd(
         root = repo or event_repo
         workspace = root / WORKSPACE_DIRNAME
         if not workspace.is_dir():
-            return  # ungoverned repo — stay silent (fail-open)
+            # Launched below the store root: say so on the bar for the whole session, not only in the
+            # one SessionStart notice — a blank bar reads as an unwired install (feedback-v12 §H).
+            # Named, never read; an ordinary ungoverned repo still gets silence (fail-open).
+            above = None if repo else _ancestor_workspace(root)
+            if above is not None:
+                typer.echo(status.orphan_line(above, color=True), color=True)
+            return
         update.refresh(root)  # throttled (≤1×/day) + fail-open: the "newer yigraf on PyPI?" check
         config = load_config(workspace / "config.yaml")
-        graph, _ = build_graph(root, config)
-        summary = status.compute_status(graph, root, config, ctx_used=ctx_used, ctx_limit=ctx_limit)
+        # The materialized view, like every hook — never a bare build_graph. That re-read and hashed every
+        # source file and rewrote cache/structure.json on EVERY refresh (the host refreshes per message),
+        # competing with the hooks for CPU and, pre-1.16, tearing the cache a concurrent hook was reading
+        # into a cold re-extract. Invisible to `doctor`, because the statusline is not a hook (feedback-v12).
+        graph, _ = graphdb.load_or_build(root, config)
+        summary = status.compute_status(graph, root, config, ctx_used=ctx_used, ctx_limit=ctx_limit,
+                                        view_current=True)
         icon = status.SPIN[int(time.time()) % len(status.SPIN)]
         typer.echo(summary.render_line(color=True, icon=icon), color=True)
     except Exception:  # noqa: BLE001 — an ambient surface must never break the host (design law #5)
@@ -5035,17 +5047,21 @@ def _hook_root(data: dict) -> Path:
     return cwd
 
 
-def _hook_graph(root: Path, config: dict | None = None):
+def _hook_graph(root: Path, config: dict | None = None, budget=None):
     """Build the graph for a hook, or None if there's no workspace (→ stay silent).
 
     ``config`` may be passed in when the caller already loaded it — the hook budget has to be armed
     *before* the graph build, which is the expensive step, so it reads the deadline first and hands
     the same dict down rather than paying for a second YAML read.
+
+    ``budget`` is handed down so the one expensive call below can name its own sub-steps; the caller's
+    ``graph`` phase measures this whole function and cannot say which of them was slow.
     """
     if not (root / WORKSPACE_DIRNAME).is_dir():
         return None
     config = config if config is not None else load_config(root / WORKSPACE_DIRNAME / "config.yaml")
-    graph, _ = graphdb.load_or_build(root, config)  # materialized view keeps the hot edit path cheap
+    # materialized view keeps the hot edit path cheap
+    graph, _ = graphdb.load_or_build(root, config, budget=budget)
     return graph, config
 
 
@@ -5095,24 +5111,27 @@ def _already_emitted(root: Path, session: str, locus: str, digest: str) -> bool:
     Fail-open in the safe direction: an unreadable latch costs one duplicate packet, never a lost one.
     """
     path = Path(root) / WORKSPACE_DIRNAME / ".local" / "emitted.json"
-    try:
-        data = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
-    except (OSError, json.JSONDecodeError):
-        data = {}
-    if not isinstance(data, dict):
-        data = {}
-    sessions = {k: v for k, v in data.items() if isinstance(v, dict)}
-    if sessions.get(session, {}).get(locus) == digest:
-        return True
-    sessions.setdefault(session, {})[locus] = digest
-    if len(sessions) > _MAX_EMIT_SESSIONS:
-        keep = [session] + [k for k in reversed(list(sessions)) if k != session]
-        sessions = {k: sessions[k] for k in keep[:_MAX_EMIT_SESSIONS] if k in sessions}
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(sessions, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    except OSError:
-        pass  # best-effort: a failed write means one duplicate later, never a crash in a hook (D#5)
+    # Check-and-set under one lock: concurrent edit hooks each read the latch, and unlocked the later
+    # write discarded the earlier one's entry — re-opening the duplicate this latch exists to stop
+    # (feedback-v12 L#1). Atomic so a lock-free reader never parses a truncated latch as empty.
+    with sidecar.locked(path):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        sessions = {k: v for k, v in data.items() if isinstance(v, dict)}
+        if sessions.get(session, {}).get(locus) == digest:
+            return True
+        sessions.setdefault(session, {})[locus] = digest
+        if len(sessions) > _MAX_EMIT_SESSIONS:
+            keep = [session] + [k for k in reversed(list(sessions)) if k != session]
+            sessions = {k: sessions[k] for k in keep[:_MAX_EMIT_SESSIONS] if k in sessions}
+        try:
+            sidecar.write_atomic(path, json.dumps(sessions, indent=2, sort_keys=True) + "\n")
+        except OSError:
+            pass  # best-effort: a failed write means one duplicate later, never a crash in a hook (D#5)
     return False
 
 
@@ -5148,7 +5167,7 @@ def _post_tool_use(data: dict) -> dict | None:
 def _post_tool_use_inner(data: dict, root: Path, config: dict, file_path: str,
                          budget: hookbudget.Budget) -> dict | None:
     with budget.phase("graph"):
-        built = _hook_graph(root, config=config or None)
+        built = _hook_graph(root, config=config or None, budget=budget)
     if built is None:
         return None
     # Claude Code hands an absolute path; Codex's apply_patch path is repo-relative — anchor it to root.
@@ -5205,7 +5224,7 @@ def _session_status_line(root: Path, graph, config: dict) -> str | None:
     context, where escape codes are wasted tokens (design law #2).
     """
     try:
-        summary = status.compute_status(graph, root, config)
+        summary = status.compute_status(graph, root, config, view_current=True)  # from load_or_build
         return summary.render_line(color=False)
     except Exception:
         return None  # a status failure must not cost the agent its rules and its plan (design law #5)
@@ -5258,9 +5277,9 @@ def _session_packet_cache(root: Path) -> Path:
 def _remember_session_packet(root: Path, text: str) -> None:
     """Keep this packet as the fallback for a future timed-out render. Silent on failure (law #5)."""
     try:
-        path = _session_packet_cache(root)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"at": time.time(), "text": text}), encoding="utf-8")
+        # Last writer wins is right for a whole-value cache; atomic so a timed-out render reading it
+        # concurrently never finds it truncated and falls back to "not oriented" (L#1's torn read).
+        sidecar.write_atomic(_session_packet_cache(root), json.dumps({"at": time.time(), "text": text}))
     except OSError:
         pass
 
@@ -5300,7 +5319,7 @@ def _session_start(data: dict, *, record: bool = True) -> dict | None:
     with hookbudget.Budget(root, "SessionStart", config) as budget:
         try:
             with budget.phase("graph"):
-                built = _hook_graph(root, config=config or None)
+                built = _hook_graph(root, config=config or None, budget=budget)
             if built is None:
                 return _orphan_session_notice(root)
             graph, config = built
@@ -5364,7 +5383,9 @@ def _stop(data: dict) -> dict | None:
                 return None
 
             with budget.phase("graph"):
-                graph, _ = graphdb.load_or_build(root, config)
+                # The fingerprint above is the same walk this call would otherwise repeat, and it is
+                # deterministic for a given tree state — so hand it over instead of paying for it twice.
+                graph, _ = graphdb.load_or_build(root, config, budget=budget, fingerprint=fingerprint)
             with budget.phase("sweep"):
                 current = obligations.obligations(graph, root, config)
                 fresh = obligations.new_obligations(root, current, session, fingerprint=fingerprint)

@@ -374,6 +374,21 @@ class StatusSummary:
         return asdict(self)
 
 
+def orphan_line(above: Path, *, color: bool) -> str:
+    """The bar for a session launched BELOW its store root (feedback-v12 §H, the K#3 residual).
+
+    SessionStart already names the ancestor store once; the bar printed nothing for the rest of the
+    session, which is exactly what an unwired install looks like. Names the store without reading it —
+    the no-parent-search rule (mem:acc91105063a5000) is unchanged. Plain text still starts ``yigraf ``
+    (mem:022's contract).
+    """
+    where = f"store at {above.parent}"
+    if not color:
+        return f"yigraf | ⚠ no store here · {where}"
+    return (_c(f"[{BRAND}{_IGRAF}]", "1;36") + " " + _c("⚠ no store here", "1;33")
+            + _c(" · ", "2") + _c(where, "2"))
+
+
 def _freshness(root: Path, graph: nx.DiGraph) -> str:
     """Is the gitignored SQLite materialized view in sync with the rebuilt graph? (R6 — the view is derived.)
 
@@ -407,11 +422,18 @@ def _freshness(root: Path, graph: nx.DiGraph) -> str:
 
 
 def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
-                   ctx_used: int | None = None, ctx_limit: int | None = None) -> StatusSummary:
+                   ctx_used: int | None = None, ctx_limit: int | None = None,
+                   view_current: bool = False) -> StatusSummary:
     """Summarize ``graph`` into a :class:`StatusSummary` — pure over the graph + on-disk artifacts.
 
     Never loads the embedding model (a statusline may run often): ``semantic``/``embedded`` reflect the
     persisted index, not a live backend probe. ``ctx_used``/``ctx_limit`` are passed through verbatim.
+
+    ``view_current`` is for a caller whose ``graph`` came from :func:`yigraf.graphdb.load_or_build`: it
+    is the view (a hit) or was just written as the view (a miss), so the byte comparison in
+    :func:`_freshness` — a second full load plus two canonical dumps — can only say ``fresh``. It is
+    still run when that write failed, which is the one case the answer is not known. ``yigraf status``
+    never passes it: it rebuilds without writing, so for it the comparison is the whole point.
     """
     symbols = intents = plans = tasks_total = tasks_open = decisions = 0
     for _, a in graph.nodes(data=True):
@@ -479,7 +501,10 @@ def compute_status(graph: nx.DiGraph, root: Path, config: dict, *,
     return StatusSummary(
         symbols=symbols, intents=intents, plans=plans,
         tasks_total=tasks_total, tasks_open=tasks_open, decisions=decisions,
-        drifting=drifting, freshness=_freshness(root, graph), conflicts=conflicts, stale=stale,
+        drifting=drifting,
+        freshness=("fresh" if view_current and not graphdb.view_unwritable(graph)
+                   else _freshness(root, graph)),
+        conflicts=conflicts, stale=stale,
         renames=renames,
         # Computed at fold time (only the fold sees what it declined) and carried on the graph, so a
         # statusline read costs nothing extra — extract._fold_replica.

@@ -4,6 +4,97 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.16.0] — 2026-09-25
+
+**Concurrent hooks no longer lose each other's writes, and the statusline stopped rebuilding the graph on
+every refresh.**
+
+The ninth field send (feedback-v12, against 1.15.0). Both of its patches are in this release. Their
+headline finding reproduced here unchanged. Following it up found two more defects of the same class
+that the send had not reported, plus the statusline cost, which is the strongest lead so far on K#4's
+intermittent slow hooks.
+
+### Every machine-local read-modify-write is now one transaction (L#1)
+
+An agent editing several files runs the edit hook concurrently, and every JSON sidecar those hooks
+touch was read → mutate → `write_text` with no lock. Measured on 1.15.0: 2 concurrent hooks kept **1**
+slow-run row and 4 kept **2**. 16 concurrent surfacing bumps landed as **`usage=7`**. The losses were
+not all diagnostic:
+
+- `emitted.json`: a lost latch entry means **a duplicate packet injected into the agent**, the defect
+  that latch was built to stop (3.47M tokens in one field session).
+- `telemetry.json`: `usage`, `last_seen` and `upholds` feed ranking and the `settled` verdict. Each edit
+  hook increments it twice, the textbook lost-update case.
+- `hook-timings.json`: the instrument shipped in 1.15.0 for K#4 under-counted exactly the bursts it
+  exists to explain.
+
+The new `yigraf.sidecar` module is the field's patch, generalized. It takes an exclusive `flock` on a
+sibling `<name>.lock` held across the read and the write, and writes through a per-process temp file
+plus `os.replace`. Each half fixes a different defect. The lock stops lost updates; the field built the
+atomic write alone first and measured it insufficient. The atomic write stops torn reads, where a
+lock-free reader parsed a truncated file, fell back to empty, and discarded *every* row. It is used by
+the ledger, the emit latch, both telemetry writers and `amend`'s telemetry transfer, the obligations
+latch, the section-offer and reaffirm ledgers, the SessionStart fallback packet, and
+`cache/structure.json`. The lock wait is 0.25 s and then writes unlocked (still atomically): no
+`fcntl`, a filesystem that cannot lock, or a stuck holder costs at most one update and never blocks a
+hook. After the fix: N/N at every N we tried, up to 16.
+
+This is not a departure from int:concurrent-write-model. That intent keeps the committed **graph**
+lock-free by resolving writes through log-append. These are uncommitted per-machine caches with no
+merge story.
+
+**Two more instances the send did not name:**
+
+- **`cache/structure.json` tore under concurrent builds.** It is rewritten on every build (3 MB on this
+  repo), and a reader that caught it mid-write got an *empty* extraction cache, so it re-parsed every
+  source file inside a hook's budget. 77 of 1 694 reads were torn during a burst of 12 statusline
+  refreshes.
+- **Two rebuilding hooks shared one `graph.db.tmp`.** One could unlink the other's half-written view,
+  or rename it into place mid-write. The temp name is now per-process, and temps older than ten minutes
+  (left by a writer the host killed) are swept.
+
+### The statusline reads the view instead of rebuilding the graph
+
+`yigraf statusline` called `build_graph` directly. Every refresh (the host refreshes per message) read
+and SHA256'd every source file and rewrote `cache/structure.json`, competing with the hooks for CPU and
+tearing the cache a concurrent hook was reading. `doctor` never saw any of it, because the statusline is
+not a hook. It now goes through `load_or_build` like every hook: **0.77 s → 0.24 s** here, and on the
+field's 22 000-file tree the difference is the full rebuild, measured there at 3.9–6.3 s. This is the
+best lead yet on K#4. It is not proven, but it fits: heavy load that the hook's own phases can't
+explain, and spikes that come and go.
+
+The statusline also stops re-deriving freshness. A graph from `load_or_build` *is* the view, or was
+just written as the view, so the byte comparison (a second full load plus two canonical dumps) could
+only answer `fresh`. It still runs when the write failed. The SessionStart status line gets the same
+shortcut. `yigraf status` is unchanged: it rebuilds without writing, and for it the comparison is the
+point. `docs/statusline.md` now recommends `yigraf statusline` over hand-wired `yigraf status`.
+
+### `graph` names its steps, and no hook walks the tree twice (L#3)
+
+`graph` was 99 % of an edit hook on the field's store and was reported as one label. Given the budget,
+`load_or_build` now reports `graph.fingerprint`, `graph.load`, `graph.build`, `graph.materialize` and
+`graph.maturity`. The names are dotted because they sit *inside* `graph`, and `doctor` prints phases as
+one flat row where siblings read as addends. The field's decomposition: on a cache miss, the walk is
+about a fifth, the extraction about half, and the write-back about a quarter.
+
+That write-back quarter was mostly **a second full walk**: on every miss, `materialize` re-fingerprinted
+the tree after the build. It now reuses the pre-build digest whenever the build found the same governed
+loci. The earlier digest is also the safer key. If a file changes while the build runs, the view stays
+keyed to the pre-change tree and the next read rebuilds. A post-build digest would label pre-change
+content with post-change stats and serve it as current.
+
+`Stop` walked for its latch and then `load_or_build` walked again, including on every session's first
+turn. It now passes its fingerprint through (the field's patch). The two digests are taken a moment
+apart, so the worst case is one needless rebuild or a view one read staler, never a wrong graph. As a
+side effect, the hook's graph and its latch now come from the same instant.
+
+### The bar says when a session started below the store root (§H)
+
+1.14.3 made SessionStart name the ancestor store once, and the bar then stayed blank for the rest of the
+session, which is what an unwired install looks like. It now reads `⚠ no store here · store at <root>`.
+The store is named, never read: the no-parent-search rule (mem:acc91105063a5000) is unchanged, and a repo
+with no store above it still gets an empty bar.
+
 ## [1.15.0] — 2026-09-22
 
 **A hook that runs out of time now says so instead of dying silently — and leaves evidence.**
