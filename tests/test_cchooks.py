@@ -280,7 +280,7 @@ def test_statusline_shows_ctx_gauge_from_the_transcript(tmp_path: Path):
         {"message": {"usage": {"input_tokens": 10000, "cache_read_input_tokens": 30000,
                                "cache_creation_input_tokens": 0}}}) + "\n")
     out = _statusline(root, tx).output
-    assert "ctx" in out and "20%" in out  # 40,000 / 200,000 = 20%, no jq involved
+    assert "ctx" in out and "16%" in out  # 40,000 / 250,000 usable budget = 16%, no jq involved
 
 
 def test_statusline_1m_model_gauges_against_the_usable_budget(tmp_path: Path):

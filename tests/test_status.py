@@ -120,7 +120,7 @@ def test_context_is_injected_not_read(tmp_path: Path):
     assert "ctx" not in _summary(root).render_line()
     s = _summary(root, ctx_used=40_000, ctx_limit=200_000)
     assert s.ctx_used == 40_000
-    assert "ctx 20% 40k/200k" in s.render_line()  # percent + the physical occupancy it is a fill of
+    assert "ctx 16% 40k/200k" in s.render_line()  # percent + the physical occupancy it is a fill of
 
 
 def test_ctx_token_magnitude_is_compact(tmp_path: Path):
@@ -147,6 +147,19 @@ def test_ctx_names_the_window_the_percent_is_not_of(tmp_path: Path):
     assert "236k/1M" in s.render_line(color=True)
 
 
+def test_100_percent_is_250k_whatever_the_host_window(tmp_path: Path):
+    """The budget is the denominator on every host, not min(window, budget): a model the adapter
+    guesses at 200k used to read 100% at 200k. 0 still opts out to the raw window."""
+    root = _repo(tmp_path)
+    for window in (200_000, 1_000_000):
+        assert _summary(root, ctx_used=250_000, ctx_limit=window).ctx_pct == 100
+        assert _summary(root, ctx_used=200_000, ctx_limit=window).ctx_pct == 80
+    raw = status.compute_status(build_graph(root, default_config())[0], root,
+                                {**default_config(), "status": {"ctx_soft_limit": 0}},
+                                ctx_used=100_000, ctx_limit=200_000)
+    assert raw.ctx_pct == 50
+
+
 def test_ctx_pct_saturates_but_the_raw_pair_keeps_moving(tmp_path: Path):
     """Above the knee ctx_pct pins at 100 all the way to the ceiling — there the pair is the only signal."""
     root = _repo(tmp_path)
@@ -162,7 +175,7 @@ def test_ctx_note_explains_the_knee_only_when_it_clamps(tmp_path: Path):
     note = _summary(root, ctx_used=236_000, ctx_limit=1_000_000).ctx_note()
     assert note is not None and "250k usable budget" in note and "1M window" in note
     assert "236k/1M" in note and "ctx_soft_limit" in note  # the opt-out is named
-    assert _summary(root, ctx_used=40_000, ctx_limit=200_000).ctx_note() is None  # knee is a no-op
+    assert _summary(root, ctx_used=40_000, ctx_limit=200_000).ctx_note() is None  # budget ≥ window: nothing clamps
     assert _summary(root).ctx_note() is None  # no host datum at all
 
 
@@ -179,7 +192,7 @@ def test_the_line_reads_as_three_groups_session_then_health_then_scale(tmp_path:
     contiguous."""
     s = _summary(_repo(tmp_path), ctx_used=40_000, ctx_limit=200_000)
     session, health, scale = s.render_line().split(" | ")
-    assert session == "yigraf ctx 20% 40k/200k"
+    assert session == "yigraf ctx 16% 40k/200k"
     assert health == "no drift · fresh"
     assert scale.startswith("1 task"), "open work leads the scale group — it is the actionable stat"
     assert scale.endswith(" dec") and " sym" in scale and " int" in scale
@@ -199,7 +212,7 @@ def test_plain_render_has_no_ansi_but_color_does(tmp_path: Path):
     pretty = s.render_line(color=True, icon=status.SPIN[0])
     assert "\x1b[" in pretty and status.SPIN[0] in pretty
     assert "●" in pretty  # the "fresh" shape glyph
-    assert "▰" in pretty and "20%" in pretty  # the context gauge
+    assert "▰" in pretty and "16%" in pretty  # the context gauge
 
 
 def test_status_cli_line_and_json(tmp_path: Path):

@@ -39,15 +39,19 @@ LOCK_WAIT_SECONDS = 0.25
 
 
 @contextmanager
-def locked(path: Path):
+def locked(path: Path, *, shared: bool = False):
     """Hold an exclusive lock over ``path``'s read-modify-write for the body of the block. Never raises.
+
+    ``shared=True`` takes a reader's lock instead: it excludes writers but not other readers, for a
+    reader that must see several files from ONE write (the embeddings index, feedback-v13 M#1) — the
+    statusline, hooks and ``context`` read concurrently and must not queue behind each other.
 
     The lock is a **sibling** ``<name>.lock``, not ``path`` itself: :func:`write_atomic` replaces
     ``path``'s inode, so a lock on it would be held on a file no later writer can see — each waiter would
     serialise against a different inode, which is no lock at all. The caller does not branch on whether
     the lock was taken; see the module docstring for why writing unlocked is the right degradation.
     """
-    fd = _acquire(Path(path).with_name(Path(path).name + ".lock"))
+    fd = _acquire(Path(path).with_name(Path(path).name + ".lock"), shared)
     try:
         yield
     finally:
@@ -58,7 +62,7 @@ def locked(path: Path):
                 pass
 
 
-def _acquire(lock: Path) -> int | None:
+def _acquire(lock: Path, shared: bool = False) -> int | None:
     """Open ``lock`` and take an exclusive flock on it, or return None. Never raises.
 
     Separate from :func:`locked` so no failure of the *caller's body* can be mistaken for a failure to
@@ -76,7 +80,7 @@ def _acquire(lock: Path) -> int | None:
         deadline = time.monotonic() + LOCK_WAIT_SECONDS
         while True:
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(fd, (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
                 return fd
             except OSError:
                 if time.monotonic() >= deadline:

@@ -43,7 +43,7 @@ Pretty output (what a statusline shows):
 | `⚠ N stale`    | done tasks whose implementing symbol drifted — the completion is unverified, not false; **only when `N>0`**. List with `yigraf drift --stale` |
 | `⚠ N diverged` | loci another principal's log revision differs on; **only when `N>0`**. `yigraf sync` reconciles |
 | `✦ sem N`      | a semantic index of `N` memory+intent nodes is present (dim = the index is on) |
-| `ctx ▰▰▱▱ NN%` | context-window fill, **only if a host supplied it**; green <50, yellow <80, red ≥80 |
+| `ctx ▰▰▱▱ NN%` | context fill against the usable budget (`status.ctx_soft_limit`, default **250k** = 100%, whatever the host window; `0` gauges the raw window), **only if a host supplied it**; green <50, yellow <80, red ≥80 |
 
 **`behind` is not `stale`.** They are different dimensions and the words are kept apart deliberately:
 `○ behind` means the materialized view hasn't caught up with the source and *any read rebuilds it* — an

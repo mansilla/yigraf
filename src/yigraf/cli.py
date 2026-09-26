@@ -83,7 +83,7 @@ def _require_slug(value: str | None, kind: str, tail: str) -> None:
     if not value.strip():
         _guidance(f"An empty slug does not name {kind} — usually an unset shell variable. It composes "
                   f"to a bare `.md` dotfile that then answers to a name you never typed, so yigraf "
-                  f"writes nothing. {tail}")
+                  f"refuses it. {tail}")
     if not _PATH_SHAPED.search(value):
         return
     _guidance(f"{value!r} is a path, not {kind} slug — a slug names one artifact file, so it never "
@@ -576,7 +576,11 @@ def intent(
         _guidance(f"--status must be one of {', '.join(artifacts.INTENT_STATUSES)} (got {status}).")
     workspace = _require_workspace(repo)
     _require_slug(slug, "an intent", 'Pick a plain name — `yigraf intent drift-detection -s "…"`.')
-    dest = workspace / "intents" / f"{slug}.md"
+    # The id is `slug.casefold()`, but `dest.exists()` folds case only on a case-insensitive volume: on a
+    # case-sensitive one `intent Bravo` beside bravo.md wrote a second file with the same id, and the
+    # fold kept one of them by content hash (feedback-v13 M#2, the fifth send's G#6). `plan` already
+    # globs casefolded; this is the same lookup.
+    dest = _find_intent_file(workspace, slug.casefold()) or workspace / "intents" / f"{slug}.md"
 
     if dest.exists():
         if status is None:
@@ -683,8 +687,13 @@ def supersede_intent(
     for value in (old_slug, new_slug):
         _require_slug(value, "an intent", 'Pick a plain name — `yigraf supersede-intent old new -s "…"`.')
     old_id, new_id = f"int:{old_slug.casefold()}", f"int:{new_slug.casefold()}"
-    old_dest = workspace / "intents" / f"{old_slug}.md"
-    new_dest = workspace / "intents" / f"{new_slug}.md"
+    # Casefolded, as in `intent`: two supersedes onto `delta` and `Delta` otherwise MERGE into one node
+    # carrying one file's contract and both `supersedes` edges (feedback-v13 M#2).
+    old_dest = _find_intent_file(workspace, old_slug.casefold()) or workspace / "intents" / f"{old_slug}.md"
+    new_dest = _find_intent_file(workspace, new_slug.casefold()) or workspace / "intents" / f"{new_slug}.md"
+    if old_id == new_id:
+        _guidance(f"{old_id} can't supersede itself — the new slug folds to the same id as the old one. "
+                  f"Pick a different new slug.")
 
     if not old_dest.exists():
         _guidance(f"No intent {old_id} to supersede ({old_dest} not found). "
@@ -875,15 +884,17 @@ def tasks(
     ``drift --stale`` listed only done-and-drifted ones. The surface existed and could not be addressed
     deliberately (feedback-v4 #1).
     """
-    workspace = _require_workspace(repo)
-    config = load_config(workspace / "config.yaml")
     if open_only and done_only:
         _guidance("--open and --done select disjoint sets — pass one, or neither for both.")
     # No "Known: …" tail here, unlike the unknown-slug case below: the mistake is the convention, not
     # the name, so listing every plan would spend the agent's budget answering a question it isn't asking.
+    # Before the workspace check: the slug is the mistake whatever the cwd, and outside a repo the
+    # workspace error hid it (feedback-v7 G#12).
     _require_slug(plan_slug, "a plan",
-                  "For every plan's tasks run `yigraf tasks --repo <path>`; for one plan's, "
-                  "`yigraf tasks <slug>`.")
+                  "For every plan's tasks run bare `yigraf tasks` (`--repo <path>` for another repo); "
+                  "for one plan's, `yigraf tasks <slug>`.")
+    workspace = _require_workspace(repo)
+    config = load_config(workspace / "config.yaml")
     graph, _ = build_graph(repo, config)
     stale_ids = {i.task_id for i in stale_completions(graph)}
 
@@ -1175,6 +1186,14 @@ def reanchor(
         _guidance(f"--governs re-kinds a `concerns` anchor, and {target} carries {old} only as evidence "
                   f"(`grounded_by`). Evidence cites contents, so it is never a policy anchor — move it "
                   f"without --governs, or `yigraf unlink {target} {old}` if it never belonged.")
+    already_policy = in_concerns and any(
+        c.sym == old and (c.anchor_algo or "") == memory.GOVERNS_ALGO for c in node.concerns)
+    if new == old and not (governs and in_concerns and not already_policy):
+        # `reanchor X X` dropped the anchor — the destination "was already there" — which is `unlink`
+        # reached by a no-op, with nothing in show/status/drift afterwards (feedback-v7 G#5).
+        _guidance(f"{target} is already anchored at {old}, so there is nothing to move and nothing was "
+                  f"changed. If it drifted and the belief still holds, `yigraf reaffirm {target}`; to make "
+                  f"it a policy anchor, add --governs; if it never belonged, `yigraf unlink {target} {old}`.")
     graph, _ = build_graph(repo, config)
     if new.startswith("sym:") and "#" not in new:
         _refuse_bare_sym(graph, new, "reanchor")
@@ -1184,8 +1203,6 @@ def reanchor(
     # success line says "the claim and its history are unchanged" (true of the claim, false of what the
     # anchor MEANS). GOVERNS_ALGO's docstring named `reaffirm` as the only re-stamper that must leave it
     # alone; `reanchor` is the second. The new locus is validated as a policy locus, not merely resolved.
-    already_policy = in_concerns and any(
-        c.sym == old and (c.anchor_algo or "") == memory.GOVERNS_ALGO for c in node.concerns)
     governs_move = already_policy or (governs and in_concerns)
     rekinded = governs and in_concerns and not already_policy
     # Evidence is never a policy anchor (grounding cites contents, not use), so a ref carried on BOTH

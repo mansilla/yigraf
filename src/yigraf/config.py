@@ -293,9 +293,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     # Status surface (int:status-surface). The ctx gauge scales to a *usable budget*, not the raw
     # window: quality and token cost track *absolute* occupancy, so a 1M window reads ~"full" long
-    # before 100%. The gauge denominator is min(host window, ctx_soft_limit) — a 1M window clamps to
-    # the knee, a genuine ~200k window is unaffected (the min is the window itself). 0 opts out (gauge
-    # against the raw window). ~200k is where Opus-class quality degrades and per-turn cost climbs.
+    # before 100%. The gauge denominator is ctx_soft_limit whatever the host window (100% = 250k by
+    # default; the physical window is still named beside it). 0 opts out (gauge against the raw
+    # window). ~200k is where Opus-class quality degrades and per-turn cost climbs.
     # The percent is therefore knee-relative and by design disagrees with the host's own readout, so
     # the render always carries the physical pair beside it (StatusSummary.ctx_fill) and `yigraf status`
     # explains the gap (ctx_note) — a bare knee-relative percent has been misread as "nearly out".
@@ -561,8 +561,8 @@ embeddings:
 # --- Status surface (int:status-surface) — the human ambient statusline ---
 # The context gauge scales to a *usable budget*, not the raw window: quality and per-turn cost track
 # *absolute* occupancy, so a 1M window reads ~"full" long before 100%. Denominator is
-# min(host window, ctx_soft_limit): a 1M window clamps to the knee, a genuine ~200k window is
-# unaffected. ~200k is where Opus-class quality degrades and cost climbs. Set 0 to use the raw window.
+# ctx_soft_limit whatever the host window — 100% = 250k by default, and the physical window is still
+# named beside the percent. ~200k is where Opus-class quality degrades and cost climbs. Set 0 to use the raw window.
 # Because that percent is knee-relative it will NOT match your host's own context readout — so the
 # line always names the physical occupancy next to it (`ctx 94% 236k/1M`), and `yigraf status` at a
 # terminal spells the difference out. Read the percent as "of the usable budget", not "of the window".

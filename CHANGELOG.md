@@ -4,6 +4,58 @@ All notable changes to yigraf are recorded here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); yigraf uses
 [semantic versioning](https://semver.org/).
 
+## [1.16.1] — 2026-09-26
+
+**The embeddings index can no longer be read as half of two saves, a case variant of an intent slug no
+longer creates a second intent with the same id, and the statusline gauge reads 100% at 250k tokens.**
+
+The tenth field send (feedback-v13, against 1.16.0). Both of its patches are in, both findings reproduced
+here, and two fifth-send reminders are closed.
+
+### The embeddings index is locked as a pair (M#1)
+
+The index is two files, `vectors.npy` and `meta.json`, and they were written one after the other with no
+lock. A reader landing between the two writes got one save's matrix and the other's entry list. `load_index`
+then returned *no index*. `status` said `sem 0`, `context` silently fell back to lexical ranking, and the
+capture verbs' near-duplicate guard, given that torn index, **let a duplicate into the store**. Measured
+here on 1.16.0: 54 torn reads in 15 captures, 0 with no writer. The field showed that writing each file
+atomically closes nothing, because each file is still only half of a pair. `_save_index` now holds one
+`sidecar.locked(meta.json)` across both writes (each still atomic, for the lock-timeout path). `load_index`
+reads both files under the same lock. That read lock is **shared**, a new `sidecar.locked(shared=True)`,
+so the statusline, hooks and `context` don't queue behind each other. After the fix: 0 torn reads in 125 000.
+
+### Intent slugs resolve case-insensitively, as plan slugs already did (M#2, the fifth send's G#6)
+
+The id is `slug.casefold()`, but `intent` and `supersede-intent` checked `dest.exists()`, and that call folds
+case only on a case-insensitive volume. On a case-sensitive one (Linux, a case-sensitive APFS image),
+`intent Bravo` beside `bravo.md` wrote a second `int:bravo`, and one of the two became unreachable. Worse,
+`supersede-intent charlie delta` followed by `supersede-intent echo Delta` produced two files that folded
+into **one node**. That node showed one file's contract but carried both `supersedes` edges, so `charlie`'s
+real successor was lost. Every path the two verbs resolve now goes through the casefolded
+`_find_intent_file`. Case variants are refused and the refusal names the real file. `intent BRAVO --status`
+and `supersede-intent Charlie …` now find `bravo.md`/`charlie.md` instead of reporting *no intent*, and
+`supersede-intent bravo Bravo` is refused as a self-supersede. On a case-insensitive volume the only visible
+change is that the messages name the file's real path.
+
+### The statusline gauge reads 100% at 250k tokens by default
+
+The context gauge's denominator was `min(host window, status.ctx_soft_limit)`, so any model whose id
+the Claude Code adapter doesn't recognise as `[1m]` was gauged against an assumed 200k window and read
+100% at 200k. The denominator is now `ctx_soft_limit` itself, whatever the host window (default
+**250 000**), so 100% means 250k tokens. The physical pair beside the percent (`40k/200k`) is unchanged
+and still names the window. `status.ctx_soft_limit: 0` still gauges the raw window.
+
+### Two fifth-send reminders
+
+- **G#12**: `tasks ""` now names the empty slug even outside a repo; the workspace error used to come
+  first. The message also stops saying *"writes nothing"* on a verb that only reads, and points at bare
+  `yigraf tasks` for the every-plan form.
+- **G#5**: `reanchor X X` (including `#Bravo` → `#bravo`, which canonicalize to the same locus) is now
+  refused, and nothing changes. It used to take the "already there" branch and drop the anchor, the same
+  result as `unlink` reached through a no-op. `reanchor X X --governs` on a content anchor still converts
+  it in place. On an anchor that is already a policy anchor, it is now refused too; before, it was also
+  dropped.
+
 ## [1.16.0] — 2026-09-25
 
 **Concurrent hooks no longer lose each other's writes, and the statusline stopped rebuilding the graph on

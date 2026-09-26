@@ -185,16 +185,17 @@ class StatusSummary:
 
     @property
     def _ctx_effective(self) -> int | None:
-        """The gauge denominator: the *usable budget*, ``min(window, ctx_soft_limit)``.
+        """The gauge denominator: the *usable budget*, ``ctx_soft_limit`` (default 250k).
 
-        Quality and per-turn cost track *absolute* occupancy, not fraction-of-window, so a 1M window
-        clamps to the degradation knee (``ctx_soft_limit``) while a genuine ~200k window is unaffected
-        (the min is the window itself — the gauge stays byte-identical for small hosts). A
+        Quality and per-turn cost track *absolute* occupancy, not fraction-of-window, so 100% means the
+        budget whatever the host window. It used to be ``min(window, ctx_soft_limit)``, which left any
+        model the adapter guesses at 200k gauging to 200k — the principal set 100% = 250k as the default
+        for every host (1.16.1). The trailer (:attr:`ctx_fill`) still names the physical window. A
         ``ctx_soft_limit`` of 0/None opts out: gauge against the raw window.
         """
         if not self.ctx_limit:
             return None
-        return min(self.ctx_limit, self.ctx_soft_limit) if self.ctx_soft_limit else self.ctx_limit
+        return self.ctx_soft_limit or self.ctx_limit
 
     @property
     def ctx_pct(self) -> int | None:

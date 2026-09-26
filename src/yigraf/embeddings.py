@@ -42,6 +42,8 @@ from typing import Any
 
 import networkx as nx
 
+from yigraf import sidecar
+
 try:  # numpy ships with the fastembed core dep; absence ⇒ lexical-only fallback (kept for safety).
     import numpy as np
 except ImportError:  # pragma: no cover - exercised only in a lexical-only environment
@@ -329,10 +331,15 @@ def load_index(root: Path, config: dict) -> EmbeddingIndex | None:
     if not (meta_path.exists() and vec_path.exists()):
         return None
     try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        # The index is a PAIR, so each file being atomic is not enough: an unlocked reader between the
+        # writer's two replaces takes one save's matrix with the other's entries, and a None here reads
+        # as "no index" — `status` says sem 0, `context` goes lexical, and the capture verbs' own
+        # near-duplicate guard lets a duplicate in (feedback-v13 M#1). Shared: readers don't queue.
+        with sidecar.locked(meta_path, shared=True):
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            matrix = np.load(vec_path)
         if meta.get("model") != model_name(config):
             return None  # model changed ⇒ stale index, force a reindex
-        matrix = np.load(vec_path)
         entries = meta.get("entries", [])
         ids = [e["id"] for e in entries]
         text_hash = {e["id"]: e.get("hash", "") for e in entries}
@@ -349,8 +356,17 @@ def _save_index(root: Path, model: str, ids: list[str], matrix: "np.ndarray",
     d.mkdir(parents=True, exist_ok=True)
     meta = {"model": model, "dim": int(matrix.shape[1]) if matrix.size else 0,
             "entries": [{"id": nid, "hash": text_hash.get(nid, "")} for nid in ids]}
-    np.save(d / "vectors.npy", matrix)
-    (d / "meta.json").write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    # One lock across BOTH files (see load_index); the atomic replaces cover the lock-timeout path,
+    # where a save goes ahead unlocked and must still never leave a half-written file.
+    with sidecar.locked(d / "meta.json"):
+        tmp = d / f"vectors.{os.getpid()}.tmp.npy"  # ends in .npy, or np.save appends one
+        try:
+            np.save(tmp, matrix)
+            os.replace(tmp, d / "vectors.npy")
+        except OSError:
+            tmp.unlink(missing_ok=True)
+            raise
+        sidecar.write_atomic(d / "meta.json", json.dumps(meta, indent=2, sort_keys=True) + "\n")
 
 
 def refresh_index(root: Path, graph: nx.DiGraph, config: dict) -> bool:
